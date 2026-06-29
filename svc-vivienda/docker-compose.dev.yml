@@ -1,0 +1,38 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: db_vivienda
+      POSTGRES_USER: user_vivienda
+      POSTGRES_PASSWORD: devpassword
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user_vivienda -d db_vivienda"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8001:8001"
+    environment:
+      DATABASE_URL: "postgresql+asyncpg://user_vivienda:devpassword@db:5432/db_vivienda"
+      GCP_PROJECT_ID: "gestorcooperativo"
+      SERVICE_NAME: "svc-vivienda"
+      ENVIRONMENT: "development"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./app:/app/app    # hot-reload en desarrollo
+
+volumes:
+  postgres_data:
