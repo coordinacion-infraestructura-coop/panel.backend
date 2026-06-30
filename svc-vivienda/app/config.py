@@ -9,8 +9,8 @@ class Settings(BaseSettings):
     service_name: str = "svc-vivienda"
     environment: str = "development"
     pubsub_topic_vivienda: str = "ministerio-eventos-vivienda"
-    google_jwks_uri: str = "https://www.googleapis.com/oauth2/v3/certs"
-    google_issuer: str = "https://accounts.google.com"
+    google_jwks_uri: str = "https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com"
+    google_issuer: str = "https://securetoken.google.com/gestorcooperativo"
 
 
 settings = Settings()
