@@ -2,14 +2,11 @@ import time
 from functools import lru_cache
 
 import httpx
-from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi import Depends, HTTPException, Request, status
 from jose import JWTError, jwt
 from pydantic import BaseModel
 
 from app.config import settings
-
-security = HTTPBearer()
 
 
 class AuthUser(BaseModel):
@@ -21,7 +18,6 @@ class AuthUser(BaseModel):
 
 @lru_cache(maxsize=1)
 def _get_google_public_keys_cached(cache_key: int) -> dict:
-    """Cachea las public keys de Google, con TTL de 1 hora."""
     response = httpx.get(settings.google_jwks_uri, timeout=10)
     response.raise_for_status()
     return response.json()
@@ -32,15 +28,24 @@ def _get_google_public_keys() -> dict:
     return _get_google_public_keys_cached(cache_key)
 
 
-async def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
-) -> AuthUser:
-    token = credentials.credentials
+async def get_current_user(request: Request) -> AuthUser:
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail={"code": "AUTH_TOKEN_INVALIDO", "message": "Token inválido o expirado"},
         headers={"WWW-Authenticate": "Bearer"},
     )
+
+    # API Gateway reemplaza Authorization con el token del SA de backend.
+    # El JWT original del usuario llega en X-Forwarded-Authorization.
+    forwarded = request.headers.get("x-forwarded-authorization", "")
+    auth = request.headers.get("authorization", "")
+    raw = forwarded if forwarded.startswith("Bearer ") else auth
+
+    if not raw.startswith("Bearer "):
+        raise credentials_exception
+
+    token = raw[7:]
+
     try:
         jwks = _get_google_public_keys()
         header = jwt.get_unverified_header(token)
@@ -73,7 +78,6 @@ async def get_current_user(
 
 
 def require_roles(*roles: str):
-    """Dependencia que exige que el usuario tenga uno de los roles especificados."""
     async def check_role(user: AuthUser = Depends(get_current_user)) -> AuthUser:
         if user.role not in roles:
             raise HTTPException(
