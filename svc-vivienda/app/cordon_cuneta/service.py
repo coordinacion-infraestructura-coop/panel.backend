@@ -4,12 +4,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit import log_audit
 from app.auth import AuthUser
-from app.cordon_cuneta.models import ConfigCordonCuneta, EstadoCordonCuneta, MunicipioCordonCuneta
+from app.cordon_cuneta.models import ConfigCordonCuneta, EstadoCordonCuneta, MunicipioCordonCuneta, PedidoCordonCuneta
 from app.cordon_cuneta.schemas import (
     CordonCunetaFullResponse,
     EstadoResponse,
     MunicipioResponse,
     MunicipioUpdate,
+    PedidoCreate,
+    PedidoResponse,
     PresupuestoUpdate,
 )
 from app.cordon_cuneta.seed_data import ESTADOS_SEED, MUNICIPIOS_SEED
@@ -79,6 +81,41 @@ async def actualizar_presupuesto(
         resource_id="presupuesto", payload={"presupuesto": data.presupuesto}
     )
     return float(config.presupuesto)
+
+
+async def listar_pedidos(db: AsyncSession, municipio_id: str) -> list[PedidoResponse]:
+    result = await db.execute(
+        select(PedidoCordonCuneta)
+        .where(PedidoCordonCuneta.municipio_id == municipio_id)
+        .order_by(PedidoCordonCuneta.fecha_pedido.desc())
+    )
+    return [PedidoResponse.model_validate(p) for p in result.scalars().all()]
+
+
+async def crear_pedido(
+    db: AsyncSession, municipio_id: str, data: PedidoCreate, actor: AuthUser
+) -> PedidoResponse:
+    municipio = (await db.execute(
+        select(MunicipioCordonCuneta).where(MunicipioCordonCuneta.id == municipio_id)
+    )).scalar_one_or_none()
+    if not municipio:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "RECURSO_NO_ENCONTRADO", "message": f"Municipio {municipio_id} no encontrado"},
+        )
+    pedido = PedidoCordonCuneta(
+        municipio_id=municipio_id,
+        descripcion=data.descripcion,
+        fecha_pedido=data.fecha_pedido,
+        created_by=actor.email,
+    )
+    db.add(pedido)
+    await db.flush()
+    await log_audit(
+        db, actor=actor, action="CREATE", resource_type="cc_pedido",
+        resource_id=pedido.id, payload={"municipio_id": municipio_id, "fecha_pedido": str(data.fecha_pedido)}
+    )
+    return PedidoResponse.model_validate(pedido)
 
 
 async def seed_cordon_cuneta(db: AsyncSession) -> None:

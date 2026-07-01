@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict
 
@@ -55,3 +55,18 @@ class CordonCunetaFullResponse(BaseModel):
 
 class PresupuestoUpdate(BaseModel):
     presupuesto: float
+
+
+class PedidoCreate(BaseModel):
+    descripcion: str
+    fecha_pedido: date
+
+
+class PedidoResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    municipio_id: str
+    descripcion: str
+    fecha_pedido: date
+    created_at: datetime
+    created_by: str | None

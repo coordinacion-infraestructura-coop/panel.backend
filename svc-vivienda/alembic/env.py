@@ -13,7 +13,7 @@ from app.programas.models import Programa
 from app.beneficiarios.models import Beneficiario
 from app.expedientes.models import Expediente, HistorialExpediente
 from app.asignaciones.models import Asignacion
-from app.cordon_cuneta.models import MunicipioCordonCuneta
+from app.cordon_cuneta.models import MunicipioCordonCuneta, PedidoCordonCuneta
 
 config = context.config
 

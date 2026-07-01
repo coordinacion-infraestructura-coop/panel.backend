@@ -1,7 +1,7 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, date, timezone
 
-from sqlalchemy import BigInteger, DateTime, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import BigInteger, Date, DateTime, ForeignKey, Integer, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -51,3 +51,16 @@ class ConfigCordonCuneta(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     presupuesto: Mapped[float] = mapped_column(Numeric(18, 2), default=0, nullable=False)
+
+
+class PedidoCordonCuneta(Base):
+    __tablename__ = "viv_cc_pedidos"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    municipio_id: Mapped[str] = mapped_column(String(36), ForeignKey("viv_cordon_cuneta.id", ondelete="CASCADE"), nullable=False)
+    descripcion: Mapped[str] = mapped_column(Text, nullable=False)
+    fecha_pedido: Mapped[date] = mapped_column(Date, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+    created_by: Mapped[str | None] = mapped_column(String(200))

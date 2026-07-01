@@ -8,6 +8,8 @@ from app.cordon_cuneta.schemas import (
     EstadoResponse,
     MunicipioResponse,
     MunicipioUpdate,
+    PedidoCreate,
+    PedidoResponse,
     PresupuestoUpdate,
 )
 from app.database import get_db
@@ -41,6 +43,25 @@ async def actualizar_municipio(
 ):
     """Actualiza el estado de un municipio en Cordón Cuneta."""
     return await service.actualizar_municipio(db, municipio_id, data, actor)
+
+
+@router.get("/cordon-cuneta/{municipio_id}/pedidos", response_model=list[PedidoResponse])
+async def listar_pedidos(
+    municipio_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: AuthUser = Depends(require_roles(*ROLES_LECTURA)),
+):
+    return await service.listar_pedidos(db, municipio_id)
+
+
+@router.post("/cordon-cuneta/{municipio_id}/pedidos", response_model=PedidoResponse, status_code=201)
+async def crear_pedido(
+    municipio_id: str,
+    data: PedidoCreate,
+    db: AsyncSession = Depends(get_db),
+    actor: AuthUser = Depends(require_roles(*ROLES_ESCRITURA)),
+):
+    return await service.crear_pedido(db, municipio_id, data, actor)
 
 
 @router.patch("/cordon-cuneta-config/presupuesto", response_model=float)
