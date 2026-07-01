@@ -28,7 +28,7 @@ async def log_audit(
                  resource_type, resource_id, payload, created_at)
             VALUES
                 (:id, :uid, :email, :role, :action,
-                 :resource_type, :resource_id, :payload::jsonb, :created_at)
+                 :resource_type, :resource_id, CAST(:payload AS jsonb), :created_at)
         """),
         {
             "id": str(uuid.uuid4()),
