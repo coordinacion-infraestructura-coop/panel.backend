@@ -30,7 +30,12 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://ministerio-coop.gob.ar", "http://localhost:5173"],
+    allow_origins=[
+        "https://gestorcooperativo.web.app",
+        "https://gestorcooperativo.firebaseapp.com",
+        "https://ministerio-coop.gob.ar",
+        "http://localhost:5173",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
