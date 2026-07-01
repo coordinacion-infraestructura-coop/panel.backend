@@ -1,3 +1,4 @@
+import json
 import uuid
 from datetime import datetime, timezone
 from typing import Any
@@ -38,7 +39,7 @@ async def log_audit(
             "action": action,
             "resource_type": resource_type,
             "resource_id": resource_id,
-            "payload": str(payload or {}),
+            "payload": json.dumps(payload or {}, default=str),
             "created_at": datetime.now(timezone.utc),
         },
     )
