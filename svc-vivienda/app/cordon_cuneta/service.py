@@ -4,16 +4,38 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit import log_audit
 from app.auth import AuthUser
-from app.cordon_cuneta.models import MunicipioCordonCuneta
-from app.cordon_cuneta.schemas import KpisCordonCuneta, MunicipioResponse, MunicipioUpdate
-from app.cordon_cuneta.seed_data import MUNICIPIOS_SEED
+from app.cordon_cuneta.models import ConfigCordonCuneta, EstadoCordonCuneta, MunicipioCordonCuneta
+from app.cordon_cuneta.schemas import (
+    CordonCunetaFullResponse,
+    EstadoResponse,
+    MunicipioResponse,
+    MunicipioUpdate,
+    PresupuestoUpdate,
+)
+from app.cordon_cuneta.seed_data import ESTADOS_SEED, MUNICIPIOS_SEED
 
 
-async def listar_municipios(db: AsyncSession) -> list[MunicipioResponse]:
-    result = await db.execute(
-        select(MunicipioCordonCuneta).order_by(MunicipioCordonCuneta.municipio)
+async def get_full(db: AsyncSession) -> CordonCunetaFullResponse:
+    municipios_res = await db.execute(
+        select(MunicipioCordonCuneta).order_by(MunicipioCordonCuneta.orden)
     )
-    return [MunicipioResponse.model_validate(m) for m in result.scalars().all()]
+    estados_res = await db.execute(
+        select(EstadoCordonCuneta).order_by(EstadoCordonCuneta.orden)
+    )
+    config_res = await db.execute(select(ConfigCordonCuneta).where(ConfigCordonCuneta.id == 1))
+    config = config_res.scalar_one_or_none()
+    presupuesto = float(config.presupuesto) if config else 0.0
+
+    return CordonCunetaFullResponse(
+        municipios=[MunicipioResponse.model_validate(m) for m in municipios_res.scalars().all()],
+        estados=[EstadoResponse.model_validate(e) for e in estados_res.scalars().all()],
+        presupuesto=presupuesto,
+    )
+
+
+async def listar_estados(db: AsyncSession) -> list[EstadoResponse]:
+    result = await db.execute(select(EstadoCordonCuneta).order_by(EstadoCordonCuneta.orden))
+    return [EstadoResponse.model_validate(e) for e in result.scalars().all()]
 
 
 async def actualizar_municipio(
@@ -28,45 +50,50 @@ async def actualizar_municipio(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"code": "RECURSO_NO_ENCONTRADO", "message": f"Municipio {municipio_id} no encontrado"},
         )
-    updates = data.model_dump(exclude_none=True)
+    updates = data.model_dump(exclude_unset=True)
     updates["updated_by"] = actor.email
     for key, value in updates.items():
         setattr(municipio, key, value)
     await db.flush()
     await db.refresh(municipio)
-    await log_audit(db, actor=actor, action="UPDATE", resource_type="cordon_cuneta", resource_id=municipio_id, payload=updates)
+    await log_audit(
+        db, actor=actor, action="UPDATE", resource_type="cordon_cuneta",
+        resource_id=municipio_id, payload=updates
+    )
     return MunicipioResponse.model_validate(municipio)
 
 
-async def get_kpis(db: AsyncSession) -> KpisCordonCuneta:
-    result = await db.execute(select(MunicipioCordonCuneta))
-    municipios = result.scalars().all()
-    total = len(municipios)
-    con_ok = sum(1 for m in municipios if m.ok_ministerio)
-    monto_total = sum(m.monto or 0 for m in municipios)
-    ml_total = sum(m.cordon_cuneta_ml or 0 for m in municipios)
-    m2_total = sum(m.adoquinado_m2 or 0 for m in municipios)
-    por_estado: dict[str, int] = {}
-    for m in municipios:
-        estado = m.est_documentacion or "Sin estado"
-        por_estado[estado] = por_estado.get(estado, 0) + 1
-    return KpisCordonCuneta(
-        total_municipios=total,
-        con_ok_ministerio=con_ok,
-        monto_total=monto_total,
-        cordon_cuneta_ml_total=ml_total,
-        adoquinado_m2_total=m2_total,
-        por_estado_documentacion=por_estado,
+async def actualizar_presupuesto(
+    db: AsyncSession, data: PresupuestoUpdate, actor: AuthUser
+) -> float:
+    result = await db.execute(select(ConfigCordonCuneta).where(ConfigCordonCuneta.id == 1))
+    config = result.scalar_one_or_none()
+    if config is None:
+        config = ConfigCordonCuneta(id=1, presupuesto=data.presupuesto)
+        db.add(config)
+    else:
+        config.presupuesto = data.presupuesto
+    await db.flush()
+    await log_audit(
+        db, actor=actor, action="UPDATE", resource_type="cordon_cuneta_config",
+        resource_id="presupuesto", payload={"presupuesto": data.presupuesto}
     )
+    return float(config.presupuesto)
 
 
-async def seed_municipios(db: AsyncSession) -> None:
-    """Inserta los 46 municipios iniciales si la tabla está vacía."""
-    result = await db.execute(select(func.count(MunicipioCordonCuneta.id)))
-    count = result.scalar_one()
+async def seed_cordon_cuneta(db: AsyncSession) -> None:
+    count = (await db.execute(select(func.count(MunicipioCordonCuneta.id)))).scalar_one()
     if count > 0:
         return
-    for data in MUNICIPIOS_SEED:
-        municipio = MunicipioCordonCuneta(**data)
-        db.add(municipio)
+
+    for e in ESTADOS_SEED:
+        db.add(EstadoCordonCuneta(**e))
+    await db.flush()
+
+    for m in MUNICIPIOS_SEED:
+        db.add(MunicipioCordonCuneta(**m))
+    await db.flush()
+
+    config = ConfigCordonCuneta(id=1, presupuesto=0)
+    db.add(config)
     await db.flush()
