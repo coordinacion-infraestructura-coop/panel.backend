@@ -64,6 +64,16 @@ async def crear_pedido(
     return await service.crear_pedido(db, municipio_id, data, actor)
 
 
+@router.delete("/cordon-cuneta/{municipio_id}/pedidos/{pedido_id}", status_code=204)
+async def eliminar_pedido(
+    municipio_id: str,
+    pedido_id: str,
+    db: AsyncSession = Depends(get_db),
+    actor: AuthUser = Depends(require_roles(*ROLES_ESCRITURA)),
+):
+    await service.delete_pedido(db, municipio_id, pedido_id, actor)
+
+
 @router.patch("/cordon-cuneta-config/presupuesto", response_model=float)
 async def actualizar_presupuesto(
     data: PresupuestoUpdate,

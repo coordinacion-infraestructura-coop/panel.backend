@@ -118,6 +118,28 @@ async def crear_pedido(
     return PedidoResponse.model_validate(pedido)
 
 
+async def delete_pedido(
+    db: AsyncSession, municipio_id: str, pedido_id: str, actor: AuthUser
+) -> None:
+    result = await db.execute(
+        select(PedidoCordonCuneta).where(
+            PedidoCordonCuneta.id == pedido_id,
+            PedidoCordonCuneta.municipio_id == municipio_id,
+        )
+    )
+    pedido = result.scalar_one_or_none()
+    if not pedido:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "RECURSO_NO_ENCONTRADO", "message": "Pedido no encontrado"},
+        )
+    await db.delete(pedido)
+    await log_audit(
+        db, actor=actor, action="DELETE", resource_type="cc_pedido",
+        resource_id=pedido_id, payload={"municipio_id": municipio_id}
+    )
+
+
 async def seed_cordon_cuneta(db: AsyncSession) -> None:
     count = (await db.execute(select(func.count(MunicipioCordonCuneta.id)))).scalar_one()
     if count > 0:
