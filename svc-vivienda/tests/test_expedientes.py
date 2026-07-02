@@ -240,10 +240,34 @@ async def test_baja_es_estado_terminal(client: AsyncClient, expediente_id: str):
 
 
 @pytest.mark.asyncio
-async def test_transicion_requiere_supervisor(client_operador: AsyncClient, expediente_id: str):
-    """Rol Operador no puede hacer transiciones (requiere Admin|Supervisor)."""
+async def test_transicion_requiere_supervisor(
+    client_operador: AsyncClient, db_session: AsyncSession, programa_id: str
+):
+    """Rol Operador no puede hacer transiciones (requiere Admin|Supervisor).
+    El expediente se crea directamente en DB para evitar conflicto de fixtures entre
+    client (Admin) y client_operador, ya que ambos sobreescriben dependency_overrides.
+    """
+    from app.beneficiarios.models import Beneficiario
+    from app.expedientes.models import Expediente, EstadoExpediente
+
+    bene = Beneficiario(dni="55544433", nombre="Test", apellido="User", created_by="test@test.com",
+                        updated_by="test@test.com")
+    db_session.add(bene)
+    await db_session.flush()
+
+    exp = Expediente(
+        numero_expediente="VIV-2026-999001",
+        beneficiario_id=bene.id,
+        programa_id=programa_id,
+        estado=EstadoExpediente.INGRESADO.value,
+        created_by="test@test.com",
+        updated_by="test@test.com",
+    )
+    db_session.add(exp)
+    await db_session.flush()
+
     r = await client_operador.post(
-        f"{BASE_EXP}/{expediente_id}/transicion",
+        f"{BASE_EXP}/{exp.id}/transicion",
         json={"estado_nuevo": "EN_EVALUACION"},
     )
     assert r.status_code == 403

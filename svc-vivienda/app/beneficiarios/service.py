@@ -48,7 +48,9 @@ async def buscar_por_dni(db: AsyncSession, dni: str) -> BeneficiarioResponse:
 async def crear_beneficiario(
     db: AsyncSession, data: BeneficiarioCreate, actor: AuthUser
 ) -> BeneficiarioResponse:
-    existing = await repository.get_by_dni(db, data.dni)
+    # Chequeo incluye soft-deleted: la constraint UNIQUE en DB aplica a todos los registros,
+    # y un DNI ya usado (aunque esté eliminado) no puede reutilizarse.
+    existing = await repository.get_by_dni_any_status(db, data.dni)
     if existing:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,

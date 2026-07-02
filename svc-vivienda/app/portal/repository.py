@@ -96,10 +96,7 @@ async def update_usuario(
 
     usuario.updated_by = actor_email
     await db.flush()
-
-    result = await db.execute(
-        select(PortalUsuario)
-        .options(selectinload(PortalUsuario.secretarias))
-        .where(PortalUsuario.email == usuario.email)
-    )
-    return result.scalar_one()
+    # Expira la relación cacheada en el identity map para que el siguiente acceso
+    # la recargue desde DB (el bulk DELETE no invalida automáticamente el cache ORM).
+    await db.refresh(usuario, attribute_names=["secretarias"])
+    return usuario

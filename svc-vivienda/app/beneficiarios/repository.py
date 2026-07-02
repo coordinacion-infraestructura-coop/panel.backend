@@ -42,6 +42,14 @@ async def get_by_dni(db: AsyncSession, dni: str) -> Beneficiario | None:
     return result.scalar_one_or_none()
 
 
+async def get_by_dni_any_status(db: AsyncSession, dni: str) -> Beneficiario | None:
+    """Busca por DNI incluyendo registros eliminados (para chequeo de unicidad)."""
+    result = await db.execute(
+        select(Beneficiario).where(Beneficiario.dni == dni)
+    )
+    return result.scalar_one_or_none()
+
+
 async def create(db: AsyncSession, data: dict) -> Beneficiario:
     beneficiario = Beneficiario(**data)
     db.add(beneficiario)

@@ -74,11 +74,12 @@ async def eliminar_pedido(
     await service.delete_pedido(db, municipio_id, pedido_id, actor)
 
 
-@router.patch("/cordon-cuneta-config/presupuesto", response_model=float)
+@router.patch("/cordon-cuneta-config/presupuesto")
 async def actualizar_presupuesto(
     data: PresupuestoUpdate,
     db: AsyncSession = Depends(get_db),
     actor: AuthUser = Depends(require_roles(*ROLES_ESCRITURA)),
 ):
     """Actualiza el crédito presupuestario asignado al programa."""
-    return await service.actualizar_presupuesto(db, data, actor)
+    presupuesto = await service.actualizar_presupuesto(db, data, actor)
+    return {"presupuesto": presupuesto}

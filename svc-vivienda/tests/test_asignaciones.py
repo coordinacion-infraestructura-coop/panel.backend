@@ -143,12 +143,34 @@ async def test_actualizar_asignacion(client: AsyncClient, expediente_asignado: s
 
 @pytest.mark.asyncio
 async def test_crear_asignacion_requiere_supervisor(
-    client_operador: AsyncClient, expediente_asignado: str
+    client_operador: AsyncClient, db_session: AsyncSession, programa_id: str
 ):
-    """Rol Operador no puede crear asignaciones (requiere Admin|Supervisor)."""
+    """Rol Operador no puede crear asignaciones (requiere Admin|Supervisor).
+    El expediente se crea directamente en DB para evitar conflicto de fixtures entre
+    client (Admin) y client_operador, ya que ambos sobreescriben dependency_overrides.
+    """
+    from app.beneficiarios.models import Beneficiario
+    from app.expedientes.models import Expediente, EstadoExpediente
+
+    bene = Beneficiario(dni="66655544", nombre="Test", apellido="User", created_by="test@test.com",
+                        updated_by="test@test.com")
+    db_session.add(bene)
+    await db_session.flush()
+
+    exp = Expediente(
+        numero_expediente="VIV-2026-999002",
+        beneficiario_id=bene.id,
+        programa_id=programa_id,
+        estado=EstadoExpediente.ASIGNADO.value,
+        created_by="test@test.com",
+        updated_by="test@test.com",
+    )
+    db_session.add(exp)
+    await db_session.flush()
+
     r = await client_operador.post(BASE_ASIG, json={
         **_ASIG_BASE,
-        "expediente_id": expediente_asignado,
+        "expediente_id": exp.id,
     })
     assert r.status_code == 403
 

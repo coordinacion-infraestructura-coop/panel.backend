@@ -139,14 +139,15 @@ async def test_soft_delete_no_aparece_en_listado(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_soft_delete_libera_dni_para_reinsercion(client: AsyncClient):
-    """Tras eliminar, se puede reutilizar el mismo DNI."""
+async def test_soft_delete_bloquea_reutilizacion_de_dni(client: AsyncClient):
+    """Un DNI soft-deleted no puede reutilizarse: la UNIQUE constraint aplica a todos los registros."""
     cr = await client.post(BASE, json=_BENE_BASE)
     bid = cr.json()["id"]
     await client.delete(f"{BASE}/{bid}")
 
     r = await client.post(BASE, json={**_BENE_BASE, "nombre": "Nuevo"})
-    assert r.status_code == 201
+    assert r.status_code == 409
+    assert r.json()["detail"]["code"] == "VALIDACION_FALLIDA"
 
 
 # ── Búsqueda por texto ─────────────────────────────────────────────────────────
