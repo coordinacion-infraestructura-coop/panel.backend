@@ -11,6 +11,7 @@ from app.beneficiarios.router import router as beneficiarios_router
 from app.expedientes.router import router as expedientes_router
 from app.asignaciones.router import router as asignaciones_router
 from app.cordon_cuneta.router import router as cordon_cuneta_router
+from app.portal.router import router as portal_router
 
 
 @asynccontextmanager
@@ -66,3 +67,4 @@ app.include_router(beneficiarios_router, prefix="/api/v1/vivienda", tags=["benef
 app.include_router(expedientes_router, prefix="/api/v1/vivienda", tags=["expedientes"])
 app.include_router(asignaciones_router, prefix="/api/v1/vivienda", tags=["asignaciones"])
 app.include_router(cordon_cuneta_router, prefix="/api/v1/vivienda", tags=["cordon-cuneta"])
+app.include_router(portal_router, prefix="/api/v1", tags=["portal"])

@@ -5,15 +5,17 @@ import httpx
 from fastapi import Depends, HTTPException, Request, status
 from jose import JWTError, jwt
 from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.database import get_db
 
 
 class AuthUser(BaseModel):
     uid: str
     email: str
-    role: str
-    secretaria: str | None = None
+    role: str                     # kept as 'role' — audit.py uses actor.role
+    secretarias: list[str] = []
 
 
 @lru_cache(maxsize=1)
@@ -28,7 +30,10 @@ def _get_google_public_keys() -> dict:
     return _get_google_public_keys_cached(cache_key)
 
 
-async def get_current_user(request: Request) -> AuthUser:
+async def get_current_user(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> AuthUser:
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail={"code": "AUTH_TOKEN_INVALIDO", "message": "Token inválido o expirado"},
@@ -65,16 +70,25 @@ async def get_current_user(request: Request) -> AuthUser:
         )
         uid: str = payload.get("sub")
         email: str = payload.get("email", "")
-        role: str = payload.get("role", "operador")
-        secretaria: str | None = payload.get("secretaria")
 
         if uid is None:
             raise credentials_exception
 
-        return AuthUser(uid=uid, email=email, role=role, secretaria=secretaria)
-
     except JWTError:
         raise credentials_exception
+
+    # DB lookup para rol y secretarías (importación local evita dependencia circular)
+    from app.portal.repository import get_portal_user
+
+    portal_user = await get_portal_user(db, email)
+    if portal_user:
+        role = portal_user.rol
+        secretarias = [s.secretaria for s in portal_user.secretarias]
+    else:
+        role = "invitado"
+        secretarias = []
+
+    return AuthUser(uid=uid, email=email, role=role, secretarias=secretarias)
 
 
 def require_roles(*roles: str):
@@ -91,6 +105,8 @@ def require_roles(*roles: str):
     return check_role
 
 
-ROLES_LECTURA = ("ministro", "secretario", "director", "operador", "admin_sistema")
-ROLES_ESCRITURA = ("secretario", "director", "operador", "admin_sistema")
-ROLES_TRANSICION = ("secretario", "director", "admin_sistema")
+ROLES_LECTURA = ("Admin", "Supervisor", "Operador", "Consulta")
+ROLES_ESCRITURA = ("Admin", "Supervisor", "Operador")
+ROLES_TRANSICION = ("Admin", "Supervisor")
+ROLES_ELIMINACION = ("Admin",)
+ROLES_ADMIN = ("Admin",)
