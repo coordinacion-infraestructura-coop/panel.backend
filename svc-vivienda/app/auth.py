@@ -77,14 +77,19 @@ async def get_current_user(
     except JWTError:
         raise credentials_exception
 
-    # DB lookup para rol y secretarías (importación local evita dependencia circular)
-    from app.portal.repository import get_portal_user
+    # DB lookup para rol y secretarías (importación local evita dependencia circular).
+    # Try/except: si la tabla no existe aún (migración pendiente) devuelve invitado en lugar de 500.
+    try:
+        from app.portal.repository import get_portal_user
 
-    portal_user = await get_portal_user(db, email)
-    if portal_user:
-        role = portal_user.rol
-        secretarias = [s.secretaria for s in portal_user.secretarias]
-    else:
+        portal_user = await get_portal_user(db, email)
+        if portal_user:
+            role = portal_user.rol
+            secretarias = [s.secretaria for s in portal_user.secretarias]
+        else:
+            role = "invitado"
+            secretarias = []
+    except Exception:
         role = "invitado"
         secretarias = []
 
