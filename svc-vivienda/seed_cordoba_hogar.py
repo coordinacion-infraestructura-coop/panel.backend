@@ -11,6 +11,7 @@ Primero correr la migración 0006:
 import asyncio
 import os
 import sys
+from datetime import date
 
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
@@ -43,7 +44,10 @@ async def main():
             print(f"  {len(ESTADOS_SEED)} estados insertados")
 
             for loc in LOCALIDADES_SEED:
-                db.add(LocalidadCordobaHogar(**loc))
+                loc_data = dict(loc)
+                if loc_data.get('fecha_anuncio'):
+                    loc_data['fecha_anuncio'] = date.fromisoformat(loc_data['fecha_anuncio'])
+                db.add(LocalidadCordobaHogar(**loc_data))
             await db.flush()
             print(f"  {len(LOCALIDADES_SEED)} localidades insertadas")
 
