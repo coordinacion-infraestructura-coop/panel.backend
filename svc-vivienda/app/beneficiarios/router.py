@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import AuthUser, get_current_user, require_roles, ROLES_ESCRITURA, ROLES_LECTURA
+from app.auth import AuthUser, get_current_user, require_roles, ROLES_ELIMINACION, ROLES_ESCRITURA, ROLES_LECTURA
 from app.database import get_db
 from app.beneficiarios import service
 from app.beneficiarios.schemas import (
@@ -66,6 +66,6 @@ async def actualizar_beneficiario(
 async def eliminar_beneficiario(
     beneficiario_id: str,
     db: AsyncSession = Depends(get_db),
-    actor: AuthUser = Depends(require_roles(*ROLES_ESCRITURA)),
+    actor: AuthUser = Depends(require_roles(*ROLES_ELIMINACION)),
 ):
     await service.eliminar_beneficiario(db, beneficiario_id, actor)

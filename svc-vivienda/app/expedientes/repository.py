@@ -6,15 +6,25 @@ from app.expedientes.models import Expediente, HistorialExpediente
 
 
 async def get_next_numero(db: AsyncSession, year: int) -> str:
-    """Genera el próximo número de expediente VIV-YYYY-NNNNNN."""
+    """Genera el próximo número de expediente VIV-YYYY-NNNNNN.
+
+    Usa MAX sobre el número como string (zero-padded a 6 dígitos, por lo que
+    el orden alfabético coincide con el numérico). Más robusto que COUNT cuando
+    existen registros manuales o gaps en la secuencia.
+    Nota: requiere lock de fila externo o manejo de IntegrityError en
+    el caller para eliminar la race condition bajo carga concurrente.
+    """
     prefix = f"VIV-{year}-"
     result = await db.execute(
-        select(func.count(Expediente.id)).where(
+        select(func.max(Expediente.numero_expediente)).where(
             Expediente.numero_expediente.like(f"{prefix}%")
         )
     )
-    count = result.scalar_one() + 1
-    return f"{prefix}{count:06d}"
+    max_num = result.scalar_one_or_none()
+    if max_num:
+        last_n = int(max_num.split("-")[-1])
+        return f"{prefix}{last_n + 1:06d}"
+    return f"{prefix}000001"
 
 
 async def get_all(

@@ -84,6 +84,14 @@ async def actualizar_presupuesto(
 
 
 async def listar_pedidos(db: AsyncSession, municipio_id: str) -> list[PedidoResponse]:
+    municipio = (await db.execute(
+        select(MunicipioCordonCuneta).where(MunicipioCordonCuneta.id == municipio_id)
+    )).scalar_one_or_none()
+    if not municipio:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "RECURSO_NO_ENCONTRADO", "message": f"Municipio {municipio_id} no encontrado"},
+        )
     result = await db.execute(
         select(PedidoCordonCuneta)
         .where(PedidoCordonCuneta.municipio_id == municipio_id)
