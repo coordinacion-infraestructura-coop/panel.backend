@@ -7,7 +7,7 @@ Create Date: 2026-07-04 00:00:00.000000
 
 import re
 import uuid
-from datetime import date
+from datetime import date, datetime, timezone
 
 import sqlalchemy as sa
 from alembic import op
@@ -138,8 +138,8 @@ def _find_prev_estado_id(conn, tabla_estados: str, estado_id: int):
     return row[0] if row else None
 
 
-def _ts(day: int, month: int, year: int = 2026) -> str:
-    return f"{year}-{month:02d}-{day:02d}T00:00:00+00:00"
+def _ts(day: int, month: int, year: int = 2026) -> datetime:
+    return datetime(year, month, day, tzinfo=timezone.utc)
 
 
 def upgrade() -> None:
@@ -192,13 +192,13 @@ def upgrade() -> None:
             estado_anterior_id = _find_prev_estado_id(conn, "viv_cc_estados", estado_nuevo_id)
             campo = "etecnico" if re.search(r"\btc\b", desc.lower()) else "ejuridico"
             try:
-                ts = _ts(day, month)
-            except Exception:
-                ts = _ts(TODAY.day, TODAY.month)
+                ts = datetime(2026, month, day, tzinfo=timezone.utc)
+            except ValueError:
+                ts = datetime(TODAY.year, TODAY.month, TODAY.day, tzinfo=timezone.utc)
             conn.execute(sa.text("""
                 INSERT INTO viv_cc_estado_historial
                     (id, municipio_id, campo, estado_anterior_id, estado_nuevo_id, created_at, created_by)
-                VALUES (:id, :mid, :campo, :ea, :en, :ts::timestamptz, 'importado-html')
+                VALUES (:id, :mid, :campo, :ea, :en, :ts, 'importado-html')
             """), {
                 "id": str(uuid.uuid4()), "mid": row_id, "campo": campo,
                 "ea": estado_anterior_id, "en": estado_nuevo_id, "ts": ts,
@@ -221,9 +221,9 @@ def upgrade() -> None:
             estado_anterior_id = _find_prev_estado_id(conn, "viv_ch_estados", estado_nuevo_id)
             campo = "etecnico" if re.search(r"\btc\b", desc.lower()) else "ejuridico"
             try:
-                ts = _ts(day, month)
-            except Exception:
-                ts = _ts(TODAY.day, TODAY.month)
+                ts = datetime(2026, month, day, tzinfo=timezone.utc)
+            except ValueError:
+                ts = datetime(TODAY.year, TODAY.month, TODAY.day, tzinfo=timezone.utc)
             conn.execute(sa.text("""
                 INSERT INTO viv_ch_estado_historial
                     (id, localidad_id, campo, estado_anterior_id, estado_nuevo_id, created_at, created_by)
