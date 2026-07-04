@@ -13,7 +13,21 @@ from app.programas.models import Programa
 from app.beneficiarios.models import Beneficiario
 from app.expedientes.models import Expediente, HistorialExpediente
 from app.asignaciones.models import Asignacion
-from app.cordon_cuneta.models import MunicipioCordonCuneta, PedidoCordonCuneta
+from app.cordon_cuneta.models import (
+    ConfigCordonCuneta,
+    EstadoCordonCuneta,
+    EstadoHistorialCC,
+    MunicipioCordonCuneta,
+    PedidoCordonCuneta,
+)
+from app.cordoba_hogar.models import (
+    ConfigCordobaHogar,
+    EstadoCordobaHogar,
+    EstadoHistorialCH,
+    LocalidadCordobaHogar,
+    PedidoCordobaHogar,
+)
+from app.geo.models import GeoLocalidad
 from app.portal.models import PortalUsuario, PortalUsuarioSecretaria
 
 config = context.config
