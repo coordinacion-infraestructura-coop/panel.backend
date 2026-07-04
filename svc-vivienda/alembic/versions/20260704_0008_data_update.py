@@ -260,6 +260,9 @@ def upgrade() -> None:
         geo_data = json.load(f)
 
     for loc in geo_data:
+        activo_raw = loc.get("activo", True)
+        lat_raw = loc.get("lat_centro")
+        lon_raw = loc.get("lon_centro")
         conn.execute(sa.text("""
             INSERT INTO viv_geo_localidades (id_geo, departamento, localidad, lat_centro, lon_centro, activo)
             VALUES (:id_geo, :departamento, :localidad, :lat_centro, :lon_centro, :activo)
@@ -268,9 +271,9 @@ def upgrade() -> None:
             "id_geo": str(loc.get("id_geo", "")),
             "departamento": loc.get("departamento", ""),
             "localidad": loc.get("localidad", ""),
-            "lat_centro": loc.get("lat_centro"),
-            "lon_centro": loc.get("lon_centro"),
-            "activo": loc.get("activo", True),
+            "lat_centro": float(lat_raw) if lat_raw is not None else None,
+            "lon_centro": float(lon_raw) if lon_raw is not None else None,
+            "activo": activo_raw if isinstance(activo_raw, bool) else str(activo_raw).lower() == "true",
         })
 
 
