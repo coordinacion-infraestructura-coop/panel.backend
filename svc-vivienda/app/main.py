@@ -13,6 +13,7 @@ from app.asignaciones.router import router as asignaciones_router
 from app.cordon_cuneta.router import router as cordon_cuneta_router
 from app.cordoba_hogar.router import router as cordoba_hogar_router
 from app.portal.router import router as portal_router
+from app.geo.models import GeoLocalidad  # noqa: F401 — ensures table is registered with Base
 
 
 @asynccontextmanager

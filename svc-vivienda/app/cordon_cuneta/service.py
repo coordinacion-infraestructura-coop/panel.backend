@@ -1,13 +1,28 @@
+import time
+import uuid
+from datetime import datetime, timezone
+
 from fastapi import HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit import log_audit
 from app.auth import AuthUser
-from app.cordon_cuneta.models import ConfigCordonCuneta, EstadoCordonCuneta, MunicipioCordonCuneta, PedidoCordonCuneta
+from app.cordon_cuneta.models import (
+    ConfigCordonCuneta,
+    EstadoCordonCuneta,
+    EstadoHistorialCC,
+    MunicipioCordonCuneta,
+    PedidoCordonCuneta,
+)
 from app.cordon_cuneta.schemas import (
     CordonCunetaFullResponse,
+    EstadoCreate,
+    EstadoHistorialResponse,
     EstadoResponse,
+    EstadoUpdate,
+    GeoLocalidadResponse,
+    MunicipioCreate,
     MunicipioResponse,
     MunicipioUpdate,
     PedidoCreate,
@@ -15,15 +30,29 @@ from app.cordon_cuneta.schemas import (
     PresupuestoUpdate,
 )
 from app.cordon_cuneta.seed_data import ESTADOS_SEED, MUNICIPIOS_SEED
+from app.geo.models import GeoLocalidad
+
+
+async def _compute_estado_general(db: AsyncSession, ids: list[int | None]) -> int | None:
+    non_null = [i for i in ids if i is not None]
+    if not non_null:
+        return None
+    result = await db.execute(
+        select(EstadoCordonCuneta.id)
+        .where(EstadoCordonCuneta.id.in_(non_null))
+        .order_by(EstadoCordonCuneta.orden.asc())
+        .limit(1)
+    )
+    return result.scalar_one_or_none()
 
 
 async def get_full(db: AsyncSession) -> CordonCunetaFullResponse:
     municipios_res = await db.execute(
-        select(MunicipioCordonCuneta).order_by(MunicipioCordonCuneta.orden)
+        select(MunicipioCordonCuneta)
+        .where(MunicipioCordonCuneta.deleted_at.is_(None))
+        .order_by(MunicipioCordonCuneta.orden)
     )
-    estados_res = await db.execute(
-        select(EstadoCordonCuneta).order_by(EstadoCordonCuneta.orden)
-    )
+    estados_res = await db.execute(select(EstadoCordonCuneta).order_by(EstadoCordonCuneta.orden))
     config_res = await db.execute(select(ConfigCordonCuneta).where(ConfigCordonCuneta.id == 1))
     config = config_res.scalar_one_or_none()
     presupuesto = float(config.presupuesto) if config else 0.0
@@ -40,11 +69,86 @@ async def listar_estados(db: AsyncSession) -> list[EstadoResponse]:
     return [EstadoResponse.model_validate(e) for e in result.scalars().all()]
 
 
+async def crear_estado(db: AsyncSession, data: EstadoCreate, actor: AuthUser) -> EstadoResponse:
+    new_id = int(time.time() * 1000)
+    estado = EstadoCordonCuneta(
+        id=new_id,
+        label=data.label,
+        bg=data.bg,
+        text_color=data.text_color,
+        orden=data.orden,
+        aplica_juridico=data.aplica_juridico,
+        aplica_tecnico=data.aplica_tecnico,
+        aplica_financiero=data.aplica_financiero,
+    )
+    db.add(estado)
+    await db.flush()
+    await log_audit(
+        db, actor=actor, action="CREATE", resource_type="cc_estado",
+        resource_id=str(new_id), payload=data.model_dump()
+    )
+    return EstadoResponse.model_validate(estado)
+
+
+async def actualizar_estado(
+    db: AsyncSession, estado_id: int, data: EstadoUpdate, actor: AuthUser
+) -> EstadoResponse:
+    result = await db.execute(select(EstadoCordonCuneta).where(EstadoCordonCuneta.id == estado_id))
+    estado = result.scalar_one_or_none()
+    if not estado:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "RECURSO_NO_ENCONTRADO", "message": f"Estado {estado_id} no encontrado"},
+        )
+    updates = data.model_dump(exclude_unset=True)
+    for key, value in updates.items():
+        setattr(estado, key, value)
+    await db.flush()
+    await db.refresh(estado)
+    await log_audit(
+        db, actor=actor, action="UPDATE", resource_type="cc_estado",
+        resource_id=str(estado_id), payload=updates
+    )
+    return EstadoResponse.model_validate(estado)
+
+
+async def eliminar_estado(db: AsyncSession, estado_id: int, actor: AuthUser) -> None:
+    result = await db.execute(select(EstadoCordonCuneta).where(EstadoCordonCuneta.id == estado_id))
+    estado = result.scalar_one_or_none()
+    if not estado:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "RECURSO_NO_ENCONTRADO", "message": f"Estado {estado_id} no encontrado"},
+        )
+    # Check for existing references
+    ref_count = (await db.execute(
+        select(func.count(MunicipioCordonCuneta.id)).where(
+            MunicipioCordonCuneta.deleted_at.is_(None),
+            (MunicipioCordonCuneta.ejuridico == estado_id)
+            | (MunicipioCordonCuneta.etecnico == estado_id)
+            | (MunicipioCordonCuneta.efinanciero == estado_id),
+        )
+    )).scalar_one()
+    if ref_count > 0:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "ESTADO_EN_USO", "message": f"El estado está en uso en {ref_count} municipio(s)"},
+        )
+    await db.delete(estado)
+    await log_audit(
+        db, actor=actor, action="DELETE", resource_type="cc_estado",
+        resource_id=str(estado_id), payload={}
+    )
+
+
 async def actualizar_municipio(
     db: AsyncSession, municipio_id: str, data: MunicipioUpdate, actor: AuthUser
 ) -> MunicipioResponse:
     result = await db.execute(
-        select(MunicipioCordonCuneta).where(MunicipioCordonCuneta.id == municipio_id)
+        select(MunicipioCordonCuneta).where(
+            MunicipioCordonCuneta.id == municipio_id,
+            MunicipioCordonCuneta.deleted_at.is_(None),
+        )
     )
     municipio = result.scalar_one_or_none()
     if not municipio:
@@ -52,10 +156,38 @@ async def actualizar_municipio(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"code": "RECURSO_NO_ENCONTRADO", "message": f"Municipio {municipio_id} no encontrado"},
         )
+
     updates = data.model_dump(exclude_unset=True)
+
+    historial = []
+    for campo in ("ejuridico", "etecnico", "efinanciero"):
+        if campo in updates:
+            old_val = getattr(municipio, campo)
+            new_val = updates[campo]
+            if new_val is not None and old_val != new_val:
+                historial.append(
+                    EstadoHistorialCC(
+                        municipio_id=municipio_id,
+                        campo=campo,
+                        estado_anterior_id=old_val,
+                        estado_nuevo_id=new_val,
+                        created_by=actor.email,
+                    )
+                )
+
     updates["updated_by"] = actor.email
     for key, value in updates.items():
         setattr(municipio, key, value)
+
+    municipio.estado_general = await _compute_estado_general(
+        db, [municipio.ejuridico, municipio.etecnico, municipio.efinanciero]
+    )
+
+    await db.flush()
+
+    for entry in historial:
+        db.add(entry)
+
     await db.flush()
     await db.refresh(municipio)
     await log_audit(
@@ -63,6 +195,82 @@ async def actualizar_municipio(
         resource_id=municipio_id, payload=updates
     )
     return MunicipioResponse.model_validate(municipio)
+
+
+async def crear_municipio(
+    db: AsyncSession, data: MunicipioCreate, actor: AuthUser
+) -> MunicipioResponse:
+    max_orden = (await db.execute(
+        select(func.max(MunicipioCordonCuneta.orden)).where(MunicipioCordonCuneta.deleted_at.is_(None))
+    )).scalar_one() or 0
+
+    municipio = MunicipioCordonCuneta(
+        orden=max_orden + 1,
+        municipio=data.municipio,
+        departamento=data.departamento,
+        expediente=data.expediente,
+        monto=data.monto,
+        ok_gob=data.ok_gob,
+        ejuridico=data.ejuridico,
+        etecnico=data.etecnico,
+        efinanciero=data.efinanciero,
+        updated_by=actor.email,
+    )
+    db.add(municipio)
+    await db.flush()
+
+    municipio.estado_general = await _compute_estado_general(
+        db, [municipio.ejuridico, municipio.etecnico, municipio.efinanciero]
+    )
+    await db.flush()
+    await db.refresh(municipio)
+    await log_audit(
+        db, actor=actor, action="CREATE", resource_type="cordon_cuneta",
+        resource_id=municipio.id, payload=data.model_dump()
+    )
+    return MunicipioResponse.model_validate(municipio)
+
+
+async def eliminar_municipio(db: AsyncSession, municipio_id: str, actor: AuthUser) -> None:
+    result = await db.execute(
+        select(MunicipioCordonCuneta).where(
+            MunicipioCordonCuneta.id == municipio_id,
+            MunicipioCordonCuneta.deleted_at.is_(None),
+        )
+    )
+    municipio = result.scalar_one_or_none()
+    if not municipio:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "RECURSO_NO_ENCONTRADO", "message": f"Municipio {municipio_id} no encontrado"},
+        )
+    municipio.deleted_at = datetime.now(timezone.utc)
+    municipio.updated_by = actor.email
+    await db.flush()
+    await log_audit(
+        db, actor=actor, action="DELETE", resource_type="cordon_cuneta",
+        resource_id=municipio_id, payload={}
+    )
+
+
+async def get_historial(
+    db: AsyncSession, municipio_id: str
+) -> list[EstadoHistorialResponse]:
+    result = await db.execute(
+        select(EstadoHistorialCC)
+        .where(EstadoHistorialCC.municipio_id == municipio_id)
+        .order_by(EstadoHistorialCC.created_at.desc())
+    )
+    return [EstadoHistorialResponse.model_validate(h) for h in result.scalars().all()]
+
+
+async def listar_geo_localidades(db: AsyncSession) -> list[GeoLocalidadResponse]:
+    result = await db.execute(
+        select(GeoLocalidad)
+        .where(GeoLocalidad.activo.is_(True))
+        .order_by(GeoLocalidad.departamento, GeoLocalidad.localidad)
+    )
+    return [GeoLocalidadResponse.model_validate(g) for g in result.scalars().all()]
 
 
 async def actualizar_presupuesto(
@@ -85,7 +293,10 @@ async def actualizar_presupuesto(
 
 async def listar_pedidos(db: AsyncSession, municipio_id: str) -> list[PedidoResponse]:
     municipio = (await db.execute(
-        select(MunicipioCordonCuneta).where(MunicipioCordonCuneta.id == municipio_id)
+        select(MunicipioCordonCuneta).where(
+            MunicipioCordonCuneta.id == municipio_id,
+            MunicipioCordonCuneta.deleted_at.is_(None),
+        )
     )).scalar_one_or_none()
     if not municipio:
         raise HTTPException(
@@ -104,7 +315,10 @@ async def crear_pedido(
     db: AsyncSession, municipio_id: str, data: PedidoCreate, actor: AuthUser
 ) -> PedidoResponse:
     municipio = (await db.execute(
-        select(MunicipioCordonCuneta).where(MunicipioCordonCuneta.id == municipio_id)
+        select(MunicipioCordonCuneta).where(
+            MunicipioCordonCuneta.id == municipio_id,
+            MunicipioCordonCuneta.deleted_at.is_(None),
+        )
     )).scalar_one_or_none()
     if not municipio:
         raise HTTPException(

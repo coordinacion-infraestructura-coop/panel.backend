@@ -1,5 +1,5 @@
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from decimal import Decimal
 
 from sqlalchemy import BigInteger, Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String, Text, func
@@ -16,6 +16,9 @@ class EstadoCordobaHogar(Base):
     bg: Mapped[str] = mapped_column(String(10))
     text_color: Mapped[str] = mapped_column(String(10))
     orden: Mapped[int] = mapped_column(Integer)
+    aplica_juridico: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
+    aplica_tecnico: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
+    aplica_financiero: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
 
 
 class LocalidadCordobaHogar(Base):
@@ -34,12 +37,32 @@ class LocalidadCordobaHogar(Base):
     ejuridico: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("viv_ch_estados.id"))
     etecnico: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("viv_ch_estados.id"))
     efinanciero: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("viv_ch_estados.id"))
+    estado_general: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("viv_ch_estados.id", name="fk_ch_estado_general")
+    )
     obs: Mapped[str | None] = mapped_column(Text)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
     updated_by: Mapped[str | None] = mapped_column(String(255))
+
+
+class EstadoHistorialCH(Base):
+    __tablename__ = "viv_ch_estado_historial"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    localidad_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("viv_cordoba_hogar.id", ondelete="CASCADE"), nullable=False
+    )
+    campo: Mapped[str] = mapped_column(String(30), nullable=False)
+    estado_anterior_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("viv_ch_estados.id"))
+    estado_nuevo_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("viv_ch_estados.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+    created_by: Mapped[str | None] = mapped_column(String(255))
 
 
 class ConfigCordobaHogar(Base):

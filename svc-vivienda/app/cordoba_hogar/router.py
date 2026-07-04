@@ -1,21 +1,23 @@
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import AuthUser, get_current_user, require_roles
+from app.auth import AuthUser, require_roles, ROLES_ESCRITURA, ROLES_LECTURA, ROLES_TRANSICION
 from app.database import get_db
 from app.cordoba_hogar import service
 from app.cordoba_hogar.schemas import (
     CordobaHogarFullResponse,
+    EstadoCreate,
+    EstadoHistorialResponse,
     EstadoResponse,
+    EstadoUpdate,
+    GeoLocalidadResponse,
+    LocalidadCreate,
     LocalidadResponse,
     LocalidadUpdate,
     PedidoCreate,
     PedidoResponse,
     PresupuestoUpdate,
 )
-
-ROLES_LECTURA = ("Admin", "Supervisor", "Operador", "Consulta")
-ROLES_ESCRITURA = ("Admin", "Supervisor", "Operador")
 
 router = APIRouter()
 
@@ -36,6 +38,51 @@ async def listar_estados(
     return await service.listar_estados(db)
 
 
+@router.post("/cordoba-hogar/estados", response_model=EstadoResponse, status_code=status.HTTP_201_CREATED)
+async def crear_estado(
+    data: EstadoCreate,
+    db: AsyncSession = Depends(get_db),
+    actor: AuthUser = Depends(require_roles(*ROLES_TRANSICION)),
+):
+    return await service.crear_estado(db, data, actor)
+
+
+@router.patch("/cordoba-hogar/estados/{estado_id}", response_model=EstadoResponse)
+async def actualizar_estado(
+    estado_id: int,
+    data: EstadoUpdate,
+    db: AsyncSession = Depends(get_db),
+    actor: AuthUser = Depends(require_roles(*ROLES_TRANSICION)),
+):
+    return await service.actualizar_estado(db, estado_id, data, actor)
+
+
+@router.delete("/cordoba-hogar/estados/{estado_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def eliminar_estado(
+    estado_id: int,
+    db: AsyncSession = Depends(get_db),
+    actor: AuthUser = Depends(require_roles(*ROLES_TRANSICION)),
+):
+    await service.eliminar_estado(db, estado_id, actor)
+
+
+@router.get("/cordoba-hogar/geo", response_model=list[GeoLocalidadResponse])
+async def listar_geo(
+    db: AsyncSession = Depends(get_db),
+    _: AuthUser = Depends(require_roles(*ROLES_LECTURA)),
+):
+    return await service.listar_geo_localidades(db)
+
+
+@router.post("/cordoba-hogar", response_model=LocalidadResponse, status_code=status.HTTP_201_CREATED)
+async def crear_localidad(
+    data: LocalidadCreate,
+    db: AsyncSession = Depends(get_db),
+    actor: AuthUser = Depends(require_roles(*ROLES_ESCRITURA)),
+):
+    return await service.crear_localidad(db, data, actor)
+
+
 @router.patch("/cordoba-hogar/{localidad_id}", response_model=LocalidadResponse)
 async def actualizar_localidad(
     localidad_id: str,
@@ -44,6 +91,24 @@ async def actualizar_localidad(
     actor: AuthUser = Depends(require_roles(*ROLES_ESCRITURA)),
 ):
     return await service.actualizar_localidad(db, localidad_id, data, actor)
+
+
+@router.delete("/cordoba-hogar/{localidad_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def eliminar_localidad(
+    localidad_id: str,
+    db: AsyncSession = Depends(get_db),
+    actor: AuthUser = Depends(require_roles(*ROLES_TRANSICION)),
+):
+    await service.eliminar_localidad(db, localidad_id, actor)
+
+
+@router.get("/cordoba-hogar/{localidad_id}/historial", response_model=list[EstadoHistorialResponse])
+async def get_historial(
+    localidad_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: AuthUser = Depends(require_roles(*ROLES_LECTURA)),
+):
+    return await service.get_historial(db, localidad_id)
 
 
 @router.get("/cordoba-hogar/{localidad_id}/pedidos", response_model=list[PedidoResponse])
