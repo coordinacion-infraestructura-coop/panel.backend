@@ -227,7 +227,7 @@ def upgrade() -> None:
             conn.execute(sa.text("""
                 INSERT INTO viv_ch_estado_historial
                     (id, localidad_id, campo, estado_anterior_id, estado_nuevo_id, created_at, created_by)
-                VALUES (:id, :lid, :campo, :ea, :en, :ts::timestamptz, 'importado-html')
+                VALUES (:id, :lid, :campo, :ea, :en, :ts, 'importado-html')
             """), {
                 "id": str(uuid.uuid4()), "lid": row_id, "campo": campo,
                 "ea": estado_anterior_id, "en": estado_nuevo_id, "ts": ts,
