@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.cordon_cuneta.models import (
     ConfigCordonCuneta,
     EstadoCordonCuneta,
+    EstadoHistorialCC,
     MunicipioCordonCuneta,
 )
 
@@ -182,3 +183,139 @@ async def test_creacion_pedido_denegada_a_consulta(client_consulta: AsyncClient,
         "fecha_pedido": "2026-06-15",
     })
     assert r.status_code == 403
+
+
+# ── Fixtures para tests de historial ──────────────────────────────────────────
+
+@pytest_asyncio.fixture
+async def dos_estados(db_session: AsyncSession) -> tuple[int, int]:
+    """Dos estados con ordenes distintos para simular una transición."""
+    id_a, id_b = 100, 200
+    db_session.add(EstadoCordonCuneta(
+        id=id_a, label="En proceso", bg="#ffe", text_color="#333", orden=10,
+    ))
+    db_session.add(EstadoCordonCuneta(
+        id=id_b, label="Completado",  bg="#dfd", text_color="#060", orden=20,
+    ))
+    await db_session.flush()
+    return id_a, id_b
+
+
+@pytest_asyncio.fixture
+async def municipio_con_estado(
+    db_session: AsyncSession, dos_estados: tuple[int, int]
+) -> tuple[str, int, int]:
+    """Municipio con todos los campos de estado en id_a. Retorna (municipio_id, id_a, id_b)."""
+    id_a, id_b = dos_estados
+    mid = str(uuid.uuid4())
+    db_session.add(MunicipioCordonCuneta(
+        id=mid,
+        orden=99,
+        municipio="Pueblo Test",
+        departamento="Test",
+        ejuridico=id_a,
+        etecnico=id_a,
+        efinanciero=id_a,
+        estado_general=id_a,
+    ))
+    await db_session.flush()
+    return mid, id_a, id_b
+
+
+# ── Historial de cambios de estado ────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_cambio_estado_crea_entrada_historial(
+    client: AsyncClient, municipio_con_estado: tuple
+):
+    """PATCH de un campo de estado genera exactamente una entrada en historial."""
+    mid, id_a, id_b = municipio_con_estado
+    r = await client.patch(f"{BASE}/{mid}", json={"ejuridico": id_b})
+    assert r.status_code == 200
+
+    hist = (await client.get(f"{BASE}/{mid}/historial")).json()
+    assert len(hist) == 1
+    assert hist[0]["campo"] == "ejuridico"
+
+
+@pytest.mark.asyncio
+async def test_cambio_estado_registra_anterior_nuevo_y_actor(
+    client: AsyncClient, municipio_con_estado: tuple
+):
+    """La entrada registra estado_anterior, estado_nuevo y el email del actor."""
+    mid, id_a, id_b = municipio_con_estado
+    await client.patch(f"{BASE}/{mid}", json={"etecnico": id_b})
+
+    entry = (await client.get(f"{BASE}/{mid}/historial")).json()[0]
+    assert entry["campo"] == "etecnico"
+    assert entry["estado_anterior_id"] == id_a
+    assert entry["estado_nuevo_id"] == id_b
+    assert entry["created_by"] == "admin@test.com"
+
+
+@pytest.mark.asyncio
+async def test_mismo_estado_no_genera_historial(
+    client: AsyncClient, municipio_con_estado: tuple
+):
+    """Si el estado enviado es igual al actual no debe generarse ninguna entrada."""
+    mid, id_a, _ = municipio_con_estado
+    await client.patch(f"{BASE}/{mid}", json={"ejuridico": id_a})
+
+    hist = (await client.get(f"{BASE}/{mid}/historial")).json()
+    assert hist == []
+
+
+@pytest.mark.asyncio
+async def test_multiples_campos_generan_multiples_entradas(
+    client: AsyncClient, municipio_con_estado: tuple
+):
+    """Cambiar ejuridico + etecnico en un solo PATCH produce dos entradas."""
+    mid, id_a, id_b = municipio_con_estado
+    r = await client.patch(f"{BASE}/{mid}", json={"ejuridico": id_b, "etecnico": id_b})
+    assert r.status_code == 200
+
+    hist = (await client.get(f"{BASE}/{mid}/historial")).json()
+    assert len(hist) == 2
+    assert {e["campo"] for e in hist} == {"ejuridico", "etecnico"}
+
+
+@pytest.mark.asyncio
+async def test_historial_retorna_entradas_mas_recientes_primero(
+    client: AsyncClient, municipio_con_estado: tuple
+):
+    """El endpoint /historial ordena de más reciente a más antiguo."""
+    mid, id_a, id_b = municipio_con_estado
+    await client.patch(f"{BASE}/{mid}", json={"ejuridico": id_b})
+    await client.patch(f"{BASE}/{mid}", json={"etecnico": id_b})
+
+    hist = (await client.get(f"{BASE}/{mid}/historial")).json()
+    assert len(hist) == 2
+    assert hist[0]["campo"] == "etecnico"   # segundo cambio → primero en la lista
+    assert hist[1]["campo"] == "ejuridico"
+
+
+@pytest.mark.asyncio
+async def test_historial_vacio_para_municipio_sin_cambios(
+    client: AsyncClient, municipio_con_estado: tuple
+):
+    """Un municipio recién creado sin cambios de estado devuelve lista vacía."""
+    mid, _, _ = municipio_con_estado
+    r = await client.get(f"{BASE}/{mid}/historial")
+    assert r.status_code == 200
+    assert r.json() == []
+
+
+@pytest.mark.asyncio
+async def test_estado_general_se_recomputa_al_cambiar_dimension(
+    client: AsyncClient, municipio_con_estado: tuple
+):
+    """estado_general siempre refleja el estado con menor orden entre los tres campos."""
+    mid, id_a, id_b = municipio_con_estado
+    # Solo ejuridico cambia a id_b (orden 20). etecnico y efinanciero quedan en id_a (orden 10).
+    # estado_general debe seguir siendo id_a.
+    r = await client.patch(f"{BASE}/{mid}", json={"ejuridico": id_b})
+    assert r.json()["estado_general"] == id_a
+
+    # Ahora todos pasan a id_b → estado_general debe ser id_b.
+    r2 = await client.patch(f"{BASE}/{mid}", json={"etecnico": id_b, "efinanciero": id_b})
+    assert r2.json()["estado_general"] == id_b
