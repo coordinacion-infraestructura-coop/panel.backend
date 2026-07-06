@@ -179,9 +179,10 @@ async def actualizar_municipio(
     for key, value in updates.items():
         setattr(municipio, key, value)
 
-    municipio.estado_general = await _compute_estado_general(
-        db, [municipio.ejuridico, municipio.etecnico, municipio.efinanciero]
-    )
+    if "estado_general" not in updates:
+        municipio.estado_general = await _compute_estado_general(
+            db, [municipio.ejuridico, municipio.etecnico, municipio.efinanciero]
+        )
 
     await db.flush()
 

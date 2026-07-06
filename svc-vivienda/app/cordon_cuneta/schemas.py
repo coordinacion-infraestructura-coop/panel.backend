@@ -66,6 +66,7 @@ class MunicipioUpdate(BaseModel):
     ejuridico: int | None = None
     etecnico: int | None = None
     efinanciero: int | None = None
+    estado_general: int | None = None
     cordon_cuneta_ml: float | None = None
     adoquinado_m2: float | None = None
     obs: str | None = None

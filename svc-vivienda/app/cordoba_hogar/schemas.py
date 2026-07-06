@@ -71,6 +71,7 @@ class LocalidadUpdate(BaseModel):
     ejuridico: int | None = None
     etecnico: int | None = None
     efinanciero: int | None = None
+    estado_general: int | None = None
     obs: str | None = None
 
 
