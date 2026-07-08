@@ -70,6 +70,7 @@ class ConfigCordobaHogar(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     presupuesto: Mapped[Decimal] = mapped_column(Numeric(18, 2), server_default="0")
+    monto_por_casa: Mapped[Decimal] = mapped_column(Numeric(18, 2), server_default="34000000")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

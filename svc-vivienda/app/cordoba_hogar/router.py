@@ -14,6 +14,7 @@ from app.cordoba_hogar.schemas import (
     LocalidadCreate,
     LocalidadResponse,
     LocalidadUpdate,
+    MontoPorCasaUpdate,
     PedidoCreate,
     PedidoResponse,
     PresupuestoUpdate,
@@ -155,3 +156,13 @@ async def actualizar_presupuesto(
 ):
     presupuesto = await service.actualizar_presupuesto(db, data, actor)
     return {"presupuesto": presupuesto}
+
+
+@router.patch("/cordoba-hogar-config/monto-por-casa")
+async def actualizar_monto_por_casa(
+    data: MontoPorCasaUpdate,
+    db: AsyncSession = Depends(get_db),
+    actor: AuthUser = Depends(require_roles(*ROLES_ESCRITURA)),
+):
+    monto = await service.actualizar_monto_por_casa(db, data, actor)
+    return {"monto_por_casa": monto}

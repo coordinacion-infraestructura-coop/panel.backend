@@ -1,5 +1,5 @@
 import time
-from datetime import datetime, timezone
+from datetime import datetime, time as dtime, timezone
 
 from fastapi import HTTPException, status
 from sqlalchemy import func, select
@@ -24,6 +24,7 @@ from app.cordoba_hogar.schemas import (
     LocalidadCreate,
     LocalidadResponse,
     LocalidadUpdate,
+    MontoPorCasaUpdate,
     PedidoCreate,
     PedidoResponse,
     PresupuestoUpdate,
@@ -56,10 +57,13 @@ async def get_full(db: AsyncSession) -> CordobaHogarFullResponse:
     config = config_res.scalar_one_or_none()
     presupuesto = float(config.presupuesto) if config else 0.0
 
+    monto_por_casa = float(config.monto_por_casa) if config and config.monto_por_casa is not None else 34000000.0
+
     return CordobaHogarFullResponse(
         localidades=[LocalidadResponse.model_validate(l) for l in localidades_res.scalars().all()],
         estados=[EstadoResponse.model_validate(e) for e in estados_res.scalars().all()],
         presupuesto=presupuesto,
+        monto_por_casa=monto_por_casa,
     )
 
 
@@ -156,6 +160,7 @@ async def actualizar_localidad(
         )
 
     updates = data.model_dump(exclude_unset=True)
+    fecha_cambio = updates.pop("fecha_cambio", None)
 
     historial = []
     for campo in ("ejuridico", "etecnico", "efinanciero"):
@@ -163,15 +168,16 @@ async def actualizar_localidad(
             old_val = getattr(localidad, campo)
             new_val = updates[campo]
             if new_val is not None and old_val != new_val:
-                historial.append(
-                    EstadoHistorialCH(
-                        localidad_id=localidad_id,
-                        campo=campo,
-                        estado_anterior_id=old_val,
-                        estado_nuevo_id=new_val,
-                        created_by=actor.email,
-                    )
+                entry = EstadoHistorialCH(
+                    localidad_id=localidad_id,
+                    campo=campo,
+                    estado_anterior_id=old_val,
+                    estado_nuevo_id=new_val,
+                    created_by=actor.email,
                 )
+                if fecha_cambio is not None:
+                    entry.created_at = datetime.combine(fecha_cambio, dtime(12, 0, 0), tzinfo=timezone.utc)
+                historial.append(entry)
 
     updates["updated_by"] = actor.email
     for key, value in updates.items():
@@ -290,6 +296,24 @@ async def actualizar_presupuesto(
         resource_id="presupuesto", payload={"presupuesto": str(data.presupuesto)}
     )
     return float(config.presupuesto)
+
+
+async def actualizar_monto_por_casa(
+    db: AsyncSession, data: MontoPorCasaUpdate, actor: AuthUser
+) -> float:
+    result = await db.execute(select(ConfigCordobaHogar).where(ConfigCordobaHogar.id == 1))
+    config = result.scalar_one_or_none()
+    if config is None:
+        config = ConfigCordobaHogar(id=1, presupuesto=0, monto_por_casa=data.monto_por_casa)
+        db.add(config)
+    else:
+        config.monto_por_casa = data.monto_por_casa
+    await db.flush()
+    await log_audit(
+        db, actor=actor, action="UPDATE", resource_type="cordoba_hogar_config",
+        resource_id="monto_por_casa", payload={"monto_por_casa": str(data.monto_por_casa)}
+    )
+    return float(config.monto_por_casa)
 
 
 async def listar_pedidos(db: AsyncSession, localidad_id: str) -> list[PedidoResponse]:

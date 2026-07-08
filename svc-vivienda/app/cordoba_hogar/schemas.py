@@ -73,6 +73,7 @@ class LocalidadUpdate(BaseModel):
     efinanciero: int | None = None
     estado_general: int | None = None
     obs: str | None = None
+    fecha_cambio: date | None = None
 
 
 class LocalidadCreate(BaseModel):
@@ -92,10 +93,15 @@ class CordobaHogarFullResponse(BaseModel):
     localidades: list[LocalidadResponse]
     estados: list[EstadoResponse]
     presupuesto: float
+    monto_por_casa: float = 34000000.0
 
 
 class PresupuestoUpdate(BaseModel):
     presupuesto: Decimal
+
+
+class MontoPorCasaUpdate(BaseModel):
+    monto_por_casa: Decimal
 
 
 class PedidoCreate(BaseModel):
