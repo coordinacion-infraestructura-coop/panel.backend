@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Entornos virtuales
+.venv/
+venv/
+env/
+
+# Tests / cobertura
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Empaquetado
+*.egg-info/
+dist/
+build/
+
+# Secretos / config local
+.env
+.env.*
+!.env.example
+
+# Editor / OS
+.DS_Store
+.vscode/
+.idea/
