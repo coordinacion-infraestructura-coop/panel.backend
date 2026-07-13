@@ -18,6 +18,7 @@ dependencies = [
     "pydantic-settings==2.6.1",
     "python-jose[cryptography]==3.3.0",
     "google-auth==2.35.0",
+    "google-api-python-client==2.149.0",
     "google-cloud-pubsub==2.27.1",
     "google-cloud-secret-manager==2.21.0",
     "python-dotenv==1.0.1",

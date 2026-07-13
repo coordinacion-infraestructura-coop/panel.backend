@@ -10,6 +10,9 @@ substitutions:
   _REGION: "southamerica-east1"
   _PROJECT: "gestorcooperativo"
   _REGISTRY: "southamerica-east1-docker.pkg.dev"
+  # Específico de svc-vivienda (sync checklist técnico Cordón Cuneta). Inofensivo
+  # como env var no usada si este mismo archivo se reutiliza para otro _SERVICE.
+  _GOOGLE_SHEET_CC_ID: "1U8-Rck1fgQHpQptC4hcqhTNzPxsIBixljBt3DB3Dn9U"
 
 steps:
   # ---------------------------------------------------------------------------
@@ -58,7 +61,7 @@ steps:
       - "--no-allow-unauthenticated"
       - "--service-account=${_SERVICE}@${_PROJECT}.iam.gserviceaccount.com"
       - "--set-secrets=DATABASE_URL=${_SERVICE}-db-url:latest"
-      - "--set-env-vars=GCP_PROJECT_ID=${_PROJECT},SERVICE_NAME=${_SERVICE},ENVIRONMENT=production"
+      - "--set-env-vars=GCP_PROJECT_ID=${_PROJECT},SERVICE_NAME=${_SERVICE},ENVIRONMENT=production,GOOGLE_SHEET_CC_ID=${_GOOGLE_SHEET_CC_ID}"
       - "--memory=512Mi"
       - "--cpu=1"
       - "--min-instances=0"

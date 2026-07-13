@@ -2,7 +2,8 @@ from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import AuthUser, require_roles, ROLES_ESCRITURA, ROLES_LECTURA, ROLES_TRANSICION
-from app.cordon_cuneta import service
+from app.cordon_cuneta import checklist_sync, service
+from app.cordon_cuneta.checklist_schemas import ChecklistTecnicoResponse
 from app.cordon_cuneta.schemas import (
     CordonCunetaFullResponse,
     EstadoCreate,
@@ -100,6 +101,20 @@ async def eliminar_municipio(
     actor: AuthUser = Depends(require_roles(*ROLES_TRANSICION)),
 ):
     await service.eliminar_municipio(db, municipio_id, actor)
+
+
+@router.get(
+    "/cordon-cuneta/{municipio_id}/checklist-tecnico",
+    response_model=ChecklistTecnicoResponse | None,
+)
+async def get_checklist_tecnico(
+    municipio_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: AuthUser = Depends(require_roles(*ROLES_LECTURA)),
+):
+    """Checklist técnico sincronizado desde el Google Sheet del área técnica.
+    Devuelve null si todavía no hay una fila del Sheet vinculada a este municipio."""
+    return await checklist_sync.obtener_checklist_tecnico(db, municipio_id)
 
 
 @router.get("/cordon-cuneta/{municipio_id}/historial", response_model=list[EstadoHistorialResponse])
