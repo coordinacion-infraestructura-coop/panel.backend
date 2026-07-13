@@ -1,6 +1,6 @@
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, time as dtime, timezone
 
 from fastapi import HTTPException, status
 from sqlalchemy import func, select
@@ -158,6 +158,7 @@ async def actualizar_municipio(
         )
 
     updates = data.model_dump(exclude_unset=True)
+    fecha_cambio = updates.pop("fecha_cambio", None)
 
     historial = []
     for campo in ("ejuridico", "etecnico", "efinanciero"):
@@ -165,15 +166,16 @@ async def actualizar_municipio(
             old_val = getattr(municipio, campo)
             new_val = updates[campo]
             if new_val is not None and old_val != new_val:
-                historial.append(
-                    EstadoHistorialCC(
-                        municipio_id=municipio_id,
-                        campo=campo,
-                        estado_anterior_id=old_val,
-                        estado_nuevo_id=new_val,
-                        created_by=actor.email,
-                    )
+                entry = EstadoHistorialCC(
+                    municipio_id=municipio_id,
+                    campo=campo,
+                    estado_anterior_id=old_val,
+                    estado_nuevo_id=new_val,
+                    created_by=actor.email,
                 )
+                if fecha_cambio is not None:
+                    entry.created_at = datetime.combine(fecha_cambio, dtime(12, 0, 0), tzinfo=timezone.utc)
+                historial.append(entry)
 
     updates["updated_by"] = actor.email
     for key, value in updates.items():
@@ -211,7 +213,11 @@ async def crear_municipio(
     if existing:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"Ya existe '{existing.municipio}' ({existing.departamento}) en el panel. Usá la opción Editar para modificarlo.",
+            detail={
+                "code": "MUNICIPIO_DUPLICADO",
+                "message": f"Ya existe '{existing.municipio}' ({existing.departamento}) en el panel.",
+                "existing_id": existing.id,
+            },
         )
 
     max_orden = (await db.execute(

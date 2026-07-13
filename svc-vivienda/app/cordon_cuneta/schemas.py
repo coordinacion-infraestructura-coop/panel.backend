@@ -70,6 +70,7 @@ class MunicipioUpdate(BaseModel):
     cordon_cuneta_ml: float | None = None
     adoquinado_m2: float | None = None
     obs: str | None = None
+    fecha_cambio: date | None = None
 
 
 class MunicipioCreate(BaseModel):
