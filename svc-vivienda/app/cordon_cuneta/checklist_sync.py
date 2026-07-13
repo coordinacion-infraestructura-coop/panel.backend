@@ -16,6 +16,7 @@ from app.cordon_cuneta.checklist_schemas import (
     ChecklistTecnicoResponse,
     SyncErrorDetail,
     SyncResultResponse,
+    SyncStatusResponse,
 )
 from app.cordon_cuneta.models import MunicipioCordonCuneta
 from app.integrations import google_sheets
@@ -326,6 +327,16 @@ async def sync_from_sheet(db: AsyncSession, triggered_by: str = "manual") -> Syn
         filas_error=len(errores),
         errores=[SyncErrorDetail(**e) for e in errores],
     )
+
+
+# ── Estado del último sync (para el indicador + botón "Actualizar ahora") ────────
+
+async def get_last_sync_status(db: AsyncSession) -> SyncStatusResponse | None:
+    result = await db.execute(select(SyncLogCC).order_by(SyncLogCC.started_at.desc()).limit(1))
+    log = result.scalar_one_or_none()
+    if not log:
+        return None
+    return SyncStatusResponse.model_validate(log)
 
 
 # ── Lectura (para el panel) ───────────────────────────────────────────────────────

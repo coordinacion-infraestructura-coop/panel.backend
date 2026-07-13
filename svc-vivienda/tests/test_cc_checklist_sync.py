@@ -285,3 +285,70 @@ async def test_endpoint_checklist_tecnico_devuelve_datos(
     data = r.json()
     assert data["localidad"] == "San Joaquín"
     assert len(data["items"]) == 19
+
+
+# ── Estado del último sync + forzar sync (botón "Actualizar ahora" del panel) ──
+
+ESTADO_URL = "/api/v1/vivienda/cordon-cuneta-checklist-tecnico/estado"
+SYNC_URL = "/api/v1/vivienda/cordon-cuneta-checklist-tecnico/sync"
+
+
+@pytest.mark.asyncio
+async def test_estado_sync_null_si_nunca_corrio(client: AsyncClient):
+    r = await client.get(ESTADO_URL)
+    assert r.status_code == 200
+    assert r.json() is None
+
+
+@pytest.mark.asyncio
+async def test_estado_sync_devuelve_ultima_corrida(
+    client: AsyncClient, db_session: AsyncSession, municipio_san_joaquin: str
+):
+    with _mock_sheet(_fixture_rows(ROW_MATCH_POR_EXPEDIENTE)):
+        await checklist_sync.sync_from_sheet(db_session, triggered_by="cloud-scheduler")
+
+    r = await client.get(ESTADO_URL)
+    assert r.status_code == 200
+    data = r.json()
+    assert data["filas_leidas"] == 1
+    assert data["filas_insertadas"] == 1
+    assert data["triggered_by"] == "cloud-scheduler"
+    assert data["finished_at"] is not None
+
+
+@pytest.mark.asyncio
+async def test_forzar_sync_admin_dispara_y_registra_actor(
+    client: AsyncClient, municipio_san_joaquin: str
+):
+    with _mock_sheet(_fixture_rows(ROW_MATCH_POR_EXPEDIENTE)):
+        r = await client.post(SYNC_URL)
+    assert r.status_code == 200
+    data = r.json()
+    assert data["filas_insertadas"] == 1
+
+    estado = (await client.get(ESTADO_URL)).json()
+    assert estado["triggered_by"] == "manual-ui:admin@test.com"
+
+
+@pytest.mark.asyncio
+async def test_forzar_sync_operador_permitido(client_operador: AsyncClient):
+    with _mock_sheet(_fixture_rows(ROW_SIN_DEPARTAMENTO)):
+        r = await client_operador.post(SYNC_URL)
+    assert r.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_forzar_sync_denegado_a_consulta(client_consulta: AsyncClient):
+    r = await client_consulta.post(SYNC_URL)
+    assert r.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_forzar_sync_devuelve_502_si_falla(client: AsyncClient):
+    with patch(
+        "app.integrations.google_sheets.get_values",
+        new=AsyncMock(side_effect=RuntimeError("Sheet no compartido")),
+    ):
+        r = await client.post(SYNC_URL)
+    assert r.status_code == 502
+    assert r.json()["detail"]["code"] == "SHEET_SYNC_FALLIDO"

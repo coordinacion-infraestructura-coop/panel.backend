@@ -1,9 +1,13 @@
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import AuthUser, require_roles, ROLES_ESCRITURA, ROLES_LECTURA, ROLES_TRANSICION
 from app.cordon_cuneta import checklist_sync, service
-from app.cordon_cuneta.checklist_schemas import ChecklistTecnicoResponse
+from app.cordon_cuneta.checklist_schemas import (
+    ChecklistTecnicoResponse,
+    SyncResultResponse,
+    SyncStatusResponse,
+)
 from app.cordon_cuneta.schemas import (
     CordonCunetaFullResponse,
     EstadoCreate,
@@ -101,6 +105,31 @@ async def eliminar_municipio(
     actor: AuthUser = Depends(require_roles(*ROLES_TRANSICION)),
 ):
     await service.eliminar_municipio(db, municipio_id, actor)
+
+
+@router.get("/cordon-cuneta-checklist-tecnico/estado", response_model=SyncStatusResponse | None)
+async def get_estado_sync_checklist_tecnico(
+    db: AsyncSession = Depends(get_db),
+    _: AuthUser = Depends(require_roles(*ROLES_LECTURA)),
+):
+    """Estado de la última corrida del sync (para mostrar 'sincronizado hace X')."""
+    return await checklist_sync.get_last_sync_status(db)
+
+
+@router.post("/cordon-cuneta-checklist-tecnico/sync", response_model=SyncResultResponse)
+async def forzar_sync_checklist_tecnico(
+    db: AsyncSession = Depends(get_db),
+    actor: AuthUser = Depends(require_roles(*ROLES_ESCRITURA)),
+):
+    """Dispara el sync ahora mismo, sin esperar al próximo ciclo de Cloud Scheduler.
+    Llama a la misma función que usa el endpoint interno — ver app/internal/router.py."""
+    try:
+        return await checklist_sync.sync_from_sheet(db, triggered_by=f"manual-ui:{actor.email}")
+    except checklist_sync.SheetReadError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail={"code": "SHEET_SYNC_FALLIDO", "message": str(exc)},
+        )
 
 
 @router.get(
