@@ -181,6 +181,9 @@ async def actualizar_municipio(
     for key, value in updates.items():
         setattr(municipio, key, value)
 
+    if fecha_cambio is not None:
+        municipio.updated_at = datetime.combine(fecha_cambio, dtime(12, 0, 0), tzinfo=timezone.utc)
+
     if "estado_general" not in updates:
         municipio.estado_general = await _compute_estado_general(
             db, [municipio.ejuridico, municipio.etecnico, municipio.efinanciero]

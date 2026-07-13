@@ -183,6 +183,9 @@ async def actualizar_localidad(
     for key, value in updates.items():
         setattr(localidad, key, value)
 
+    if fecha_cambio is not None:
+        localidad.updated_at = datetime.combine(fecha_cambio, dtime(12, 0, 0), tzinfo=timezone.utc)
+
     if "estado_general" not in updates:
         localidad.estado_general = await _compute_estado_general(
             db, [localidad.ejuridico, localidad.etecnico, localidad.efinanciero]
