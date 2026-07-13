@@ -8,7 +8,7 @@ no hay JWT de Firebase en este flujo (Cloud Scheduler → OIDC → Cloud Run IAM
 
 Ver spec: docs/files/spec-sync-cc-checklist-tecnico.md
 """
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.cordon_cuneta import checklist_sync
@@ -23,4 +23,13 @@ async def sync_cordon_cuneta_checklist(
     triggered_by: str = "cloud-scheduler",
     db: AsyncSession = Depends(get_db),
 ):
-    return await checklist_sync.sync_from_sheet(db, triggered_by=triggered_by)
+    try:
+        return await checklist_sync.sync_from_sheet(db, triggered_by=triggered_by)
+    except checklist_sync.SheetReadError as exc:
+        # 502: la falla es de la fuente externa (Sheet/Sheets API), no del servicio.
+        # Cloud Scheduler marca esta ejecución como fallida — dispara la alerta
+        # de Cloud Monitoring configurada sobre este endpoint.
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail={"code": "SHEET_SYNC_FALLIDO", "message": str(exc)},
+        )

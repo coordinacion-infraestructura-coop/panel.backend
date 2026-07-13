@@ -229,11 +229,45 @@ async def _upsert_row(
     return is_new
 
 
+async def _log_sync_failure(
+    db: AsyncSession, started_at: datetime, triggered_by: str, motivo: str
+) -> None:
+    log = SyncLogCC(
+        started_at=started_at,
+        finished_at=datetime.now(timezone.utc),
+        filas_leidas=0,
+        filas_insertadas=0,
+        filas_actualizadas=0,
+        filas_error=1,
+        errores=json.dumps([{"fila": 0, "motivo": motivo}], ensure_ascii=False),
+        triggered_by=triggered_by,
+    )
+    db.add(log)
+    await db.flush()
+
+
+class SheetReadError(Exception):
+    """El Sheet no pudo leerse (API caída, Sheet desvinculado de la SA, cuota, etc.).
+
+    Distinto de un error de fila: acá no hay nada que procesar. Se loguea en
+    viv_cc_sync_log igual que cualquier corrida, pero se re-lanza para que el
+    endpoint devuelva un error HTTP real — es la señal que dispara la alerta
+    de Cloud Monitoring (ver docs/files/spec-sync-cc-checklist-tecnico.md §14).
+    """
+
+
 # ── Sync completo ────────────────────────────────────────────────────────────────
 
 async def sync_from_sheet(db: AsyncSession, triggered_by: str = "manual") -> SyncResultResponse:
     started_at = datetime.now(timezone.utc)
-    raw_rows = await google_sheets.get_values(settings.google_sheet_cc_id, settings.google_sheet_cc_range)
+
+    try:
+        raw_rows = await google_sheets.get_values(
+            settings.google_sheet_cc_id, settings.google_sheet_cc_range
+        )
+    except Exception as exc:
+        await _log_sync_failure(db, started_at, triggered_by, str(exc))
+        raise SheetReadError(f"No se pudo leer el Google Sheet: {exc}") from exc
 
     filas_leidas = 0
     filas_insertadas = 0

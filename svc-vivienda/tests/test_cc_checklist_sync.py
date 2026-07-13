@@ -208,6 +208,26 @@ async def test_sync_actualiza_valores_cambiados(db_session: AsyncSession, munici
 # ── Log de sincronización ──────────────────────────────────────────────────────
 
 @pytest.mark.asyncio
+async def test_sync_falla_total_queda_logueada_y_relanza(db_session: AsyncSession):
+    """Si falla la lectura del Sheet entero (Sheets API caída, credenciales, etc.),
+    debe quedar un registro en viv_cc_sync_log y debe re-lanzar SheetReadError
+    (para que el endpoint devuelva un error HTTP real, no un 200 silencioso)."""
+    with patch(
+        "app.integrations.google_sheets.get_values",
+        new=AsyncMock(side_effect=RuntimeError("API deshabilitada")),
+    ):
+        with pytest.raises(checklist_sync.SheetReadError):
+            await checklist_sync.sync_from_sheet(db_session, triggered_by="cloud-scheduler")
+
+    log = (await db_session.execute(select(SyncLogCC))).scalar_one()
+    assert log.filas_error == 1
+    assert log.filas_leidas == 0
+    assert "API deshabilitada" in log.errores
+    assert log.triggered_by == "cloud-scheduler"
+    assert log.finished_at is not None
+
+
+@pytest.mark.asyncio
 async def test_sync_registra_log_con_contadores(db_session: AsyncSession, municipio_san_joaquin: str):
     with _mock_sheet(_fixture_rows(ROW_MATCH_POR_EXPEDIENTE, ROW_SIN_DEPARTAMENTO)):
         await checklist_sync.sync_from_sheet(db_session, triggered_by="cloud-scheduler")

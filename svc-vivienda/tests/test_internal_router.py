@@ -56,6 +56,25 @@ async def test_sync_endpoint_default_triggered_by_scheduler(db_session: AsyncSes
 
 
 @pytest.mark.asyncio
+async def test_sync_endpoint_devuelve_502_si_falla_lectura_del_sheet(db_session: AsyncSession):
+    async def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        with patch(
+            "app.integrations.google_sheets.get_values",
+            new=AsyncMock(side_effect=RuntimeError("Sheet no compartido con la SA")),
+        ):
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+                r = await c.post("/internal/sync/cordon-cuneta-checklist")
+        assert r.status_code == 502
+        assert r.json()["detail"]["code"] == "SHEET_SYNC_FALLIDO"
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
 async def test_sync_endpoint_no_esta_bajo_api_v1(db_session: AsyncSession):
     """El path no debe pasar por el prefijo /api/v1 — el Gateway nunca lo enruta a propósito."""
     async def override_get_db():
