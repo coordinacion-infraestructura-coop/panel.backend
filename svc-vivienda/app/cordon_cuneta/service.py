@@ -314,7 +314,7 @@ async def actualizar_presupuesto(
     return float(config.presupuesto)
 
 
-async def listar_pedidos(db: AsyncSession, municipio_id: str) -> list[PedidoResponse]:
+async def listar_pedidos(db: AsyncSession, municipio_id: str, actor: AuthUser) -> list[PedidoResponse]:
     municipio = (await db.execute(
         select(MunicipioCordonCuneta).where(
             MunicipioCordonCuneta.id == municipio_id,
@@ -326,11 +326,18 @@ async def listar_pedidos(db: AsyncSession, municipio_id: str) -> list[PedidoResp
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"code": "RECURSO_NO_ENCONTRADO", "message": f"Municipio {municipio_id} no encontrado"},
         )
-    result = await db.execute(
+    query = (
         select(PedidoCordonCuneta)
         .where(PedidoCordonCuneta.municipio_id == municipio_id)
-        .order_by(PedidoCordonCuneta.fecha_pedido.desc())
     )
+    # infraestructura y Admin ven todas; el resto solo ve las que no son de infraestructura
+    if "infraestructura" not in actor.secretarias and actor.role != "Admin":
+        query = query.where(
+            (PedidoCordonCuneta.secretaria != "infraestructura")
+            | PedidoCordonCuneta.secretaria.is_(None)
+        )
+    query = query.order_by(PedidoCordonCuneta.fecha_pedido.desc())
+    result = await db.execute(query)
     return [PedidoResponse.model_validate(p) for p in result.scalars().all()]
 
 
@@ -348,11 +355,19 @@ async def crear_pedido(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"code": "RECURSO_NO_ENCONTRADO", "message": f"Municipio {municipio_id} no encontrado"},
         )
+    secretaria = None
+    if "infraestructura" in actor.secretarias:
+        secretaria = "infraestructura"
+    elif actor.secretarias:
+        secretaria = actor.secretarias[0]
+
     pedido = PedidoCordonCuneta(
         municipio_id=municipio_id,
         descripcion=data.descripcion,
         fecha_pedido=data.fecha_pedido,
         created_by=actor.email,
+        created_by_nombre=actor.nombre,
+        secretaria=secretaria,
     )
     db.add(pedido)
     await db.flush()

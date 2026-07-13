@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import AuthUser, require_roles, ROLES_ESCRITURA, ROLES_LECTURA, ROLES_TRANSICION
+from app.auth import AuthUser, require_roles, require_comunicaciones_write, ROLES_ESCRITURA, ROLES_LECTURA, ROLES_TRANSICION
 from app.database import get_db
 from app.cordoba_hogar import service
 from app.cordoba_hogar.schemas import (
@@ -118,7 +118,7 @@ async def listar_pedidos(
     db: AsyncSession = Depends(get_db),
     actor: AuthUser = Depends(require_roles(*ROLES_LECTURA)),
 ):
-    return await service.listar_pedidos(db, localidad_id)
+    return await service.listar_pedidos(db, localidad_id, actor)
 
 
 @router.post(
@@ -130,7 +130,7 @@ async def crear_pedido(
     localidad_id: str,
     data: PedidoCreate,
     db: AsyncSession = Depends(get_db),
-    actor: AuthUser = Depends(require_roles(*ROLES_ESCRITURA)),
+    actor: AuthUser = Depends(require_comunicaciones_write()),
 ):
     return await service.crear_pedido(db, localidad_id, data, actor)
 

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import AuthUser, require_roles, ROLES_ESCRITURA, ROLES_LECTURA, ROLES_TRANSICION
+from app.auth import AuthUser, require_roles, require_comunicaciones_write, ROLES_ESCRITURA, ROLES_LECTURA, ROLES_TRANSICION
 from app.cordon_cuneta import checklist_sync, service
 from app.cordon_cuneta.checklist_schemas import (
     ChecklistTecnicoResponse,
@@ -159,9 +159,9 @@ async def get_historial(
 async def listar_pedidos(
     municipio_id: str,
     db: AsyncSession = Depends(get_db),
-    _: AuthUser = Depends(require_roles(*ROLES_LECTURA)),
+    actor: AuthUser = Depends(require_roles(*ROLES_LECTURA)),
 ):
-    return await service.listar_pedidos(db, municipio_id)
+    return await service.listar_pedidos(db, municipio_id, actor)
 
 
 @router.post("/cordon-cuneta/{municipio_id}/pedidos", response_model=PedidoResponse, status_code=201)
@@ -169,7 +169,7 @@ async def crear_pedido(
     municipio_id: str,
     data: PedidoCreate,
     db: AsyncSession = Depends(get_db),
-    actor: AuthUser = Depends(require_roles(*ROLES_ESCRITURA)),
+    actor: AuthUser = Depends(require_comunicaciones_write()),
 ):
     return await service.crear_pedido(db, municipio_id, data, actor)
 

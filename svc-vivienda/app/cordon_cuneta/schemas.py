@@ -107,6 +107,8 @@ class PedidoResponse(BaseModel):
     fecha_pedido: date
     created_at: datetime
     created_by: str | None
+    created_by_nombre: str | None
+    secretaria: str | None
 
 
 class EstadoHistorialResponse(BaseModel):

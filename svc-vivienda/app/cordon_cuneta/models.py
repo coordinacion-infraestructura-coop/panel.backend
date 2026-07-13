@@ -89,3 +89,5 @@ class PedidoCordonCuneta(Base):
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
     )
     created_by: Mapped[str | None] = mapped_column(String(200))
+    created_by_nombre: Mapped[str | None] = mapped_column(String(255))
+    secretaria: Mapped[str | None] = mapped_column(String(100))

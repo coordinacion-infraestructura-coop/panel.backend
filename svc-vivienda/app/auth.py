@@ -16,6 +16,7 @@ class AuthUser(BaseModel):
     email: str
     role: str                     # kept as 'role' — audit.py uses actor.role
     secretarias: list[str] = []
+    nombre: str | None = None
 
 
 @lru_cache(maxsize=1)
@@ -86,14 +87,17 @@ async def get_current_user(
         if portal_user:
             role = portal_user.rol
             secretarias = [s.secretaria for s in portal_user.secretarias]
+            nombre = portal_user.nombre
         else:
             role = "invitado"
             secretarias = []
+            nombre = None
     except Exception:
         role = "invitado"
         secretarias = []
+        nombre = None
 
-    return AuthUser(uid=uid, email=email, role=role, secretarias=secretarias)
+    return AuthUser(uid=uid, email=email, role=role, secretarias=secretarias, nombre=nombre)
 
 
 def require_roles(*roles: str):
@@ -115,3 +119,18 @@ ROLES_ESCRITURA = ("Admin", "Supervisor", "Operador")
 ROLES_TRANSICION = ("Admin", "Supervisor")
 ROLES_ELIMINACION = ("Admin",)
 ROLES_ADMIN = ("Admin",)
+
+
+def require_comunicaciones_write():
+    """Permite escribir comunicaciones si tiene rol de escritura O pertenece a infraestructura."""
+    async def check(user: AuthUser = Depends(get_current_user)) -> AuthUser:
+        if user.role in ROLES_ESCRITURA or "infraestructura" in user.secretarias:
+            return user
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "PERMISO_INSUFICIENTE",
+                "message": "Se requiere rol Operador o superior, o pertenecer a Infraestructura.",
+            },
+        )
+    return check

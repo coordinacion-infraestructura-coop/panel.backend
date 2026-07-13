@@ -336,7 +336,7 @@ async def actualizar_monto_por_casa(
     return float(config.monto_por_casa)
 
 
-async def listar_pedidos(db: AsyncSession, localidad_id: str) -> list[PedidoResponse]:
+async def listar_pedidos(db: AsyncSession, localidad_id: str, actor: AuthUser) -> list[PedidoResponse]:
     localidad = (await db.execute(
         select(LocalidadCordobaHogar).where(
             LocalidadCordobaHogar.id == localidad_id,
@@ -348,11 +348,17 @@ async def listar_pedidos(db: AsyncSession, localidad_id: str) -> list[PedidoResp
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"code": "RECURSO_NO_ENCONTRADO", "message": f"Localidad {localidad_id} no encontrada"},
         )
-    result = await db.execute(
+    query = (
         select(PedidoCordobaHogar)
         .where(PedidoCordobaHogar.localidad_id == localidad_id)
-        .order_by(PedidoCordobaHogar.fecha_pedido.desc())
     )
+    if "infraestructura" not in actor.secretarias and actor.role != "Admin":
+        query = query.where(
+            (PedidoCordobaHogar.secretaria != "infraestructura")
+            | PedidoCordobaHogar.secretaria.is_(None)
+        )
+    query = query.order_by(PedidoCordobaHogar.fecha_pedido.desc())
+    result = await db.execute(query)
     return [PedidoResponse.model_validate(p) for p in result.scalars().all()]
 
 
@@ -370,11 +376,19 @@ async def crear_pedido(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"code": "RECURSO_NO_ENCONTRADO", "message": f"Localidad {localidad_id} no encontrada"},
         )
+    secretaria = None
+    if "infraestructura" in actor.secretarias:
+        secretaria = "infraestructura"
+    elif actor.secretarias:
+        secretaria = actor.secretarias[0]
+
     pedido = PedidoCordobaHogar(
         localidad_id=localidad_id,
         descripcion=data.descripcion,
         fecha_pedido=data.fecha_pedido,
         created_by=actor.email,
+        created_by_nombre=actor.nombre,
+        secretaria=secretaria,
     )
     db.add(pedido)
     await db.flush()
