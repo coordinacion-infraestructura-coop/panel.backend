@@ -205,6 +205,23 @@ async def actualizar_localidad(
 async def crear_localidad(
     db: AsyncSession, data: LocalidadCreate, actor: AuthUser
 ) -> LocalidadResponse:
+    existing = (await db.execute(
+        select(LocalidadCordobaHogar).where(
+            func.lower(LocalidadCordobaHogar.localidad) == data.localidad.strip().lower(),
+            func.lower(LocalidadCordobaHogar.departamento) == (data.departamento or '').strip().lower(),
+            LocalidadCordobaHogar.deleted_at.is_(None),
+        )
+    )).scalar_one_or_none()
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "LOCALIDAD_DUPLICADA",
+                "message": f"Ya existe '{existing.localidad}' ({existing.departamento}) en el panel.",
+                "existing_id": existing.id,
+            },
+        )
+
     max_orden = (await db.execute(
         select(func.max(LocalidadCordobaHogar.orden)).where(LocalidadCordobaHogar.deleted_at.is_(None))
     )).scalar_one() or 0
