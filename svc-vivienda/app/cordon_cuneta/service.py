@@ -201,6 +201,19 @@ async def actualizar_municipio(
 async def crear_municipio(
     db: AsyncSession, data: MunicipioCreate, actor: AuthUser
 ) -> MunicipioResponse:
+    existing = (await db.execute(
+        select(MunicipioCordonCuneta).where(
+            func.lower(MunicipioCordonCuneta.municipio) == data.municipio.strip().lower(),
+            func.lower(MunicipioCordonCuneta.departamento) == (data.departamento or '').strip().lower(),
+            MunicipioCordonCuneta.deleted_at.is_(None),
+        )
+    )).scalar_one_or_none()
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Ya existe '{existing.municipio}' ({existing.departamento}) en el panel. Usá la opción Editar para modificarlo.",
+        )
+
     max_orden = (await db.execute(
         select(func.max(MunicipioCordonCuneta.orden)).where(MunicipioCordonCuneta.deleted_at.is_(None))
     )).scalar_one() or 0
