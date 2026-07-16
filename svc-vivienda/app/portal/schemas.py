@@ -4,7 +4,7 @@ from typing import Annotated
 from pydantic import BaseModel, EmailStr, field_validator
 
 ROLES_VALIDOS = ("Admin", "Supervisor", "Operador", "Consulta")
-SECRETARIAS_VALIDAS = ("vivienda", "privada", "infraestructura", "territorial", "gasifera", "desarrollo")
+SECRETARIAS_VALIDAS = ("vivienda", "privada", "infraestructura", "territorial", "gasifera", "desarrollo", "supervision")
 
 
 class PortalMeResponse(BaseModel):

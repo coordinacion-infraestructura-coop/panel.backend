@@ -121,16 +121,19 @@ ROLES_ELIMINACION = ("Admin",)
 ROLES_ADMIN = ("Admin",)
 
 
+SECRETARIAS_COMUNICACIONES = frozenset({"infraestructura", "supervision"})
+
+
 def require_comunicaciones_write():
-    """Permite escribir comunicaciones si tiene rol de escritura O pertenece a infraestructura."""
+    """Permite escribir comunicaciones si tiene rol de escritura O pertenece a infraestructura/supervision."""
     async def check(user: AuthUser = Depends(get_current_user)) -> AuthUser:
-        if user.role in ROLES_ESCRITURA or "infraestructura" in user.secretarias:
+        if user.role in ROLES_ESCRITURA or SECRETARIAS_COMUNICACIONES & set(user.secretarias):
             return user
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={
                 "code": "PERMISO_INSUFICIENTE",
-                "message": "Se requiere rol Operador o superior, o pertenecer a Infraestructura.",
+                "message": "Se requiere rol Operador o superior, o pertenecer a Infraestructura o Supervisión.",
             },
         )
     return check

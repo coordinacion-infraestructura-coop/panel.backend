@@ -100,3 +100,15 @@ async def update_usuario(
     # la recargue desde DB (el bulk DELETE no invalida automáticamente el cache ORM).
     await db.refresh(usuario, attribute_names=["secretarias"])
     return usuario
+
+
+async def delete_usuario(db: AsyncSession, email: str) -> bool:
+    result = await db.execute(
+        select(PortalUsuario).where(PortalUsuario.email == email.lower())
+    )
+    usuario = result.scalar_one_or_none()
+    if not usuario:
+        return False
+    await db.delete(usuario)
+    await db.flush()
+    return True

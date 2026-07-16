@@ -121,3 +121,19 @@ async def update_usuario(
     if not usuario:
         raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Usuario no encontrado"})
     return _to_response(usuario)
+
+
+@router.delete("/admin/usuarios/{email:path}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_usuario(
+    email: str,
+    current_user: AuthUser = Depends(_require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    if email.lower() == current_user.email.lower():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "AUTO_ELIMINACION", "message": "No podés eliminar tu propio usuario."},
+        )
+    deleted = await repository.delete_usuario(db, email)
+    if not deleted:
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Usuario no encontrado"})

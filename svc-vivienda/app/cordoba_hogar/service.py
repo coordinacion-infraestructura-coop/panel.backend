@@ -352,11 +352,18 @@ async def listar_pedidos(db: AsyncSession, localidad_id: str, actor: AuthUser) -
         select(PedidoCordobaHogar)
         .where(PedidoCordobaHogar.localidad_id == localidad_id)
     )
-    if "infraestructura" not in actor.secretarias and actor.role != "Admin":
-        query = query.where(
-            (PedidoCordobaHogar.secretaria != "infraestructura")
-            | PedidoCordobaHogar.secretaria.is_(None)
-        )
+    actor_secs = set(actor.secretarias)
+    if actor.role != "Admin" and "supervision" not in actor_secs:
+        if "infraestructura" in actor_secs:
+            query = query.where(
+                (PedidoCordobaHogar.secretaria != "supervision")
+                | PedidoCordobaHogar.secretaria.is_(None)
+            )
+        else:
+            query = query.where(
+                PedidoCordobaHogar.secretaria.not_in(["infraestructura", "supervision"])
+                | PedidoCordobaHogar.secretaria.is_(None)
+            )
     query = query.order_by(PedidoCordobaHogar.fecha_pedido.desc())
     result = await db.execute(query)
     return [PedidoResponse.model_validate(p) for p in result.scalars().all()]
@@ -376,8 +383,11 @@ async def crear_pedido(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"code": "RECURSO_NO_ENCONTRADO", "message": f"Localidad {localidad_id} no encontrada"},
         )
+    actor_secs = set(actor.secretarias)
     secretaria = None
-    if "infraestructura" in actor.secretarias:
+    if "supervision" in actor_secs:
+        secretaria = "supervision"
+    elif "infraestructura" in actor_secs:
         secretaria = "infraestructura"
     elif actor.secretarias:
         secretaria = actor.secretarias[0]
