@@ -295,7 +295,14 @@ async def sync_from_sheet(db: AsyncSession, triggered_by: str = "manual") -> Syn
             continue
 
         try:
-            is_new = await _upsert_row(db, sheet_row_number, localidad_raw, departamento, row)
+            # SAVEPOINT por fila: si el flush de esta fila falla (ej. un valor del
+            # Sheet más largo de lo que admite una columna), SQLAlchemy hace
+            # ROLLBACK TO SAVEPOINT automáticamente — la sesión sigue usable para
+            # el resto del batch y para el log final. Sin esto, un solo error de
+            # fila deja la transacción entera "envenenada" (PendingRollbackError)
+            # y se pierde silenciosamente toda la corrida, log incluido.
+            async with db.begin_nested():
+                is_new = await _upsert_row(db, sheet_row_number, localidad_raw, departamento, row)
             if is_new:
                 filas_insertadas += 1
             else:

@@ -35,10 +35,10 @@ class ChecklistTecnicoCC(Base):
     monto_convenio: Mapped[float | None] = mapped_column(Numeric(18, 2))
     cordon_cuneta_ml: Mapped[float | None] = mapped_column(Numeric(10, 2))
     adoquinado_m2: Mapped[float | None] = mapped_column(Numeric(10, 2))
-    estado_expediente: Mapped[str | None] = mapped_column(String(50))
+    estado_expediente: Mapped[str | None] = mapped_column(String(200))
     observaciones: Mapped[str | None] = mapped_column(Text)
     fecha_radicacion: Mapped[date | None] = mapped_column(Date)
-    reparticion: Mapped[str | None] = mapped_column(String(50))
+    reparticion: Mapped[str | None] = mapped_column(String(200))
     municipio_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("viv_cordon_cuneta.id"))
     sheet_row_number: Mapped[int] = mapped_column(Integer, nullable=False)
     last_synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -69,7 +69,7 @@ class ChecklistItemCC(Base):
     )
     item_num: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     item_label: Mapped[str] = mapped_column(String(150), nullable=False)
-    valor: Mapped[str] = mapped_column(String(50), nullable=False)
+    valor: Mapped[str] = mapped_column(String(200), nullable=False)
 
 
 class SyncLogCC(Base):

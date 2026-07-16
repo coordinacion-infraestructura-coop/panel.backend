@@ -1,5 +1,6 @@
 """Tests del sync del checklist técnico de Cordón Cuneta (Google Sheet 'Base TOTAL')."""
 import uuid
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -206,6 +207,58 @@ async def test_sync_actualiza_valores_cambiados(db_session: AsyncSession, munici
 
 
 # ── Log de sincronización ──────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_error_de_fila_no_envenena_las_filas_siguientes(db_session: AsyncSession):
+    """Regresión del incidente de producción 2026-07-16: un error real de DB al
+    escribir una fila (ahí: StringDataRightTruncationError por un valor del
+    Sheet más largo que la columna) NO debe dejar la sesión inutilizable para
+    el resto del batch ni impedir que se escriba el log final. Se fuerza acá
+    un IntegrityError real (PK duplicada) en la fila del medio — mismo efecto
+    sobre la sesión de SQLAlchemy que el bug real, portable entre motores."""
+    real_upsert_row = checklist_sync._upsert_row
+    calls = {"n": 0}
+
+    async def fake_upsert_row(db, sheet_row_number, localidad, departamento, row):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            db.add(ChecklistTecnicoCC(
+                id="fila-duplicada", localidad="Dup A", departamento="X",
+                sheet_row_number=999, last_synced_at=datetime.now(timezone.utc),
+            ))
+            db.add(ChecklistTecnicoCC(
+                id="fila-duplicada", localidad="Dup B", departamento="Y",
+                sheet_row_number=999, last_synced_at=datetime.now(timezone.utc),
+            ))
+            await db.flush()  # IntegrityError real: primary key duplicada
+            return True
+        return await real_upsert_row(db, sheet_row_number, localidad, departamento, row)
+
+    rows = _fixture_rows(
+        ["Localidad Uno", "Depto A"],
+        ["Localidad Dos", "Depto B"],   # esta falla
+        ["Localidad Tres", "Depto C"],
+    )
+    with _mock_sheet(rows), patch(
+        "app.cordon_cuneta.checklist_sync._upsert_row", new=AsyncMock(side_effect=fake_upsert_row)
+    ):
+        result = await checklist_sync.sync_from_sheet(db_session)
+
+    assert result.filas_leidas == 3
+    assert result.filas_error == 1
+    assert result.filas_insertadas == 2  # Uno y Tres, a pesar del error en Dos
+
+    localidades = {
+        r.localidad for r in (await db_session.execute(select(ChecklistTecnicoCC))).scalars().all()
+    }
+    assert localidades == {"Localidad Uno", "Localidad Tres"}
+
+    # El log final debe haberse escrito igual (antes del fix, esto también fallaba
+    # con PendingRollbackError y la corrida entera se perdía sin dejar rastro).
+    log = (await db_session.execute(select(SyncLogCC))).scalar_one()
+    assert log.filas_insertadas == 2
+    assert log.finished_at is not None
+
 
 @pytest.mark.asyncio
 async def test_sync_falla_total_queda_logueada_y_relanza(db_session: AsyncSession):
