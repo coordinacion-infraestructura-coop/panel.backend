@@ -1,5 +1,6 @@
 """Tests de integración para el módulo Cordón Cuneta."""
 import uuid
+from datetime import date
 
 import pytest
 import pytest_asyncio
@@ -11,6 +12,7 @@ from app.cordon_cuneta.models import (
     EstadoCordonCuneta,
     EstadoHistorialCC,
     MunicipioCordonCuneta,
+    PedidoCordonCuneta,
 )
 
 BASE = "/api/v1/vivienda/cordon-cuneta"
@@ -183,6 +185,86 @@ async def test_creacion_pedido_denegada_a_consulta(client_consulta: AsyncClient,
         "fecha_pedido": "2026-06-15",
     })
     assert r.status_code == 403
+
+
+# ── Asignación de secretaría en crear_pedido ──────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_crear_pedido_asigna_secretaria_supervision_con_prioridad(
+    client_supervision: AsyncClient, municipio_id: str
+):
+    r = await client_supervision.post(f"{BASE}/{municipio_id}/pedidos", json={
+        "descripcion": "Nota", "fecha_pedido": "2026-07-01",
+    })
+    assert r.status_code == 201
+    assert r.json()["secretaria"] == "supervision"
+
+
+@pytest.mark.asyncio
+async def test_crear_pedido_asigna_secretaria_infraestructura(
+    client_infraestructura: AsyncClient, municipio_id: str
+):
+    r = await client_infraestructura.post(f"{BASE}/{municipio_id}/pedidos", json={
+        "descripcion": "Nota", "fecha_pedido": "2026-07-01",
+    })
+    assert r.status_code == 201
+    assert r.json()["secretaria"] == "infraestructura"
+
+
+@pytest.mark.asyncio
+async def test_crear_pedido_asigna_primera_secretaria_del_actor(
+    client_operador: AsyncClient, municipio_id: str
+):
+    """OPERADOR_USER tiene secretarias=['vivienda'] — sin infraestructura/supervision,
+    se asigna la primera secretaría del actor."""
+    r = await client_operador.post(f"{BASE}/{municipio_id}/pedidos", json={
+        "descripcion": "Nota", "fecha_pedido": "2026-07-01",
+    })
+    assert r.status_code == 201
+    assert r.json()["secretaria"] == "vivienda"
+
+
+# ── Visibilidad jerárquica de pedidos por secretaría ──────────────────────────
+
+@pytest_asyncio.fixture
+async def pedidos_multi_secretaria(db_session: AsyncSession, municipio_id: str) -> str:
+    """Un pedido de cada secretaría (None ~ vivienda, infraestructura, supervision)."""
+    for sec, desc in [(None, "Pedido vivienda"), ("infraestructura", "Pedido infra"), ("supervision", "Pedido superv")]:
+        db_session.add(PedidoCordonCuneta(
+            municipio_id=municipio_id, descripcion=desc, fecha_pedido=date(2026, 7, 1), secretaria=sec,
+        ))
+    await db_session.flush()
+    return municipio_id
+
+
+@pytest.mark.asyncio
+async def test_listar_pedidos_vivienda_no_ve_infraestructura_ni_supervision(
+    client_operador: AsyncClient, pedidos_multi_secretaria: str
+):
+    r = await client_operador.get(f"{BASE}/{pedidos_multi_secretaria}/pedidos")
+    assert {p["descripcion"] for p in r.json()} == {"Pedido vivienda"}
+
+
+@pytest.mark.asyncio
+async def test_listar_pedidos_infraestructura_ve_vivienda_y_propia_no_supervision(
+    client_infraestructura: AsyncClient, pedidos_multi_secretaria: str
+):
+    r = await client_infraestructura.get(f"{BASE}/{pedidos_multi_secretaria}/pedidos")
+    assert {p["descripcion"] for p in r.json()} == {"Pedido vivienda", "Pedido infra"}
+
+
+@pytest.mark.asyncio
+async def test_listar_pedidos_supervision_ve_todo(
+    client_supervision: AsyncClient, pedidos_multi_secretaria: str
+):
+    r = await client_supervision.get(f"{BASE}/{pedidos_multi_secretaria}/pedidos")
+    assert {p["descripcion"] for p in r.json()} == {"Pedido vivienda", "Pedido infra", "Pedido superv"}
+
+
+@pytest.mark.asyncio
+async def test_listar_pedidos_admin_ve_todo(client: AsyncClient, pedidos_multi_secretaria: str):
+    r = await client.get(f"{BASE}/{pedidos_multi_secretaria}/pedidos")
+    assert len(r.json()) == 3
 
 
 # ── Fixtures para tests de historial ──────────────────────────────────────────

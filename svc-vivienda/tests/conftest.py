@@ -54,6 +54,18 @@ INVITADO_USER = AuthUser(
     role="invitado",
     secretarias=[],
 )
+INFRAESTRUCTURA_USER = AuthUser(
+    uid="infra-uid",
+    email="infraestructura@test.com",
+    role="Operador",
+    secretarias=["infraestructura"],
+)
+SUPERVISION_USER = AuthUser(
+    uid="superv-uid",
+    email="supervision@test.com",
+    role="Operador",
+    secretarias=["supervision"],
+)
 
 MOCK_TOKEN = "test-token-dev"
 
@@ -117,3 +129,5 @@ client = _make_client_fixture(ADMIN_USER)
 client_operador = _make_client_fixture(OPERADOR_USER)
 client_consulta = _make_client_fixture(CONSULTA_USER)
 client_invitado = _make_client_fixture(INVITADO_USER)
+client_infraestructura = _make_client_fixture(INFRAESTRUCTURA_USER)
+client_supervision = _make_client_fixture(SUPERVISION_USER)

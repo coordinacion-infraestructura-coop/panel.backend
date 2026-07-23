@@ -1,12 +1,18 @@
 """Tests de integración para el módulo Córdoba Hogar."""
 import uuid
+from datetime import date
 
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.cordoba_hogar.models import ConfigCordobaHogar, EstadoCordobaHogar, LocalidadCordobaHogar
+from app.cordoba_hogar.models import (
+    ConfigCordobaHogar,
+    EstadoCordobaHogar,
+    LocalidadCordobaHogar,
+    PedidoCordobaHogar,
+)
 
 BASE = "/api/v1/vivienda/cordoba-hogar"
 CONFIG_URL = "/api/v1/vivienda/cordoba-hogar-config/presupuesto"
@@ -58,6 +64,21 @@ async def dos_estados(db_session: AsyncSession) -> tuple[int, int]:
     ))
     await db_session.flush()
     return id_a, id_b
+
+
+@pytest_asyncio.fixture
+async def localidad_con_estado(
+    db_session: AsyncSession, dos_estados: tuple[int, int]
+) -> tuple[str, int, int]:
+    """Localidad con todos los campos de estado en id_a. Retorna (localidad_id, id_a, id_b)."""
+    id_a, id_b = dos_estados
+    lid = str(uuid.uuid4())
+    db_session.add(LocalidadCordobaHogar(
+        id=lid, orden=99, localidad="Pueblo Test", departamento="Test",
+        ejuridico=id_a, etecnico=id_a, efinanciero=id_a, estado_general=id_a,
+    ))
+    await db_session.flush()
+    return lid, id_a, id_b
 
 
 # ── GET panel completo ─────────────────────────────────────────────────────────
@@ -227,7 +248,101 @@ async def test_pedidos_aislados_por_localidad(client: AsyncClient, db_session: A
     assert r.json() == []
 
 
+# ── Asignación de secretaría en crear_pedido ──────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_crear_pedido_asigna_secretaria_supervision_con_prioridad(
+    client_supervision: AsyncClient, localidad_id: str
+):
+    r = await client_supervision.post(f"{BASE}/{localidad_id}/pedidos", json={
+        "descripcion": "Nota", "fecha_pedido": "2026-07-01",
+    })
+    assert r.status_code == 201
+    assert r.json()["secretaria"] == "supervision"
+
+
+@pytest.mark.asyncio
+async def test_crear_pedido_asigna_secretaria_infraestructura(
+    client_infraestructura: AsyncClient, localidad_id: str
+):
+    r = await client_infraestructura.post(f"{BASE}/{localidad_id}/pedidos", json={
+        "descripcion": "Nota", "fecha_pedido": "2026-07-01",
+    })
+    assert r.status_code == 201
+    assert r.json()["secretaria"] == "infraestructura"
+
+
+@pytest.mark.asyncio
+async def test_crear_pedido_asigna_primera_secretaria_del_actor(
+    client_operador: AsyncClient, localidad_id: str
+):
+    """OPERADOR_USER tiene secretarias=['vivienda'] — sin infraestructura/supervision,
+    se asigna la primera secretaría del actor."""
+    r = await client_operador.post(f"{BASE}/{localidad_id}/pedidos", json={
+        "descripcion": "Nota", "fecha_pedido": "2026-07-01",
+    })
+    assert r.status_code == 201
+    assert r.json()["secretaria"] == "vivienda"
+
+
+# ── Visibilidad jerárquica de pedidos por secretaría ──────────────────────────
+
+@pytest_asyncio.fixture
+async def pedidos_multi_secretaria(db_session: AsyncSession, localidad_id: str) -> str:
+    """Un pedido de cada secretaría (None ~ vivienda, infraestructura, supervision)."""
+    for sec, desc in [(None, "Pedido vivienda"), ("infraestructura", "Pedido infra"), ("supervision", "Pedido superv")]:
+        db_session.add(PedidoCordobaHogar(
+            localidad_id=localidad_id, descripcion=desc, fecha_pedido=date(2026, 7, 1), secretaria=sec,
+        ))
+    await db_session.flush()
+    return localidad_id
+
+
+@pytest.mark.asyncio
+async def test_listar_pedidos_vivienda_no_ve_infraestructura_ni_supervision(
+    client_operador: AsyncClient, pedidos_multi_secretaria: str
+):
+    r = await client_operador.get(f"{BASE}/{pedidos_multi_secretaria}/pedidos")
+    assert {p["descripcion"] for p in r.json()} == {"Pedido vivienda"}
+
+
+@pytest.mark.asyncio
+async def test_listar_pedidos_infraestructura_ve_vivienda_y_propia_no_supervision(
+    client_infraestructura: AsyncClient, pedidos_multi_secretaria: str
+):
+    r = await client_infraestructura.get(f"{BASE}/{pedidos_multi_secretaria}/pedidos")
+    assert {p["descripcion"] for p in r.json()} == {"Pedido vivienda", "Pedido infra"}
+
+
+@pytest.mark.asyncio
+async def test_listar_pedidos_supervision_ve_todo(
+    client_supervision: AsyncClient, pedidos_multi_secretaria: str
+):
+    r = await client_supervision.get(f"{BASE}/{pedidos_multi_secretaria}/pedidos")
+    assert {p["descripcion"] for p in r.json()} == {"Pedido vivienda", "Pedido infra", "Pedido superv"}
+
+
+@pytest.mark.asyncio
+async def test_listar_pedidos_admin_ve_todo(client: AsyncClient, pedidos_multi_secretaria: str):
+    r = await client.get(f"{BASE}/{pedidos_multi_secretaria}/pedidos")
+    assert len(r.json()) == 3
+
+
 # ── estado_general ──────────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_estado_general_se_recomputa_al_cambiar_dimension(
+    client: AsyncClient, localidad_con_estado: tuple
+):
+    """Paridad con Cordón Cuneta: estado_general siempre refleja el estado con
+    menor orden entre los tres campos (cuando el PATCH es parcial)."""
+    lid, id_a, id_b = localidad_con_estado
+    r = await client.patch(f"{BASE}/{lid}", json={"ejuridico": id_b})
+    assert r.json()["estado_general"] == id_a
+
+    r2 = await client.patch(f"{BASE}/{lid}", json={"etecnico": id_b, "efinanciero": id_b})
+    assert r2.json()["estado_general"] == id_b
+
 
 @pytest.mark.asyncio
 async def test_reordenar_estado_recomputa_estado_general_de_localidades(
