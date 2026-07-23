@@ -319,3 +319,51 @@ async def test_estado_general_se_recomputa_al_cambiar_dimension(
     # Ahora todos pasan a id_b → estado_general debe ser id_b.
     r2 = await client.patch(f"{BASE}/{mid}", json={"etecnico": id_b, "efinanciero": id_b})
     assert r2.json()["estado_general"] == id_b
+
+
+@pytest.mark.asyncio
+async def test_reordenar_estado_recomputa_estado_general_de_municipios(
+    client: AsyncClient, db_session: AsyncSession, dos_estados: tuple[int, int]
+):
+    """Cambiar el `orden` de un estado del catálogo debe recalcular retroactivamente
+    el estado_general de todos los municipios que lo usan (bug: antes quedaba
+    desactualizado hasta el próximo cambio manual de dimensión)."""
+    id_a, id_b = dos_estados  # id_a: orden=10, id_b: orden=20
+    mid = str(uuid.uuid4())
+    db_session.add(MunicipioCordonCuneta(
+        id=mid, orden=1, municipio="Pueblo Mixto", departamento="Test",
+        ejuridico=id_a, etecnico=id_b, efinanciero=id_a, estado_general=id_a,
+    ))
+    await db_session.flush()
+
+    r0 = await client.get(BASE)
+    municipio0 = next(m for m in r0.json()["municipios"] if m["id"] == mid)
+    assert municipio0["estado_general"] == id_a
+
+    # Reordenamos id_a para que quede DESPUÉS de id_b — ahora el mínimo pasa a ser id_b.
+    r = await client.patch(f"{BASE}/estados/{id_a}", json={"orden": 999})
+    assert r.status_code == 200
+
+    r2 = await client.get(BASE)
+    municipio2 = next(m for m in r2.json()["municipios"] if m["id"] == mid)
+    assert municipio2["estado_general"] == id_b
+
+
+# ── Creación de municipios ─────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_crear_municipio(client: AsyncClient):
+    r = await client.post(BASE, json={"municipio": "Villa Nueva", "departamento": "Colón"})
+    assert r.status_code == 201
+    data = r.json()
+    assert data["municipio"] == "Villa Nueva"
+    assert data["departamento"] == "Colón"
+
+
+@pytest.mark.asyncio
+async def test_crear_municipio_duplicado_devuelve_409(client: AsyncClient):
+    await client.post(BASE, json={"municipio": "Villa Nueva", "departamento": "Colón"})
+    r = await client.post(BASE, json={"municipio": "villa nueva", "departamento": "COLÓN"})
+    assert r.status_code == 409
+    assert r.json()["detail"]["code"] == "MUNICIPIO_DUPLICADO"
+    assert "existing_id" in r.json()["detail"]

@@ -1,4 +1,5 @@
 from fastapi import HTTPException, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit import log_audit
@@ -56,9 +57,18 @@ async def crear_beneficiario(
             status_code=status.HTTP_409_CONFLICT,
             detail={"code": "VALIDACION_FALLIDA", "message": f"Ya existe un beneficiario con DNI {data.dni}"},
         )
-    beneficiario = await repository.create(
-        db, {**data.model_dump(), "created_by": actor.email}
-    )
+    try:
+        beneficiario = await repository.create(
+            db, {**data.model_dump(), "created_by": actor.email}
+        )
+    except IntegrityError:
+        # Doble-submit / creación concurrente: el pre-check de arriba no lo vio
+        # a tiempo, pero la constraint única de DB sí lo bloqueó.
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "VALIDACION_FALLIDA", "message": f"Ya existe un beneficiario con DNI {data.dni}"},
+        )
     await log_audit(db, actor=actor, action="CREATE", resource_type="beneficiario", resource_id=beneficiario.id)
     publish_event("vivienda.beneficiario.creado", {"id": beneficiario.id, "dni": beneficiario.dni}, actor.uid, actor.role)
     return BeneficiarioResponse.model_validate(beneficiario)

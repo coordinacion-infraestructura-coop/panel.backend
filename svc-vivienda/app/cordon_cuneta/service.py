@@ -4,6 +4,7 @@ from datetime import datetime, time as dtime, timezone
 
 from fastapi import HTTPException, status
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit import log_audit
@@ -44,6 +45,25 @@ async def _compute_estado_general(db: AsyncSession, ids: list[int | None]) -> in
         .limit(1)
     )
     return result.scalar_one_or_none()
+
+
+async def _recompute_all_estado_general(db: AsyncSession) -> None:
+    """Recalcula estado_general de todos los municipios activos.
+
+    Necesario cuando cambia el `orden` de un estado del catálogo: el
+    estado_general de cualquier municipio que use ese catálogo puede
+    quedar desactualizado aunque sus dimensiones no hayan cambiado.
+    Se recorre toda la tabla (decenas de filas) en vez de calcular el
+    subconjunto afectado — más simple y suficientemente barato a esta escala.
+    """
+    result = await db.execute(
+        select(MunicipioCordonCuneta).where(MunicipioCordonCuneta.deleted_at.is_(None))
+    )
+    for municipio in result.scalars().all():
+        municipio.estado_general = await _compute_estado_general(
+            db, [municipio.ejuridico, municipio.etecnico, municipio.efinanciero]
+        )
+    await db.flush()
 
 
 async def get_full(db: AsyncSession) -> CordonCunetaFullResponse:
@@ -101,10 +121,15 @@ async def actualizar_estado(
             detail={"code": "RECURSO_NO_ENCONTRADO", "message": f"Estado {estado_id} no encontrado"},
         )
     updates = data.model_dump(exclude_unset=True)
+    orden_changed = "orden" in updates and updates["orden"] != estado.orden
     for key, value in updates.items():
         setattr(estado, key, value)
     await db.flush()
     await db.refresh(estado)
+
+    if orden_changed:
+        await _recompute_all_estado_general(db)
+
     await log_audit(
         db, actor=actor, action="UPDATE", resource_type="cc_estado",
         resource_id=str(estado_id), payload=updates
@@ -255,7 +280,31 @@ async def crear_municipio(
         updated_by=actor.email,
     )
     db.add(municipio)
-    await db.flush()
+    try:
+        await db.flush()
+    except IntegrityError:
+        # Doble-submit / creación concurrente: el pre-check de arriba no lo vio
+        # a tiempo, pero la constraint única de DB sí lo bloqueó. Traducimos a
+        # el mismo 409 legible en vez de dejar subir un 500 genérico.
+        await db.rollback()
+        existing = (await db.execute(
+            select(MunicipioCordonCuneta).where(
+                func.lower(MunicipioCordonCuneta.municipio) == data.municipio.strip().lower(),
+                func.lower(MunicipioCordonCuneta.departamento) == (data.departamento or '').strip().lower(),
+                MunicipioCordonCuneta.deleted_at.is_(None),
+            )
+        )).scalar_one_or_none()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "MUNICIPIO_DUPLICADO",
+                "message": (
+                    f"Ya existe '{existing.municipio}' ({existing.departamento}) en el panel."
+                    if existing else "Ya existe un municipio con ese nombre y departamento en el panel."
+                ),
+                "existing_id": existing.id if existing else None,
+            },
+        )
 
     municipio.estado_general = await _compute_estado_general(
         db, [municipio.ejuridico, municipio.etecnico, municipio.efinanciero]

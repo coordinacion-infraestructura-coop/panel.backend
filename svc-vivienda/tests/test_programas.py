@@ -63,12 +63,16 @@ async def test_estadisticas_programa_vacio(client: AsyncClient, db_session: Asyn
 
 
 @pytest.mark.asyncio
-async def test_lectura_requiere_autenticacion(client_invitado: AsyncClient):
-    """Rol invitado no tiene acceso a programas (requires any authenticated role)."""
-    # programas solo require get_current_user (no role check), pero invitado tampoco
-    # tiene secretarías — el endpoint igual requiere token válido.
-    # En tests, invitado tiene role='invitado' y get_current_user devuelve ese usuario.
-    # El endpoint /programas usa Depends(get_current_user) sin require_roles, así que
-    # invitado SÍ puede leer programas (cualquier usuario autenticado).
+async def test_lectura_denegada_a_invitado(client_invitado: AsyncClient):
+    """Bug fix: un usuario Firebase válido pero no registrado en portal_usuarios
+    (role='invitado') no debe poder leer el catálogo de programas — antes el
+    endpoint solo exigía `get_current_user` sin `require_roles`, así que cualquier
+    usuario autenticado (aunque no estuviera en el sistema) podía leerlo."""
     r = await client_invitado.get(BASE)
+    assert r.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_lectura_permitida_a_consulta(client_consulta: AsyncClient):
+    r = await client_consulta.get(BASE)
     assert r.status_code == 200

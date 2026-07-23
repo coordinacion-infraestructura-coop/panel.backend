@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 
 from fastapi import HTTPException, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit import log_audit
@@ -61,16 +62,33 @@ async def crear_expediente(
             },
         )
     year = datetime.now(timezone.utc).year
-    numero = await repository.get_next_numero(db, year)
-    expediente = await repository.create(
-        db,
-        {
-            **data.model_dump(),
-            "numero_expediente": numero,
-            "estado": EstadoExpediente.INGRESADO.value,
-            "created_by": actor.email,
-        },
-    )
+    max_intentos = 5
+    for intento in range(max_intentos):
+        numero = await repository.get_next_numero(db, year)
+        try:
+            expediente = await repository.create(
+                db,
+                {
+                    **data.model_dump(),
+                    "numero_expediente": numero,
+                    "estado": EstadoExpediente.INGRESADO.value,
+                    "created_by": actor.email,
+                },
+            )
+            break
+        except IntegrityError:
+            # Dos creaciones concurrentes calcularon el mismo MAX+1 (ver docstring
+            # de get_next_numero). Se descarta el intento y se recalcula el
+            # siguiente número disponible contra el estado ya committeado.
+            await db.rollback()
+            if intento == max_intentos - 1:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail={
+                        "code": "CONFLICTO_NUMERACION",
+                        "message": "No se pudo generar un número de expediente único, reintentá.",
+                    },
+                )
     await repository.add_historial(
         db,
         expediente_id=expediente.id,

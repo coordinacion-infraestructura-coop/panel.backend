@@ -1,4 +1,6 @@
 """Tests de integración para el módulo expedientes."""
+from unittest.mock import patch
+
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient
@@ -26,6 +28,15 @@ async def programa_id(db_session: AsyncSession) -> str:
 async def beneficiario_id(client: AsyncClient) -> str:
     r = await client.post(BASE_BENE, json={
         "dni": "11111111", "nombre": "Ana", "apellido": "García"
+    })
+    assert r.status_code == 201
+    return r.json()["id"]
+
+
+@pytest_asyncio.fixture
+async def beneficiario_id_2(client: AsyncClient) -> str:
+    r = await client.post(BASE_BENE, json={
+        "dni": "22222222", "nombre": "Luis", "apellido": "Pérez"
     })
     assert r.status_code == 201
     return r.json()["id"]
@@ -88,6 +99,45 @@ async def test_numeros_secuenciales(client: AsyncClient, db_session: AsyncSessio
     n1 = e1.json()["numero_expediente"].split("-")[-1]
     n2 = e2.json()["numero_expediente"].split("-")[-1]
     assert int(n2) == int(n1) + 1
+
+
+@pytest.mark.asyncio
+async def test_numero_expediente_colision_se_resuelve_con_reintento(
+    client: AsyncClient, db_session: AsyncSession,
+    beneficiario_id: str, beneficiario_id_2: str, programa_id: str
+):
+    """Bug fix: si dos creaciones concurrentes calculan el mismo MAX+1 (race condition
+    documentada en get_next_numero), la segunda debe reintentar y obtener un número
+    distinto en vez de propagar un 500 por violación de la constraint única."""
+    r1 = await client.post(BASE_EXP, json={
+        "beneficiario_id": beneficiario_id, "programa_id": programa_id,
+    })
+    assert r1.status_code == 201
+    numero1 = r1.json()["numero_expediente"]
+    # El cliente de test comparte una única sesión/transacción sin commit entre
+    # requests (ver conftest.py); el rollback que dispara el retry de más abajo
+    # necesita que este expediente ya esté "confirmado" para no desaparecer con él.
+    await db_session.commit()
+
+    from app.expedientes import repository
+    original_get_next_numero = repository.get_next_numero
+    calls = {"n": 0}
+
+    async def numero_colisionado_una_vez(db, year):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return numero1  # simula la colisión: mismo número que el expediente ya creado
+        return await original_get_next_numero(db, year)
+
+    with patch("app.expedientes.repository.get_next_numero", side_effect=numero_colisionado_una_vez):
+        r2 = await client.post(BASE_EXP, json={
+            "beneficiario_id": beneficiario_id_2, "programa_id": programa_id,
+        })
+
+    assert r2.status_code == 201
+    numero2 = r2.json()["numero_expediente"]
+    assert numero2 != numero1
+    assert calls["n"] >= 2
 
 
 @pytest.mark.asyncio

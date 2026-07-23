@@ -1,8 +1,9 @@
 import time
-from datetime import datetime, time as dtime, timezone
+from datetime import date, datetime, time as dtime, timezone
 
 from fastapi import HTTPException, status
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit import log_audit
@@ -44,6 +45,25 @@ async def _compute_estado_general(db: AsyncSession, ids: list[int | None]) -> in
         .limit(1)
     )
     return result.scalar_one_or_none()
+
+
+async def _recompute_all_estado_general(db: AsyncSession) -> None:
+    """Recalcula estado_general de todas las localidades activas.
+
+    Necesario cuando cambia el `orden` de un estado del catálogo: el
+    estado_general de cualquier localidad que use ese catálogo puede
+    quedar desactualizado aunque sus dimensiones no hayan cambiado.
+    Se recorre toda la tabla (decenas de filas) en vez de calcular el
+    subconjunto afectado — más simple y suficientemente barato a esta escala.
+    """
+    result = await db.execute(
+        select(LocalidadCordobaHogar).where(LocalidadCordobaHogar.deleted_at.is_(None))
+    )
+    for localidad in result.scalars().all():
+        localidad.estado_general = await _compute_estado_general(
+            db, [localidad.ejuridico, localidad.etecnico, localidad.efinanciero]
+        )
+    await db.flush()
 
 
 async def get_full(db: AsyncSession) -> CordobaHogarFullResponse:
@@ -104,10 +124,15 @@ async def actualizar_estado(
             detail={"code": "RECURSO_NO_ENCONTRADO", "message": f"Estado {estado_id} no encontrado"},
         )
     updates = data.model_dump(exclude_unset=True)
+    orden_changed = "orden" in updates and updates["orden"] != estado.orden
     for key, value in updates.items():
         setattr(estado, key, value)
     await db.flush()
     await db.refresh(estado)
+
+    if orden_changed:
+        await _recompute_all_estado_general(db)
+
     await log_audit(
         db, actor=actor, action="UPDATE", resource_type="ch_estado",
         resource_id=str(estado_id), payload=updates
@@ -260,7 +285,31 @@ async def crear_localidad(
         updated_by=actor.email,
     )
     db.add(localidad)
-    await db.flush()
+    try:
+        await db.flush()
+    except IntegrityError:
+        # Doble-submit / creación concurrente: el pre-check de arriba no lo vio
+        # a tiempo, pero la constraint única de DB sí lo bloqueó. Traducimos a
+        # el mismo 409 legible en vez de dejar subir un 500 genérico.
+        await db.rollback()
+        existing = (await db.execute(
+            select(LocalidadCordobaHogar).where(
+                func.lower(LocalidadCordobaHogar.localidad) == data.localidad.strip().lower(),
+                func.lower(LocalidadCordobaHogar.departamento) == (data.departamento or '').strip().lower(),
+                LocalidadCordobaHogar.deleted_at.is_(None),
+            )
+        )).scalar_one_or_none()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "LOCALIDAD_DUPLICADA",
+                "message": (
+                    f"Ya existe '{existing.localidad}' ({existing.departamento}) en el panel."
+                    if existing else "Ya existe una localidad con ese nombre y departamento en el panel."
+                ),
+                "existing_id": existing.id if existing else None,
+            },
+        )
 
     localidad.estado_general = await _compute_estado_general(
         db, [localidad.ejuridico, localidad.etecnico, localidad.efinanciero]
@@ -457,7 +506,10 @@ async def seed_cordoba_hogar(db: AsyncSession) -> None:
     await db.flush()
 
     for loc in LOCALIDADES_SEED:
-        db.add(LocalidadCordobaHogar(**loc))
+        loc_data = dict(loc)
+        if loc_data.get("fecha_anuncio"):
+            loc_data["fecha_anuncio"] = date.fromisoformat(loc_data["fecha_anuncio"])
+        db.add(LocalidadCordobaHogar(**loc_data))
     await db.flush()
 
     config = ConfigCordobaHogar(id=1, presupuesto=0)

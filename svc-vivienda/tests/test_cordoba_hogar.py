@@ -46,6 +46,20 @@ async def config(db_session: AsyncSession) -> None:
     await db_session.flush()
 
 
+@pytest_asyncio.fixture
+async def dos_estados(db_session: AsyncSession) -> tuple[int, int]:
+    """Dos estados con ordenes distintos para simular una transición."""
+    id_a, id_b = 100, 200
+    db_session.add(EstadoCordobaHogar(
+        id=id_a, label="En proceso", bg="#ffe", text_color="#333", orden=10,
+    ))
+    db_session.add(EstadoCordobaHogar(
+        id=id_b, label="Completado", bg="#dfd", text_color="#060", orden=20,
+    ))
+    await db_session.flush()
+    return id_a, id_b
+
+
 # ── GET panel completo ─────────────────────────────────────────────────────────
 
 @pytest.mark.asyncio
@@ -211,3 +225,53 @@ async def test_pedidos_aislados_por_localidad(client: AsyncClient, db_session: A
 
     r = await client.get(f"{BASE}/{lid2}/pedidos")
     assert r.json() == []
+
+
+# ── estado_general ──────────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_reordenar_estado_recomputa_estado_general_de_localidades(
+    client: AsyncClient, db_session: AsyncSession, dos_estados: tuple[int, int]
+):
+    """Cambiar el `orden` de un estado del catálogo debe recalcular retroactivamente
+    el estado_general de todas las localidades que lo usan (bug: antes quedaba
+    desactualizado hasta el próximo cambio manual de dimensión)."""
+    id_a, id_b = dos_estados  # id_a: orden=10, id_b: orden=20
+    lid = str(uuid.uuid4())
+    db_session.add(LocalidadCordobaHogar(
+        id=lid, orden=1, localidad="Pueblo Mixto", departamento="Test",
+        ejuridico=id_a, etecnico=id_b, efinanciero=id_a, estado_general=id_a,
+    ))
+    await db_session.flush()
+
+    r0 = await client.get(BASE)
+    localidad0 = next(l for l in r0.json()["localidades"] if l["id"] == lid)
+    assert localidad0["estado_general"] == id_a
+
+    # Reordenamos id_a para que quede DESPUÉS de id_b — ahora el mínimo pasa a ser id_b.
+    r = await client.patch(f"{BASE}/estados/{id_a}", json={"orden": 999})
+    assert r.status_code == 200
+
+    r2 = await client.get(BASE)
+    localidad2 = next(l for l in r2.json()["localidades"] if l["id"] == lid)
+    assert localidad2["estado_general"] == id_b
+
+
+# ── Creación de localidades ────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_crear_localidad(client: AsyncClient):
+    r = await client.post(BASE, json={"localidad": "Villa Nueva", "departamento": "Colón"})
+    assert r.status_code == 201
+    data = r.json()
+    assert data["localidad"] == "Villa Nueva"
+    assert data["departamento"] == "Colón"
+
+
+@pytest.mark.asyncio
+async def test_crear_localidad_duplicada_devuelve_409(client: AsyncClient):
+    await client.post(BASE, json={"localidad": "Villa Nueva", "departamento": "Colón"})
+    r = await client.post(BASE, json={"localidad": "villa nueva", "departamento": "COLÓN"})
+    assert r.status_code == 409
+    assert r.json()["detail"]["code"] == "LOCALIDAD_DUPLICADA"
+    assert "existing_id" in r.json()["detail"]
