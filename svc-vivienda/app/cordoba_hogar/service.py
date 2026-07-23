@@ -123,18 +123,29 @@ async def eliminar_estado(db: AsyncSession, estado_id: int, actor: AuthUser) -> 
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"code": "RECURSO_NO_ENCONTRADO", "message": f"Estado {estado_id} no encontrado"},
         )
-    ref_count = (await db.execute(
+    # Chequea todas las FK al catálogo: dimensiones, estado_general e historial
+    ref_loc = (await db.execute(
         select(func.count(LocalidadCordobaHogar.id)).where(
             LocalidadCordobaHogar.deleted_at.is_(None),
             (LocalidadCordobaHogar.ejuridico == estado_id)
             | (LocalidadCordobaHogar.etecnico == estado_id)
-            | (LocalidadCordobaHogar.efinanciero == estado_id),
+            | (LocalidadCordobaHogar.efinanciero == estado_id)
+            | (LocalidadCordobaHogar.estado_general == estado_id),
         )
     )).scalar_one()
-    if ref_count > 0:
+    ref_hist = (await db.execute(
+        select(func.count(EstadoHistorialCH.id)).where(
+            (EstadoHistorialCH.estado_anterior_id == estado_id)
+            | (EstadoHistorialCH.estado_nuevo_id == estado_id)
+        )
+    )).scalar_one()
+    if ref_loc > 0 or ref_hist > 0:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail={"code": "ESTADO_EN_USO", "message": f"El estado está en uso en {ref_count} localidad(es)"},
+            detail={
+                "code": "ESTADO_EN_USO",
+                "message": f"El estado está en uso: {ref_loc} localidad(es) y {ref_hist} entrada(s) de historial.",
+            },
         )
     await db.delete(estado)
     await log_audit(
