@@ -34,37 +34,6 @@ from app.cordon_cuneta.seed_data import ESTADOS_SEED, MUNICIPIOS_SEED
 from app.geo.models import GeoLocalidad
 
 
-async def _compute_estado_general(db: AsyncSession, ids: list[int | None]) -> int | None:
-    non_null = [i for i in ids if i is not None]
-    if not non_null:
-        return None
-    result = await db.execute(
-        select(EstadoCordonCuneta.id)
-        .where(EstadoCordonCuneta.id.in_(non_null))
-        .order_by(EstadoCordonCuneta.orden.asc())
-        .limit(1)
-    )
-    return result.scalar_one_or_none()
-
-
-async def _recompute_all_estado_general(db: AsyncSession) -> None:
-    """Recalcula estado_general de todos los municipios activos.
-
-    Necesario cuando cambia el `orden` de un estado del catálogo: el
-    estado_general de cualquier municipio que use ese catálogo puede
-    quedar desactualizado aunque sus dimensiones no hayan cambiado.
-    Se recorre toda la tabla (decenas de filas) en vez de calcular el
-    subconjunto afectado — más simple y suficientemente barato a esta escala.
-    """
-    result = await db.execute(
-        select(MunicipioCordonCuneta).where(MunicipioCordonCuneta.deleted_at.is_(None))
-    )
-    for municipio in result.scalars().all():
-        municipio.estado_general = await _compute_estado_general(
-            db, [municipio.ejuridico, municipio.etecnico, municipio.efinanciero]
-        )
-    await db.flush()
-
 
 async def get_full(db: AsyncSession) -> CordonCunetaFullResponse:
     municipios_res = await db.execute(
@@ -121,14 +90,10 @@ async def actualizar_estado(
             detail={"code": "RECURSO_NO_ENCONTRADO", "message": f"Estado {estado_id} no encontrado"},
         )
     updates = data.model_dump(exclude_unset=True)
-    orden_changed = "orden" in updates and updates["orden"] != estado.orden
     for key, value in updates.items():
         setattr(estado, key, value)
     await db.flush()
     await db.refresh(estado)
-
-    if orden_changed:
-        await _recompute_all_estado_general(db)
 
     await log_audit(
         db, actor=actor, action="UPDATE", resource_type="cc_estado",
@@ -224,11 +189,6 @@ async def actualizar_municipio(
     if fecha_cambio is not None:
         municipio.updated_at = datetime.combine(fecha_cambio, dtime(12, 0, 0), tzinfo=timezone.utc)
 
-    if "estado_general" not in updates:
-        municipio.estado_general = await _compute_estado_general(
-            db, [municipio.ejuridico, municipio.etecnico, municipio.efinanciero]
-        )
-
     await db.flush()
 
     for entry in historial:
@@ -306,10 +266,6 @@ async def crear_municipio(
             },
         )
 
-    municipio.estado_general = await _compute_estado_general(
-        db, [municipio.ejuridico, municipio.etecnico, municipio.efinanciero]
-    )
-    await db.flush()
     await db.refresh(municipio)
     await log_audit(
         db, actor=actor, action="CREATE", resource_type="cordon_cuneta",

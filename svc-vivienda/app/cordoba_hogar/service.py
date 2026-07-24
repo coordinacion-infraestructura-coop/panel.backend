@@ -34,37 +34,6 @@ from app.cordoba_hogar.seed_data import ESTADOS_SEED, LOCALIDADES_SEED
 from app.geo.models import GeoLocalidad
 
 
-async def _compute_estado_general(db: AsyncSession, ids: list[int | None]) -> int | None:
-    non_null = [i for i in ids if i is not None]
-    if not non_null:
-        return None
-    result = await db.execute(
-        select(EstadoCordobaHogar.id)
-        .where(EstadoCordobaHogar.id.in_(non_null))
-        .order_by(EstadoCordobaHogar.orden.asc())
-        .limit(1)
-    )
-    return result.scalar_one_or_none()
-
-
-async def _recompute_all_estado_general(db: AsyncSession) -> None:
-    """Recalcula estado_general de todas las localidades activas.
-
-    Necesario cuando cambia el `orden` de un estado del catálogo: el
-    estado_general de cualquier localidad que use ese catálogo puede
-    quedar desactualizado aunque sus dimensiones no hayan cambiado.
-    Se recorre toda la tabla (decenas de filas) en vez de calcular el
-    subconjunto afectado — más simple y suficientemente barato a esta escala.
-    """
-    result = await db.execute(
-        select(LocalidadCordobaHogar).where(LocalidadCordobaHogar.deleted_at.is_(None))
-    )
-    for localidad in result.scalars().all():
-        localidad.estado_general = await _compute_estado_general(
-            db, [localidad.ejuridico, localidad.etecnico, localidad.efinanciero]
-        )
-    await db.flush()
-
 
 async def get_full(db: AsyncSession) -> CordobaHogarFullResponse:
     localidades_res = await db.execute(
@@ -124,14 +93,10 @@ async def actualizar_estado(
             detail={"code": "RECURSO_NO_ENCONTRADO", "message": f"Estado {estado_id} no encontrado"},
         )
     updates = data.model_dump(exclude_unset=True)
-    orden_changed = "orden" in updates and updates["orden"] != estado.orden
     for key, value in updates.items():
         setattr(estado, key, value)
     await db.flush()
     await db.refresh(estado)
-
-    if orden_changed:
-        await _recompute_all_estado_general(db)
 
     await log_audit(
         db, actor=actor, action="UPDATE", resource_type="ch_estado",
@@ -227,11 +192,6 @@ async def actualizar_localidad(
     if fecha_cambio is not None:
         localidad.updated_at = datetime.combine(fecha_cambio, dtime(12, 0, 0), tzinfo=timezone.utc)
 
-    if "estado_general" not in updates:
-        localidad.estado_general = await _compute_estado_general(
-            db, [localidad.ejuridico, localidad.etecnico, localidad.efinanciero]
-        )
-
     await db.flush()
 
     for entry in historial:
@@ -311,10 +271,6 @@ async def crear_localidad(
             },
         )
 
-    localidad.estado_general = await _compute_estado_general(
-        db, [localidad.ejuridico, localidad.etecnico, localidad.efinanciero]
-    )
-    await db.flush()
     await db.refresh(localidad)
     await log_audit(
         db, actor=actor, action="CREATE", resource_type="cordoba_hogar",
