@@ -2,7 +2,6 @@
 "Base TOTAL". Ver spec: docs/files/spec-sync-cc-checklist-tecnico.md
 """
 import json
-import unicodedata
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
@@ -19,6 +18,7 @@ from app.cordon_cuneta.checklist_schemas import (
     SyncStatusResponse,
 )
 from app.cordon_cuneta.models import MunicipioCordonCuneta
+from app.geo.matching import normalize_name
 from app.integrations import google_sheets
 
 # Rango leído: "Base TOTAL!A6:AR400" — fila 6 es la primera con datos reales.
@@ -131,14 +131,6 @@ def _parse_date(raw: Any) -> date | None:
     return None
 
 
-def _strip_accents(s: str) -> str:
-    return "".join(c for c in unicodedata.normalize("NFKD", s) if not unicodedata.combining(c))
-
-
-def _normalize_name(s: str) -> str:
-    return _strip_accents(s).strip().lower()
-
-
 # ── Matching best-effort contra viv_cordon_cuneta ──────────────────────────────
 
 async def _match_municipio_id(
@@ -156,14 +148,14 @@ async def _match_municipio_id(
         if match:
             return match
 
-    norm_localidad = _normalize_name(localidad)
+    norm_localidad = normalize_name(localidad)
     result = await db.execute(
         select(MunicipioCordonCuneta.id, MunicipioCordonCuneta.municipio).where(
             MunicipioCordonCuneta.deleted_at.is_(None)
         )
     )
     for mid, municipio_nombre in result.all():
-        if _normalize_name(municipio_nombre) == norm_localidad:
+        if normalize_name(municipio_nombre) == norm_localidad:
             return mid
     return None
 

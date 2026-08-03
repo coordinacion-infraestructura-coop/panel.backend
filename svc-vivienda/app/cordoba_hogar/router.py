@@ -19,6 +19,8 @@ from app.cordoba_hogar.schemas import (
     PedidoResponse,
     PresupuestoUpdate,
 )
+from app.informes import service as informes_service
+from app.informes.schemas import InformeSnapshotResponse
 
 router = APIRouter()
 
@@ -146,6 +148,27 @@ async def delete_pedido(
     actor: AuthUser = Depends(require_roles(*ROLES_ESCRITURA)),
 ):
     await service.delete_pedido(db, localidad_id, pedido_id, actor)
+
+
+@router.get("/cordoba-hogar/informe", response_model=InformeSnapshotResponse | None)
+async def get_informe(
+    db: AsyncSession = Depends(get_db),
+    _: AuthUser = Depends(require_roles(*ROLES_LECTURA)),
+):
+    """Último informe calculado (KPIs, cobertura por departamento, evolución,
+    mapa). Devuelve null si todavía no se calculó ninguno — es un estado
+    válido, no un error."""
+    return await informes_service.get_last_snapshot(db, informes_service.PROGRAMA_CORDOBA_HOGAR)
+
+
+@router.post("/cordoba-hogar/informe/actualizar", response_model=InformeSnapshotResponse)
+async def actualizar_informe(
+    db: AsyncSession = Depends(get_db),
+    actor: AuthUser = Depends(require_roles(*ROLES_ESCRITURA)),
+):
+    """Recalcula el informe ahora mismo y guarda un snapshot nuevo (no se
+    sobreescribe el anterior, queda historizado)."""
+    return await informes_service.actualizar_informe(db, informes_service.PROGRAMA_CORDOBA_HOGAR, actor)
 
 
 @router.patch("/cordoba-hogar-config/presupuesto")

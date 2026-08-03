@@ -76,6 +76,7 @@ _AUDIT_PATCH_TARGETS = [
     "app.asignaciones.service.log_audit",
     "app.cordoba_hogar.service.log_audit",
     "app.cordon_cuneta.service.log_audit",
+    "app.informes.service.log_audit",
 ]
 
 

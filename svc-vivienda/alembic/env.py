@@ -20,6 +20,7 @@ from app.cordon_cuneta.models import (
     MunicipioCordonCuneta,
     PedidoCordonCuneta,
 )
+from app.cordon_cuneta.checklist_models import ChecklistItemCC, ChecklistTecnicoCC, SyncLogCC
 from app.cordoba_hogar.models import (
     ConfigCordobaHogar,
     EstadoCordobaHogar,
@@ -28,6 +29,7 @@ from app.cordoba_hogar.models import (
     PedidoCordobaHogar,
 )
 from app.geo.models import GeoLocalidad
+from app.informes.models import InformeSnapshot
 from app.portal.models import PortalUsuario, PortalUsuarioSecretaria
 
 config = context.config

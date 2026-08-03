@@ -20,6 +20,7 @@ from app.cordon_cuneta.checklist_models import (  # noqa: F401 — ensures table
     ChecklistTecnicoCC,
     SyncLogCC,
 )
+from app.informes.models import InformeSnapshot  # noqa: F401 — ensures table is registered with Base
 
 
 @asynccontextmanager
