@@ -61,7 +61,7 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
         sa.Column("updated_by", sa.String(255), nullable=True),
-        sa.ForeignKeyConstraint(["localidad_id"], ["viv_geo_localidades.id"]),
+        sa.ForeignKeyConstraint(["localidad_id"], ["viv_geo_localidades.id_geo"]),
         sa.ForeignKeyConstraint(["ejuridico"], ["viv_ml_estados.id"]),
         sa.ForeignKeyConstraint(["etecnico"], ["viv_ml_estados.id"]),
         sa.ForeignKeyConstraint(["efinanciero"], ["viv_ml_estados.id"]),
