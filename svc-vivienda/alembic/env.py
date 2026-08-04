@@ -30,6 +30,14 @@ from app.cordoba_hogar.models import (
 )
 from app.geo.models import GeoLocalidad
 from app.informes.models import InformeSnapshot
+from app.mi_lugar.models import (
+    ConfigML,
+    EstadoHistorialML,
+    EstadoML,
+    GeoPuntoML,
+    PedidoML,
+    ProyectoML,
+)
 from app.portal.models import PortalUsuario, PortalUsuarioSecretaria
 
 config = context.config
