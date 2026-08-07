@@ -16,6 +16,7 @@ class EstadoML(Base):
     bg: Mapped[str] = mapped_column(String(10))
     text_color: Mapped[str] = mapped_column(String(10))
     orden: Mapped[int] = mapped_column(Integer)
+    tipo: Mapped[str] = mapped_column(String(10), nullable=False, server_default="exp")
     aplica_juridico: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
     aplica_tecnico: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
     aplica_financiero: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
@@ -91,6 +92,7 @@ class ConfigML(Base):
     tipo_cambio: Mapped[Decimal] = mapped_column(Numeric(12, 2), server_default="1450")
     usd_por_lote: Mapped[Decimal] = mapped_column(Numeric(12, 2), server_default="10000")
     lotes_por_ha: Mapped[Decimal] = mapped_column(Numeric(8, 4), server_default="25")
+    monto_por_lote_muni: Mapped[Decimal] = mapped_column(Numeric(18, 2), server_default="14000000")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

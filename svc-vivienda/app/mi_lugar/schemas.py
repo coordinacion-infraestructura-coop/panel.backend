@@ -17,6 +17,7 @@ class EstadoMLOut(BaseModel):
     bg: str
     text_color: str
     orden: int
+    tipo: str
     aplica_juridico: bool
     aplica_tecnico: bool
     aplica_financiero: bool
@@ -27,6 +28,7 @@ class EstadoMLCreate(BaseModel):
     bg: str
     text_color: str
     orden: int
+    tipo: str = "exp"
     aplica_juridico: bool = True
     aplica_tecnico: bool = True
     aplica_financiero: bool = True
@@ -184,9 +186,11 @@ class ConfigMLOut(BaseModel):
     tipo_cambio: Decimal
     usd_por_lote: Decimal
     lotes_por_ha: Decimal
+    monto_por_lote_muni: Decimal
 
 
 class ConfigMLUpdate(BaseModel):
     tipo_cambio: Decimal | None = None
     usd_por_lote: Decimal | None = None
     lotes_por_ha: Decimal | None = None
+    monto_por_lote_muni: Decimal | None = None

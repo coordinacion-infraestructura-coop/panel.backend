@@ -32,10 +32,11 @@ router = APIRouter()
 
 @router.get("/mi-lugar/estados", response_model=list[EstadoMLOut])
 async def listar_estados(
+    tipo: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
     _: AuthUser = Depends(require_roles(*ROLES_LECTURA)),
 ):
-    return await service.listar_estados_ml(db)
+    return await service.listar_estados_ml(db, tipo=tipo)
 
 
 @router.post("/mi-lugar/estados", response_model=EstadoMLOut, status_code=status.HTTP_201_CREATED)

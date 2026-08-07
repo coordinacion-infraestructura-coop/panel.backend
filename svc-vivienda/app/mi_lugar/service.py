@@ -35,8 +35,12 @@ from app.mi_lugar.seed_data import CONFIG_SEED, ESTADOS_SEED, PROYECTOS_SEED
 
 # ─── Estados ──────────────────────────────────────────────────────────────────
 
-async def listar_estados_ml(db: AsyncSession) -> list[EstadoMLOut]:
-    result = await db.execute(select(EstadoML).order_by(EstadoML.orden))
+async def listar_estados_ml(db: AsyncSession, tipo: str | None = None) -> list[EstadoMLOut]:
+    q = select(EstadoML)
+    if tipo is not None:
+        q = q.where(EstadoML.tipo == tipo)
+    q = q.order_by(EstadoML.orden)
+    result = await db.execute(q)
     return [EstadoMLOut.model_validate(e) for e in result.scalars().all()]
 
 
@@ -48,6 +52,7 @@ async def crear_estado_ml(db: AsyncSession, data: EstadoMLCreate, actor: AuthUse
         bg=data.bg,
         text_color=data.text_color,
         orden=data.orden,
+        tipo=data.tipo,
         aplica_juridico=data.aplica_juridico,
         aplica_tecnico=data.aplica_tecnico,
         aplica_financiero=data.aplica_financiero,
