@@ -8,11 +8,17 @@ from app.programas.schemas import ProgramaEstadisticas, ProgramaResponse
 
 router = APIRouter()
 
+# Constante LOCAL a este router — no se agrega "TecnicoDGV" a app.auth.ROLES_LECTURA porque
+# esa constante la comparten cordon_cuneta/cordoba_hogar/mi_lugar, y ese rol solo debe ver el
+# Tablero (este router) + Checklist Técnico, nunca los 3 paneles completos (ver
+# docs/files/spec-checklist-tecnico-dgv.md §8).
+ROLES_LECTURA_TABLERO = ROLES_LECTURA + ("TecnicoDGV",)
+
 
 @router.get("/programas", response_model=list[ProgramaResponse])
 async def listar_programas(
     db: AsyncSession = Depends(get_db),
-    _: AuthUser = Depends(require_roles(*ROLES_LECTURA)),
+    _: AuthUser = Depends(require_roles(*ROLES_LECTURA_TABLERO)),
 ):
     """Catálogo de programas habitacionales activos."""
     return await service.listar_programas(db)
@@ -22,7 +28,7 @@ async def listar_programas(
 async def get_programa(
     programa_id: str,
     db: AsyncSession = Depends(get_db),
-    _: AuthUser = Depends(require_roles(*ROLES_LECTURA)),
+    _: AuthUser = Depends(require_roles(*ROLES_LECTURA_TABLERO)),
 ):
     return await service.get_programa(db, programa_id)
 
@@ -31,7 +37,7 @@ async def get_programa(
 async def estadisticas_programa(
     programa_id: str,
     db: AsyncSession = Depends(get_db),
-    _: AuthUser = Depends(require_roles(*ROLES_LECTURA)),
+    _: AuthUser = Depends(require_roles(*ROLES_LECTURA_TABLERO)),
 ):
     """Distribución de expedientes por estado para un programa."""
     return await service.get_estadisticas(db, programa_id)

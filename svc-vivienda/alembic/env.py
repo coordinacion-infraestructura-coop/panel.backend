@@ -21,6 +21,13 @@ from app.cordon_cuneta.models import (
     PedidoCordonCuneta,
 )
 from app.cordon_cuneta.checklist_models import ChecklistItemCC, ChecklistTecnicoCC, SyncLogCC
+from app.checklist_tecnico.models import (
+    CatalogoEstadoExpediente,
+    CatalogoReparticion,
+    ChecklistItem,
+    ChecklistObraHito,
+    ChecklistTecnico,
+)
 from app.cordoba_hogar.models import (
     ConfigCordobaHogar,
     EstadoCordobaHogar,

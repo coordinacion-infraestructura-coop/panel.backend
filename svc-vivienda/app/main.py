@@ -13,6 +13,7 @@ from app.asignaciones.router import router as asignaciones_router
 from app.cordon_cuneta.router import router as cordon_cuneta_router
 from app.cordoba_hogar.router import router as cordoba_hogar_router
 from app.mi_lugar.router import router as mi_lugar_router
+from app.checklist_tecnico.router import router as checklist_tecnico_router
 from app.portal.router import router as portal_router
 from app.internal.router import router as internal_router
 from app.geo.models import GeoLocalidad  # noqa: F401 — ensures table is registered with Base
@@ -20,6 +21,13 @@ from app.cordon_cuneta.checklist_models import (  # noqa: F401 — ensures table
     ChecklistItemCC,
     ChecklistTecnicoCC,
     SyncLogCC,
+)
+from app.checklist_tecnico.models import (  # noqa: F401 — ensures tables are registered with Base
+    CatalogoEstadoExpediente,
+    CatalogoReparticion,
+    ChecklistItem,
+    ChecklistObraHito,
+    ChecklistTecnico,
 )
 from app.informes.models import InformeSnapshot  # noqa: F401 — ensures table is registered with Base
 from app.mi_lugar.models import (  # noqa: F401 — ensures tables are registered with Base
@@ -87,6 +95,7 @@ app.include_router(asignaciones_router, prefix="/api/v1/vivienda", tags=["asigna
 app.include_router(cordon_cuneta_router, prefix="/api/v1/vivienda", tags=["cordon-cuneta"])
 app.include_router(cordoba_hogar_router, prefix="/api/v1/vivienda", tags=["cordoba-hogar"])
 app.include_router(mi_lugar_router, prefix="/api/v1/vivienda", tags=["mi-lugar"])
+app.include_router(checklist_tecnico_router, prefix="/api/v1/vivienda", tags=["checklist-tecnico"])
 app.include_router(portal_router, prefix="/api/v1", tags=["portal"])
 # Sin prefijo /api/v1 — no pasa por API Gateway, ver app/internal/router.py
 app.include_router(internal_router)

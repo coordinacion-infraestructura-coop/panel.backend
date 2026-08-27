@@ -66,6 +66,12 @@ SUPERVISION_USER = AuthUser(
     role="Operador",
     secretarias=["supervision"],
 )
+TECNICO_DGV_USER = AuthUser(
+    uid="tecnico-dgv-uid",
+    email="tecnico.dgv@test.com",
+    role="TecnicoDGV",
+    secretarias=["vivienda"],
+)
 
 MOCK_TOKEN = "test-token-dev"
 
@@ -77,6 +83,7 @@ _AUDIT_PATCH_TARGETS = [
     "app.cordoba_hogar.service.log_audit",
     "app.cordon_cuneta.service.log_audit",
     "app.informes.service.log_audit",
+    "app.checklist_tecnico.service.log_audit",
 ]
 
 
@@ -132,3 +139,4 @@ client_consulta = _make_client_fixture(CONSULTA_USER)
 client_invitado = _make_client_fixture(INVITADO_USER)
 client_infraestructura = _make_client_fixture(INFRAESTRUCTURA_USER)
 client_supervision = _make_client_fixture(SUPERVISION_USER)
+client_tecnico_dgv = _make_client_fixture(TECNICO_DGV_USER)
