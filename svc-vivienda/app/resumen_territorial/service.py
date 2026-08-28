@@ -207,20 +207,31 @@ async def fetch_privada_lineas() -> list[dict]:
         headers = {"Authorization": f"Bearer {token}"} if token else {}
         async with httpx.AsyncClient(timeout=20) as client:
             resp = await client.get(url, headers=headers)
-        resp.raise_for_status()
+
+        if resp.status_code != 200:
+            logger.warning(
+                "resumen_territorial: Privada respondió %s. url=%s aud=%s token_minteado=%s "
+                "body[:1000]=%s",
+                resp.status_code,
+                url,
+                audience,
+                bool(token),
+                (resp.text or "")[:1000],
+            )
+            return []
+
         lineas = _map_privada_payload(resp.json())
         if not lineas:
             logger.warning(
-                "resumen_territorial: fetch de Privada OK (status=%s) pero 0 líneas reconocidas. "
-                "body[:1000]=%s",
-                resp.status_code,
-                (resp.text or "")[:1000],
+                "resumen_territorial: fetch de Privada OK (200) pero 0 líneas reconocidas. "
+                "body[:1500]=%s",
+                (resp.text or "")[:1500],
             )
         else:
             logger.info("resumen_territorial: Privada devolvió %d líneas por localidad", len(lineas))
         return lineas
     except Exception as exc:  # noqa: BLE001 — tolerante por diseño
-        logger.warning("resumen_territorial: fetch de Privada falló (%s): %s", url, exc)
+        logger.warning("resumen_territorial: fetch de Privada falló (%s): %r", url, exc)
         return []
 
 
