@@ -14,6 +14,7 @@ from app.cordon_cuneta.router import router as cordon_cuneta_router
 from app.cordoba_hogar.router import router as cordoba_hogar_router
 from app.mi_lugar.router import router as mi_lugar_router
 from app.checklist_tecnico.router import router as checklist_tecnico_router
+from app.resumen_territorial.router import router as resumen_territorial_router
 from app.portal.router import router as portal_router
 from app.internal.router import router as internal_router
 from app.geo.models import GeoLocalidad  # noqa: F401 — ensures table is registered with Base
@@ -30,6 +31,7 @@ from app.checklist_tecnico.models import (  # noqa: F401 — ensures tables are 
     ChecklistTecnico,
 )
 from app.informes.models import InformeSnapshot  # noqa: F401 — ensures table is registered with Base
+from app.resumen_territorial.models import ResumenTerritorialSnapshot  # noqa: F401 — registra la tabla en Base
 from app.mi_lugar.models import (  # noqa: F401 — ensures tables are registered with Base
     ConfigML,
     EstadoHistorialML,
@@ -96,6 +98,8 @@ app.include_router(cordon_cuneta_router, prefix="/api/v1/vivienda", tags=["cordo
 app.include_router(cordoba_hogar_router, prefix="/api/v1/vivienda", tags=["cordoba-hogar"])
 app.include_router(mi_lugar_router, prefix="/api/v1/vivienda", tags=["mi-lugar"])
 app.include_router(checklist_tecnico_router, prefix="/api/v1/vivienda", tags=["checklist-tecnico"])
+# Transversal — prefijo /api/v1 (no /vivienda), mismo criterio que portal (ADR-007)
+app.include_router(resumen_territorial_router, prefix="/api/v1", tags=["resumen-territorial"])
 app.include_router(portal_router, prefix="/api/v1", tags=["portal"])
 # Sin prefijo /api/v1 — no pasa por API Gateway, ver app/internal/router.py
 app.include_router(internal_router)

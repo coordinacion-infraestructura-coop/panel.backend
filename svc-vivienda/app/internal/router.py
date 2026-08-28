@@ -11,11 +11,16 @@ Ver spec: docs/files/spec-sync-cc-checklist-tecnico.md
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth import AuthUser
 from app.cordon_cuneta import checklist_sync
 from app.cordon_cuneta.checklist_schemas import SyncResultResponse
 from app.database import get_db
+from app.resumen_territorial import service as resumen_service
 
 router = APIRouter(prefix="/internal", tags=["internal"])
+
+# Actor sintético para las corridas disparadas por Cloud Scheduler (no hay JWT en este flujo)
+_SCHEDULER_ACTOR = AuthUser(uid="cloud-scheduler", email="cloud-scheduler", role="system", secretarias=[])
 
 
 @router.post("/sync/cordon-cuneta-checklist", response_model=SyncResultResponse)
@@ -33,3 +38,23 @@ async def sync_cordon_cuneta_checklist(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail={"code": "SHEET_SYNC_FALLIDO", "message": str(exc)},
         )
+
+
+@router.post("/resumen-territorial/actualizar")
+async def actualizar_resumen_territorial(db: AsyncSession = Depends(get_db)):
+    """Recalcula el snapshot del Resumen Territorial. Lo dispara Cloud Scheduler
+    (OIDC → Cloud Run IAM). El fetch de Privada es tolerante a fallos dentro del
+    cómputo; un 502 acá significa que falló el cálculo de Vivienda o el guardado."""
+    try:
+        snapshot = await resumen_service.actualizar_resumen(db, _SCHEDULER_ACTOR)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail={"code": "RESUMEN_TERRITORIAL_FALLIDO", "message": str(exc)},
+        )
+    return {
+        "computed_at": snapshot.computed_at,
+        "duracion_ms": snapshot.duracion_ms,
+        "total_localidades": snapshot.payload.get("total_localidades"),
+        "generado_para_areas": snapshot.payload.get("generado_para_areas"),
+    }

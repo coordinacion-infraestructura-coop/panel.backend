@@ -16,5 +16,10 @@ class Settings(BaseSettings):
     google_sheet_cc_id: str = ""
     google_sheet_cc_range: str = "Base TOTAL!A6:AR400"
 
+    # Resumen Territorial — llamada servidor-a-servidor a svc-privada vía API Gateway (spec §3.3)
+    gateway_base_url: str = "https://ministerio-gateway-3j5k00ma.uc.gateway.dev"
+    privada_resumen_path: str = "/api/v1/privada/gestiones/resumen-territorial"
+    privada_gateway_audience: str = ""  # vacío → se usa gateway_base_url como audience del ID token
+
 
 settings = Settings()

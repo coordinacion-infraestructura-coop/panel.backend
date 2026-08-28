@@ -72,6 +72,18 @@ TECNICO_DGV_USER = AuthUser(
     role="TecnicoDGV",
     secretarias=["vivienda"],
 )
+AUTORIDAD_USER = AuthUser(
+    uid="autoridad-uid",
+    email="autoridad@test.com",
+    role="Autoridad",
+    secretarias=[],
+)
+PRIVADA_USER = AuthUser(
+    uid="privada-uid",
+    email="privada.op@test.com",
+    role="Operador",
+    secretarias=["privada"],
+)
 
 MOCK_TOKEN = "test-token-dev"
 
@@ -84,7 +96,19 @@ _AUDIT_PATCH_TARGETS = [
     "app.cordon_cuneta.service.log_audit",
     "app.informes.service.log_audit",
     "app.checklist_tecnico.service.log_audit",
+    "app.resumen_territorial.service.log_audit",
 ]
+
+
+@pytest.fixture(autouse=True)
+def _no_privada_fetch():
+    """Por defecto, el fetch de Privada del Resumen Territorial devuelve [] — así
+    ningún test toca la red. Los tests que quieran líneas de Privada parchean
+    `app.resumen_territorial.service.fetch_privada_lineas` con su propio valor."""
+    with patch(
+        "app.resumen_territorial.service.fetch_privada_lineas", new=AsyncMock(return_value=[])
+    ):
+        yield
 
 
 # ── Fixtures de base de datos ──────────────────────────────────────────────────
@@ -140,3 +164,5 @@ client_invitado = _make_client_fixture(INVITADO_USER)
 client_infraestructura = _make_client_fixture(INFRAESTRUCTURA_USER)
 client_supervision = _make_client_fixture(SUPERVISION_USER)
 client_tecnico_dgv = _make_client_fixture(TECNICO_DGV_USER)
+client_autoridad = _make_client_fixture(AUTORIDAD_USER)
+client_privada = _make_client_fixture(PRIVADA_USER)

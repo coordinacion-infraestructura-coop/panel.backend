@@ -37,6 +37,7 @@ from app.cordoba_hogar.models import (
 )
 from app.geo.models import GeoLocalidad
 from app.informes.models import InformeSnapshot
+from app.resumen_territorial.models import ResumenTerritorialSnapshot
 from app.mi_lugar.models import (
     ConfigML,
     EstadoHistorialML,
