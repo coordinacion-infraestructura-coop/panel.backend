@@ -19,7 +19,9 @@ class Settings(BaseSettings):
     # Resumen Territorial — llamada servidor-a-servidor a svc-privada vía API Gateway (spec §3.3)
     gateway_base_url: str = "https://ministerio-gateway-3j5k00ma.uc.gateway.dev"
     privada_resumen_path: str = "/api/v1/privada/gestiones/resumen-territorial"
-    privada_gateway_audience: str = ""  # vacío → se usa gateway_base_url como audience del ID token
+    # El securityDefinition `google_accounts` del gateway exige aud="gestorcooperativo"
+    # (x-google-audiences). Vacío → se usa gcp_project_id como audience del ID token.
+    privada_gateway_audience: str = ""
 
 
 settings = Settings()

@@ -196,13 +196,29 @@ async def fetch_privada_lineas() -> list[dict]:
     Spec §3.3.
     """
     url = settings.gateway_base_url.rstrip("/") + settings.privada_resumen_path
+    audience = settings.privada_gateway_audience or settings.gcp_project_id
     try:
-        token = _mint_id_token(settings.privada_gateway_audience or settings.gateway_base_url)
+        token = _mint_id_token(audience)
+        if not token:
+            logger.warning(
+                "resumen_territorial: se llama a Privada SIN ID token (mint falló, audience=%s)",
+                audience,
+            )
         headers = {"Authorization": f"Bearer {token}"} if token else {}
         async with httpx.AsyncClient(timeout=20) as client:
             resp = await client.get(url, headers=headers)
         resp.raise_for_status()
-        return _map_privada_payload(resp.json())
+        lineas = _map_privada_payload(resp.json())
+        if not lineas:
+            logger.warning(
+                "resumen_territorial: fetch de Privada OK (status=%s) pero 0 líneas reconocidas. "
+                "body[:1000]=%s",
+                resp.status_code,
+                (resp.text or "")[:1000],
+            )
+        else:
+            logger.info("resumen_territorial: Privada devolvió %d líneas por localidad", len(lineas))
+        return lineas
     except Exception as exc:  # noqa: BLE001 — tolerante por diseño
         logger.warning("resumen_territorial: fetch de Privada falló (%s): %s", url, exc)
         return []
