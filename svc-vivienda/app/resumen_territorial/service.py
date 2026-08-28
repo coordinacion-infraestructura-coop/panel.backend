@@ -195,6 +195,10 @@ async def fetch_privada_lineas() -> list[dict]:
     acepta varias formas plausibles y devuelve `[]` si no reconoce ninguna.
     Spec §3.3.
     """
+    if not settings.privada_fetch_enabled:
+        # Privada la federa el frontend con el token del usuario (spec §3.3, plan B).
+        return []
+
     url = settings.gateway_base_url.rstrip("/") + settings.privada_resumen_path
     audience = settings.privada_gateway_audience or settings.gcp_project_id
     try:

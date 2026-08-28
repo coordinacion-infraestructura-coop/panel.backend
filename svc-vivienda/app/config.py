@@ -16,12 +16,15 @@ class Settings(BaseSettings):
     google_sheet_cc_id: str = ""
     google_sheet_cc_range: str = "Base TOTAL!A6:AR400"
 
-    # Resumen Territorial — llamada servidor-a-servidor a svc-privada vía API Gateway (spec §3.3)
+    # Resumen Territorial — fetch servidor-a-servidor a svc-privada (spec §3.3).
+    # DESACTIVADO por defecto: svc-privada valida el token con su propio client-id de
+    # Google Sign-In y rechaza el ID token de la SA ({"detail":"Invalid token"}).
+    # Hoy Privada la federa el frontend con el token del usuario. Encender este flag
+    # sólo si el equipo de svc-privada habilita la SA `svc-vivienda@…`.
+    privada_fetch_enabled: bool = False
     gateway_base_url: str = "https://ministerio-gateway-3j5k00ma.uc.gateway.dev"
     privada_resumen_path: str = "/api/v1/privada/gestiones/resumen-territorial"
-    # El securityDefinition `google_accounts` del gateway exige aud="gestorcooperativo"
-    # (x-google-audiences). Vacío → se usa gcp_project_id como audience del ID token.
-    privada_gateway_audience: str = ""
+    privada_gateway_audience: str = ""  # vacío → gcp_project_id como aud del ID token
 
 
 settings = Settings()

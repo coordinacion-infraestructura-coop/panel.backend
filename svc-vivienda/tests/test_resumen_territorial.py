@@ -353,12 +353,23 @@ async def test_lineas_de_privada_entran_en_el_snapshot_y_respetan_visibilidad(
 
 
 @pytest.mark.asyncio
-async def test_fetch_privada_lineas_es_tolerante_a_fallos():
-    """Contrato: `fetch_privada_lineas` nunca lanza — ante cualquier error de red,
-    auth o forma, devuelve []. Se apunta a un host inexistente para forzar el fallo."""
+async def test_fetch_privada_lineas_desactivado_por_defecto():
+    """Por defecto `privada_fetch_enabled` es False → devuelve [] sin tocar la red
+    (Privada la federa el frontend, spec §3.3 plan B)."""
     from app.resumen_territorial import service as svc
 
-    with patch.object(svc.settings, "gateway_base_url", "http://127.0.0.1:1"):
+    assert await svc.fetch_privada_lineas() == []
+
+
+@pytest.mark.asyncio
+async def test_fetch_privada_lineas_es_tolerante_a_fallos():
+    """Con el flag encendido: nunca lanza — ante cualquier error de red/auth/forma
+    devuelve []. Se apunta a un host inexistente para forzar el fallo."""
+    from app.resumen_territorial import service as svc
+
+    with patch.object(svc.settings, "privada_fetch_enabled", True), patch.object(
+        svc.settings, "gateway_base_url", "http://127.0.0.1:1"
+    ):
         resultado = await svc.fetch_privada_lineas()
     assert resultado == []
 
