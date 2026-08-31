@@ -5,6 +5,7 @@ from app.auth import AuthUser, ROLES_LECTURA, require_roles
 from app.database import get_db
 from app.programas import service
 from app.programas.schemas import ProgramaEstadisticas, ProgramaResponse
+from app.programas.tablero import TableroViviendaResponse, get_tablero_vivienda
 
 router = APIRouter()
 
@@ -22,6 +23,16 @@ async def listar_programas(
 ):
     """Catálogo de programas habitacionales activos."""
     return await service.listar_programas(db)
+
+
+@router.get("/programas/tablero", response_model=TableroViviendaResponse)
+async def tablero_vivienda(
+    db: AsyncSession = Depends(get_db),
+    _: AuthUser = Depends(require_roles(*ROLES_LECTURA_TABLERO)),
+):
+    """KPIs agregados de CC/CH/ML para el Tablero de Programas — sin exponer los
+    paneles completos (accesible a TecnicoDGV, spec-checklist-tecnico-dgv.md §8/§9)."""
+    return await get_tablero_vivienda(db)
 
 
 @router.get("/programas/{programa_id}", response_model=ProgramaResponse)
