@@ -26,15 +26,21 @@ from app.checklist_tecnico.schemas import (
     CatalogosResponse,
     ChecklistItemResponse,
     ChecklistItemUpdate,
+    ChecklistPedidoCreate,
+    ChecklistPedidoOut,
     ChecklistTecnicoResponse,
     ChecklistTecnicoUpdate,
+    EntidadListItem,
     EntidadResumen,
     HitoResponse,
     HitoUpdate,
     ItemDefinicion,
 )
-from app.cordon_cuneta.models import MunicipioCordonCuneta
+from app.cordoba_hogar import service as ch_service
 from app.cordoba_hogar.models import LocalidadCordobaHogar
+from app.cordon_cuneta import service as cc_service
+from app.cordon_cuneta.models import MunicipioCordonCuneta
+from app.mi_lugar import service as ml_service
 from app.mi_lugar.models import ProyectoML
 
 
@@ -227,6 +233,87 @@ async def get_checklist(db: AsyncSession, programa: str, entidad_id: str) -> Che
     entidad = await _get_entidad(db, programa, entidad_id)
     checklist = await _get_or_create_checklist(db, programa, entidad_id)
     return await _build_response(db, programa, checklist, entidad)
+
+
+async def listar_entidades(db: AsyncSession) -> list[EntidadListItem]:
+    """Filas mínimas (programa, id, nombre, departamento) para el selector del panel.
+
+    Existe porque TecnicoDGV no puede llamar a los GET de panel completo de
+    cordon_cuneta/cordoba_hogar/mi_lugar (spec §8). Devuelve las 3 fuentes juntas;
+    el frontend agrupa por localidad. Solo entidades no borradas.
+    """
+    out: list[EntidadListItem] = []
+
+    cc = await db.execute(
+        select(MunicipioCordonCuneta)
+        .where(MunicipioCordonCuneta.deleted_at.is_(None))
+        .order_by(MunicipioCordonCuneta.municipio)
+    )
+    for m in cc.scalars().all():
+        out.append(EntidadListItem(programa="cc", id=m.id, nombre=m.municipio, departamento=m.departamento))
+
+    ch = await db.execute(
+        select(LocalidadCordobaHogar)
+        .where(LocalidadCordobaHogar.deleted_at.is_(None))
+        .order_by(LocalidadCordobaHogar.localidad)
+    )
+    for loc in ch.scalars().all():
+        out.append(EntidadListItem(programa="ch", id=loc.id, nombre=loc.localidad, departamento=loc.departamento))
+
+    ml = await db.execute(
+        select(ProyectoML)
+        .where(ProyectoML.deleted_at.is_(None))
+        .order_by(ProyectoML.nombre)
+    )
+    for p in ml.scalars().all():
+        out.append(
+            EntidadListItem(
+                programa="ml",
+                id=p.id,
+                nombre=p.nombre or p.localidad_nombre,
+                departamento=p.departamento,
+            )
+        )
+
+    return out
+
+
+# ── Observaciones (pedidos) — delega en el service del programa correspondiente ──
+# El panel comparte la sección "Observaciones" con los 3 paneles completos, pero
+# TecnicoDGV no puede pegarle a /{programa}/{id}/pedidos directo (ROLES_LECTURA).
+# Estos wrappers reusan la lógica existente (incluye validación de entidad 404 y
+# enmascarado de comunicaciones de infra/supervisión) pasando el actor tal cual.
+
+async def listar_pedidos(
+    db: AsyncSession, programa: str, entidad_id: str, actor: AuthUser
+) -> list[ChecklistPedidoOut]:
+    _validar_programa(programa)
+    if programa == "cc":
+        pedidos = await cc_service.listar_pedidos(db, entidad_id, actor)
+    elif programa == "ch":
+        pedidos = await ch_service.listar_pedidos(db, entidad_id, actor)
+    else:
+        pedidos = await ml_service.listar_pedidos_ml(db, entidad_id, actor)
+    return [ChecklistPedidoOut.model_validate(p) for p in pedidos]
+
+
+async def crear_pedido(
+    db: AsyncSession, programa: str, entidad_id: str, data: ChecklistPedidoCreate, actor: AuthUser
+) -> ChecklistPedidoOut:
+    _validar_programa(programa)
+    if programa == "cc":
+        from app.cordon_cuneta.schemas import PedidoCreate as _PedidoCreate
+
+        pedido = await cc_service.crear_pedido(db, entidad_id, _PedidoCreate(**data.model_dump()), actor)
+    elif programa == "ch":
+        from app.cordoba_hogar.schemas import PedidoCreate as _PedidoCreate
+
+        pedido = await ch_service.crear_pedido(db, entidad_id, _PedidoCreate(**data.model_dump()), actor)
+    else:
+        from app.mi_lugar.schemas import PedidoMLCreate as _PedidoMLCreate
+
+        pedido = await ml_service.crear_pedido_ml(db, entidad_id, _PedidoMLCreate(**data.model_dump()), actor)
+    return ChecklistPedidoOut.model_validate(pedido)
 
 
 async def actualizar_checklist(

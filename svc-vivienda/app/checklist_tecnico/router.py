@@ -13,8 +13,11 @@ from app.checklist_tecnico.schemas import (
     CatalogoReparticionUpdate,
     CatalogosResponse,
     ChecklistItemUpdate,
+    ChecklistPedidoCreate,
+    ChecklistPedidoOut,
     ChecklistTecnicoResponse,
     ChecklistTecnicoUpdate,
+    EntidadListItem,
     HitoUpdate,
 )
 from app.database import get_db
@@ -37,6 +40,16 @@ async def get_catalogos(
     return await service.get_catalogos(db)
 
 
+@router.get("/checklist-tecnico/entidades", response_model=list[EntidadListItem])
+async def listar_entidades(
+    db: AsyncSession = Depends(get_db),
+    _: AuthUser = Depends(require_roles(*ROLES_LECTURA_CHECKLIST)),
+):
+    """Selector de localidad/programa. Reemplaza el uso de los GET de panel completo
+    de cordon_cuneta/cordoba_hogar/mi_lugar, vedados a TecnicoDGV (spec §6, enmienda 1.1.0)."""
+    return await service.listar_entidades(db)
+
+
 @router.get("/checklist-tecnico/{programa}/{entidad_id}", response_model=ChecklistTecnicoResponse)
 async def get_checklist(
     programa: Programa,
@@ -45,6 +58,34 @@ async def get_checklist(
     _: AuthUser = Depends(require_roles(*ROLES_LECTURA_CHECKLIST)),
 ):
     return await service.get_checklist(db, programa, entidad_id)
+
+
+@router.get(
+    "/checklist-tecnico/{programa}/{entidad_id}/pedidos",
+    response_model=list[ChecklistPedidoOut],
+)
+async def listar_pedidos(
+    programa: Programa,
+    entidad_id: str,
+    db: AsyncSession = Depends(get_db),
+    actor: AuthUser = Depends(require_roles(*ROLES_LECTURA_CHECKLIST)),
+):
+    return await service.listar_pedidos(db, programa, entidad_id, actor)
+
+
+@router.post(
+    "/checklist-tecnico/{programa}/{entidad_id}/pedidos",
+    response_model=ChecklistPedidoOut,
+    status_code=201,
+)
+async def crear_pedido(
+    programa: Programa,
+    entidad_id: str,
+    data: ChecklistPedidoCreate,
+    db: AsyncSession = Depends(get_db),
+    actor: AuthUser = Depends(require_roles(*ROLES_ESCRITURA_CHECKLIST)),
+):
+    return await service.crear_pedido(db, programa, entidad_id, data, actor)
 
 
 @router.patch("/checklist-tecnico/{programa}/{entidad_id}", response_model=ChecklistTecnicoResponse)

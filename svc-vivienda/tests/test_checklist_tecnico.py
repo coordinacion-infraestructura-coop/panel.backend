@@ -267,6 +267,98 @@ async def test_consulta_no_puede_escribir_checklist(client_consulta: AsyncClient
     assert r.status_code == 403
 
 
+# ── Selector de entidades (spec §6, enmienda 1.1.0) ───────────────────────────
+
+@pytest.mark.asyncio
+async def test_listar_entidades_devuelve_las_3_fuentes(
+    client_tecnico_dgv: AsyncClient, municipio_cc: str, localidad_ch: str, proyecto_ml: str
+):
+    r = await client_tecnico_dgv.get(f"{BASE}/entidades")
+    assert r.status_code == 200
+    data = r.json()
+    by_prog = {(e["programa"], e["id"]): e for e in data}
+    assert by_prog[("cc", municipio_cc)]["nombre"] == "Chazón"
+    assert by_prog[("cc", municipio_cc)]["departamento"] == "General San Martín"
+    assert by_prog[("ch", localidad_ch)]["nombre"] == "Colonia Barge"
+    assert by_prog[("ml", proyecto_ml)]["nombre"] == "Predio Norte"
+    assert {e["programa"] for e in data} == {"cc", "ch", "ml"}
+
+
+@pytest.mark.asyncio
+async def test_listar_entidades_omite_borradas(
+    client_tecnico_dgv: AsyncClient, db_session: AsyncSession, municipio_cc: str
+):
+    from datetime import datetime, timezone
+
+    borrado = str(uuid.uuid4())
+    db_session.add(MunicipioCordonCuneta(
+        id=borrado, orden=2, municipio="Borrada", departamento="X",
+        deleted_at=datetime.now(timezone.utc),
+    ))
+    await db_session.flush()
+    r = await client_tecnico_dgv.get(f"{BASE}/entidades")
+    ids = {e["id"] for e in r.json()}
+    assert municipio_cc in ids
+    assert borrado not in ids
+
+
+@pytest.mark.asyncio
+async def test_listar_entidades_invitado_403(client_invitado: AsyncClient):
+    assert (await client_invitado.get(f"{BASE}/entidades")).status_code == 403
+
+
+# ── Observaciones (pedidos) vía checklist — TecnicoDGV no puede pegarle a /{programa}/{id}/pedidos ──
+
+@pytest.mark.asyncio
+async def test_tecnico_dgv_crea_y_lista_observacion_cc(
+    client_tecnico_dgv: AsyncClient, municipio_cc: str, catalogos: None
+):
+    r_create = await client_tecnico_dgv.post(
+        f"{BASE}/cc/{municipio_cc}/pedidos",
+        json={"descripcion": "Falta el estudio de suelo", "fecha_pedido": "2026-08-31"},
+    )
+    assert r_create.status_code == 201
+    assert r_create.json()["descripcion"] == "Falta el estudio de suelo"
+
+    r_list = await client_tecnico_dgv.get(f"{BASE}/cc/{municipio_cc}/pedidos")
+    assert r_list.status_code == 200
+    assert len(r_list.json()) == 1
+
+    # el endpoint de panel completo sigue vedado para el rol
+    assert (await client_tecnico_dgv.get(f"{CC_BASE}/{municipio_cc}/pedidos")).status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_observacion_checklist_ml_y_ch(
+    client_tecnico_dgv: AsyncClient, localidad_ch: str, proyecto_ml: str
+):
+    for programa, ent in (("ch", localidad_ch), ("ml", proyecto_ml)):
+        r = await client_tecnico_dgv.post(
+            f"{BASE}/{programa}/{ent}/pedidos",
+            json={"descripcion": "obs", "fecha_pedido": "2026-08-31"},
+        )
+        assert r.status_code == 201, (programa, r.text)
+
+
+@pytest.mark.asyncio
+async def test_observacion_checklist_entidad_inexistente_404(
+    client_tecnico_dgv: AsyncClient
+):
+    r = await client_tecnico_dgv.get(f"{BASE}/cc/{uuid.uuid4()}/pedidos")
+    assert r.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_observacion_checklist_consulta_no_escribe(
+    client_consulta: AsyncClient, municipio_cc: str
+):
+    r = await client_consulta.post(
+        f"{BASE}/cc/{municipio_cc}/pedidos",
+        json={"descripcion": "x", "fecha_pedido": "2026-08-31"},
+    )
+    assert r.status_code == 403
+
+
 # ── Admin de catálogos ───────────────────────────────────────────────────────
 
 @pytest.mark.asyncio

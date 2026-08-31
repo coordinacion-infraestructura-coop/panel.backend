@@ -75,6 +75,34 @@ class EntidadResumen(BaseModel):
     dato_extra_valor: str | None = None
 
 
+class EntidadListItem(BaseModel):
+    """Fila mínima del selector de localidad/programa (spec §6, enmienda 1.1.0).
+
+    Reemplaza el uso de los GET de panel completo de cordon_cuneta/cordoba_hogar/mi_lugar,
+    que están vedados a TecnicoDGV — el único rol que usa esta pantalla.
+    """
+    programa: Programa
+    id: str
+    nombre: str
+    departamento: str | None
+
+
+class ChecklistPedidoCreate(BaseModel):
+    descripcion: str
+    fecha_pedido: date
+
+
+class ChecklistPedidoOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    descripcion: str
+    fecha_pedido: date
+    created_at: datetime
+    created_by: str | None = None
+    created_by_nombre: str | None = None
+    secretaria: str | None = None
+
+
 class ChecklistItemResponse(BaseModel):
     item_num: int
     sub_item_num: int | None
