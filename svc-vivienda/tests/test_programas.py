@@ -12,6 +12,7 @@ from app.mi_lugar.models import ProyectoML
 from app.programas.service import seed_programas
 
 BASE = "/api/v1/vivienda/programas"
+TABLERO = "/api/v1/vivienda/programas-tablero"
 
 
 @pytest.mark.asyncio
@@ -120,7 +121,7 @@ async def _tablero_seed(db_session: AsyncSession) -> None:
 
 @pytest.mark.asyncio
 async def test_tablero_kpis(client: AsyncClient, _tablero_seed: None):
-    r = await client.get(f"{BASE}/tablero")
+    r = await client.get(TABLERO)
     assert r.status_code == 200
     data = r.json()
 
@@ -139,21 +140,21 @@ async def test_tablero_kpis(client: AsyncClient, _tablero_seed: None):
 
 
 @pytest.mark.asyncio
-async def test_tablero_no_lo_ensombrece_get_programa(client: AsyncClient):
-    """`/programas/tablero` debe resolver al endpoint del tablero, no a
-    `/programas/{programa_id}` con programa_id='tablero' (404)."""
-    r = await client.get(f"{BASE}/tablero")
-    assert r.status_code == 200
-    assert "cordon_cuneta" in r.json()
+async def test_tablero_es_ruta_propia_no_subruta_de_programas(client: AsyncClient):
+    """El path es `/programas-tablero` (con guion), NO `/programas/tablero` — un
+    literal que colisiona con `/programas/{programa_id}` rompe el ruteo del gateway."""
+    assert (await client.get(TABLERO)).status_code == 200
+    # el path viejo colisionante ya no existe
+    assert (await client.get(f"{BASE}/tablero")).status_code == 404
 
 
 @pytest.mark.asyncio
 async def test_tablero_accesible_a_tecnico_dgv(client_tecnico_dgv: AsyncClient, _tablero_seed: None):
-    r = await client_tecnico_dgv.get(f"{BASE}/tablero")
+    r = await client_tecnico_dgv.get(TABLERO)
     assert r.status_code == 200
 
 
 @pytest.mark.asyncio
 async def test_tablero_denegado_a_invitado(client_invitado: AsyncClient):
-    r = await client_invitado.get(f"{BASE}/tablero")
+    r = await client_invitado.get(TABLERO)
     assert r.status_code == 403

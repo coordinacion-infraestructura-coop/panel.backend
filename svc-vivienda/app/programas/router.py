@@ -25,7 +25,10 @@ async def listar_programas(
     return await service.listar_programas(db)
 
 
-@router.get("/programas/tablero", response_model=TableroViviendaResponse)
+# Path con guion (no `/programas/tablero`): un literal que colisiona con
+# `/programas/{programa_id}` en el mismo nivel de segmentos rompe el ruteo de
+# API Gateway / ESPv2 (404). Misma convención que `cordon-cuneta-config`, etc.
+@router.get("/programas-tablero", response_model=TableroViviendaResponse)
 async def tablero_vivienda(
     db: AsyncSession = Depends(get_db),
     _: AuthUser = Depends(require_roles(*ROLES_LECTURA_TABLERO)),
