@@ -387,48 +387,10 @@ async def test_historial_vacio_para_municipio_sin_cambios(
     assert r.json() == []
 
 
-@pytest.mark.asyncio
-async def test_estado_general_se_recomputa_al_cambiar_dimension(
-    client: AsyncClient, municipio_con_estado: tuple
-):
-    """estado_general siempre refleja el estado con menor orden entre los tres campos."""
-    mid, id_a, id_b = municipio_con_estado
-    # Solo ejuridico cambia a id_b (orden 20). etecnico y efinanciero quedan en id_a (orden 10).
-    # estado_general debe seguir siendo id_a.
-    r = await client.patch(f"{BASE}/{mid}", json={"ejuridico": id_b})
-    assert r.json()["estado_general"] == id_a
-
-    # Ahora todos pasan a id_b → estado_general debe ser id_b.
-    r2 = await client.patch(f"{BASE}/{mid}", json={"etecnico": id_b, "efinanciero": id_b})
-    assert r2.json()["estado_general"] == id_b
-
-
-@pytest.mark.asyncio
-async def test_reordenar_estado_recomputa_estado_general_de_municipios(
-    client: AsyncClient, db_session: AsyncSession, dos_estados: tuple[int, int]
-):
-    """Cambiar el `orden` de un estado del catálogo debe recalcular retroactivamente
-    el estado_general de todos los municipios que lo usan (bug: antes quedaba
-    desactualizado hasta el próximo cambio manual de dimensión)."""
-    id_a, id_b = dos_estados  # id_a: orden=10, id_b: orden=20
-    mid = str(uuid.uuid4())
-    db_session.add(MunicipioCordonCuneta(
-        id=mid, orden=1, municipio="Pueblo Mixto", departamento="Test",
-        ejuridico=id_a, etecnico=id_b, efinanciero=id_a, estado_general=id_a,
-    ))
-    await db_session.flush()
-
-    r0 = await client.get(BASE)
-    municipio0 = next(m for m in r0.json()["municipios"] if m["id"] == mid)
-    assert municipio0["estado_general"] == id_a
-
-    # Reordenamos id_a para que quede DESPUÉS de id_b — ahora el mínimo pasa a ser id_b.
-    r = await client.patch(f"{BASE}/estados/{id_a}", json={"orden": 999})
-    assert r.status_code == 200
-
-    r2 = await client.get(BASE)
-    municipio2 = next(m for m in r2.json()["municipios"] if m["id"] == mid)
-    assert municipio2["estado_general"] == id_b
+# NOTA: `estado_general` es 100% manual desde 2026-07-31 (ver CLAUDE.md). El recálculo
+# automático al cambiar una sub-dimensión o al reordenar el catálogo de estados fue
+# removido a propósito porque pisaba overrides manuales — los tests que lo verificaban
+# se eliminaron acá.
 
 
 # ── Creación de municipios ─────────────────────────────────────────────────────

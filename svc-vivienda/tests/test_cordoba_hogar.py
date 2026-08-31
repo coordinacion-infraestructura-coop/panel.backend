@@ -328,48 +328,10 @@ async def test_listar_pedidos_admin_ve_todo(client: AsyncClient, pedidos_multi_s
     assert len(r.json()) == 3
 
 
-# ── estado_general ──────────────────────────────────────────────────────────────
-
-@pytest.mark.asyncio
-async def test_estado_general_se_recomputa_al_cambiar_dimension(
-    client: AsyncClient, localidad_con_estado: tuple
-):
-    """Paridad con Cordón Cuneta: estado_general siempre refleja el estado con
-    menor orden entre los tres campos (cuando el PATCH es parcial)."""
-    lid, id_a, id_b = localidad_con_estado
-    r = await client.patch(f"{BASE}/{lid}", json={"ejuridico": id_b})
-    assert r.json()["estado_general"] == id_a
-
-    r2 = await client.patch(f"{BASE}/{lid}", json={"etecnico": id_b, "efinanciero": id_b})
-    assert r2.json()["estado_general"] == id_b
-
-
-@pytest.mark.asyncio
-async def test_reordenar_estado_recomputa_estado_general_de_localidades(
-    client: AsyncClient, db_session: AsyncSession, dos_estados: tuple[int, int]
-):
-    """Cambiar el `orden` de un estado del catálogo debe recalcular retroactivamente
-    el estado_general de todas las localidades que lo usan (bug: antes quedaba
-    desactualizado hasta el próximo cambio manual de dimensión)."""
-    id_a, id_b = dos_estados  # id_a: orden=10, id_b: orden=20
-    lid = str(uuid.uuid4())
-    db_session.add(LocalidadCordobaHogar(
-        id=lid, orden=1, localidad="Pueblo Mixto", departamento="Test",
-        ejuridico=id_a, etecnico=id_b, efinanciero=id_a, estado_general=id_a,
-    ))
-    await db_session.flush()
-
-    r0 = await client.get(BASE)
-    localidad0 = next(l for l in r0.json()["localidades"] if l["id"] == lid)
-    assert localidad0["estado_general"] == id_a
-
-    # Reordenamos id_a para que quede DESPUÉS de id_b — ahora el mínimo pasa a ser id_b.
-    r = await client.patch(f"{BASE}/estados/{id_a}", json={"orden": 999})
-    assert r.status_code == 200
-
-    r2 = await client.get(BASE)
-    localidad2 = next(l for l in r2.json()["localidades"] if l["id"] == lid)
-    assert localidad2["estado_general"] == id_b
+# NOTA: `estado_general` es 100% manual desde 2026-07-31 (ver CLAUDE.md). El recálculo
+# automático al cambiar una sub-dimensión o al reordenar el catálogo de estados fue
+# removido a propósito porque pisaba overrides manuales — los tests que lo verificaban
+# se eliminaron acá (paridad con test_cordon_cuneta.py).
 
 
 # ── Creación de localidades ────────────────────────────────────────────────────
