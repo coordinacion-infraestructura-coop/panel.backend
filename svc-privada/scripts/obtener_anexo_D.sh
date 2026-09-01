@@ -51,10 +51,17 @@ get gestiones_list.json           /api/v1/privada/gestiones --data-urlencode "li
 get gestiones_list_filtrada.json  /api/v1/privada/gestiones \
     --data-urlencode "limit=5" --data-urlencode "estado=FINALIZADA"
 
-GID=$(python -c "import json;d=json.load(open('$OUT/gestiones_list.json'));print(d['items'][0]['id_gestion'])" 2>/dev/null || true)
-DEP=$(python -c "import json;d=json.load(open('$OUT/gestiones_list.json'));print(d['items'][0]['departamento'])" 2>/dev/null || true)
-LOC=$(python -c "import json;d=json.load(open('$OUT/gestiones_list.json'));print(d['items'][0]['localidad'])" 2>/dev/null || true)
+# Extrae el 1er valor de una clave del JSON, sin depender de python (grep/sed portables).
+first() { grep -o "\"$1\"[[:space:]]*:[[:space:]]*\"[^\"]*\"" "$OUT/gestiones_list.json" 2>/dev/null \
+           | head -1 | sed 's/.*:[[:space:]]*"\(.*\)"$/\1/'; }
+GID="${GID:-$(first id_gestion)}"
+DEP="${DEP:-$(first departamento)}"
+LOC="${LOC:-$(first localidad)}"
 echo "    gestion=$GID  depto=$DEP  localidad=$LOC"
+if [ -z "$GID" ]; then
+  echo "    (no pude leer id/depto/localidad de gestiones_list.json; pasalos a mano:" >&2
+  echo "     GID=xxx DEP=YYY LOC=ZZZ bash scripts/obtener_anexo_D.sh )" >&2
+fi
 
 if [ -n "$GID" ]; then
   get gestion_detalle.json  "/api/v1/privada/gestiones/$GID"
