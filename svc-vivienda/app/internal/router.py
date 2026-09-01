@@ -15,6 +15,7 @@ from app.auth import AuthUser
 from app.cordon_cuneta import checklist_sync
 from app.cordon_cuneta.checklist_schemas import SyncResultResponse
 from app.database import get_db
+from app.portal.repository import get_portal_user
 from app.resumen_territorial import service as resumen_service
 
 router = APIRouter(prefix="/internal", tags=["internal"])
@@ -38,6 +39,27 @@ async def sync_cordon_cuneta_checklist(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail={"code": "SHEET_SYNC_FALLIDO", "message": str(exc)},
         )
+
+
+@router.get("/portal/usuarios/{email}")
+async def portal_usuario_por_email(email: str, db: AsyncSession = Depends(get_db)):
+    """Lookup de rol + secretarías de un usuario del portal, para consumo cross-service
+    (ADR-015). Lo llama `svc-privada` (SA con `roles/run.invoker` sobre este servicio) para
+    resolver la auth sin conectarse a `db_vivienda`. Sólo usuarios activos — 404 si no existe
+    o está inactivo (el caller degrada a rol `invitado`, igual que `app/auth.py`)."""
+    usuario = await get_portal_user(db, email)
+    if usuario is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "USUARIO_NO_REGISTRADO", "message": "Usuario no encontrado o inactivo"},
+        )
+    return {
+        "email": usuario.email,
+        "rol": usuario.rol,
+        "nombre": usuario.nombre,
+        "secretarias": [s.secretaria for s in usuario.secretarias],
+        "activo": usuario.activo,
+    }
 
 
 @router.post("/resumen-territorial/actualizar")

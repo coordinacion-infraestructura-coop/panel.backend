@@ -75,6 +75,38 @@ async def test_sync_endpoint_devuelve_502_si_falla_lectura_del_sheet(db_session:
 
 
 @pytest.mark.asyncio
+async def test_portal_usuario_lookup_interno(db_session: AsyncSession):
+    """GET /internal/portal/usuarios/{email} — lo consume svc-privada (ADR-015)."""
+    from app.portal.models import PortalUsuario, PortalUsuarioSecretaria
+
+    db_session.add(PortalUsuario(email="priv@test.com", nombre="Priv", rol="Supervisor", activo=True))
+    db_session.add(PortalUsuarioSecretaria(email="priv@test.com", secretaria="privada"))
+    db_session.add(PortalUsuario(email="inactivo@test.com", nombre="X", rol="Operador", activo=False))
+    await db_session.flush()
+
+    async def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+            ok = await c.get("/internal/portal/usuarios/PRIV@test.com")  # case-insensitive
+            faltante = await c.get("/internal/portal/usuarios/nadie@test.com")
+            inactivo = await c.get("/internal/portal/usuarios/inactivo@test.com")
+            wrong_prefix = await c.get("/api/v1/internal/portal/usuarios/priv@test.com")
+        assert ok.status_code == 200
+        assert ok.json() == {
+            "email": "priv@test.com", "rol": "Supervisor", "nombre": "Priv",
+            "secretarias": ["privada"], "activo": True,
+        }
+        assert faltante.status_code == 404
+        assert inactivo.status_code == 404  # sólo usuarios activos
+        assert wrong_prefix.status_code == 404  # nunca bajo /api/v1
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
 async def test_sync_endpoint_no_esta_bajo_api_v1(db_session: AsyncSession):
     """El path no debe pasar por el prefijo /api/v1 — el Gateway nunca lo enruta a propósito."""
     async def override_get_db():

@@ -43,33 +43,30 @@ def _google_public_keys() -> dict:
     return _google_public_keys_cached(int(time.time() // 3600))
 
 
-def _fetch_portal_user(email: str) -> dict | None:
-    """Consulta portal_usuarios via el endpoint interno IAM-only de svc-vivienda.
+async def _fetch_portal_user(email: str) -> dict | None:
+    """Consulta portal_usuarios via el endpoint interno IAM-only de svc-vivienda (ADR-015).
 
     Devuelve {"rol": str, "secretarias": [str], "nombre": str|None} o None.
-    Cualquier error (sin URL configurada, red, 4xx/5xx) -> None (el caller degrada a invitado).
+    Cualquier error (sin URL configurada, red, 4xx/5xx) -> None (el caller degrada a invitado,
+    igual criterio que app/auth.py de svc-vivienda).
     """
     base = settings.svc_vivienda_internal_url.rstrip("/")
     if not base:
         return None
     url = f"{base}/internal/portal/usuarios/{email}"
+    headers = {}
     try:
-        headers = {}
-        try:
-            # ID token de la SA de runtime, audiencia = URL base del servicio invocado.
-            from google.auth.transport.requests import Request as GoogleRequest
-            from google.oauth2 import id_token
+        # ID token de la SA de runtime, audiencia = URL base del servicio invocado.
+        from google.auth.transport.requests import Request as GoogleRequest
+        from google.oauth2 import id_token
 
-            tok = id_token.fetch_id_token(GoogleRequest(), base)
-            headers["Authorization"] = f"Bearer {tok}"
-        except Exception:
-            # En dev / sin ADC no hay token; la llamada irá sin auth y probablemente falle -> None.
-            pass
-
-        resp = httpx.get(url, headers=headers, timeout=5)
-        if resp.status_code != 200:
-            return None
-        return resp.json()
+        headers["Authorization"] = f"Bearer {id_token.fetch_id_token(GoogleRequest(), base)}"
+    except Exception:
+        pass  # dev / sin ADC: la llamada irá sin token y probablemente 401/403 -> None
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            resp = await client.get(url, headers=headers)
+        return resp.json() if resp.status_code == 200 else None
     except Exception:
         return None
 
@@ -108,7 +105,7 @@ async def get_current_user(request: Request) -> AuthUser:
     except JWTError:
         raise credentials_exception
 
-    portal_user = _fetch_portal_user(email)
+    portal_user = await _fetch_portal_user(email)
     if portal_user:
         role = portal_user.get("rol", "invitado")
         secretarias = portal_user.get("secretarias", [])
