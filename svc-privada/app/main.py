@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 from app.config import settings
 from app.database import engine
 
-# Registrar las tablas en Base.metadata (Fase 1 — schema). Los routers llegan en Fase 2.
+# Registrar las tablas en Base.metadata.
 from app.catalogos.models import (  # noqa: F401
     CatCanalOrigen,
     CatCategoriaGeneral,
@@ -18,6 +18,11 @@ from app.catalogos.models import (  # noqa: F401
 )
 from app.gestiones.models import Gestion, GestionEvento  # noqa: F401
 from app.territorial.models import DepartamentoInfo, GeoLocalidad, LocalidadInfo  # noqa: F401
+
+from app.catalogos.router import router as catalogos_router
+from app.gestiones.router import router as gestiones_router
+from app.informe.router import router as informe_router
+from app.portal_alias import router as me_router
 
 
 @asynccontextmanager
@@ -68,5 +73,10 @@ async def health_check():
     return {"status": "ok", "service": settings.service_name, "version": "0.1.0"}
 
 
-# Fase 2: app.include_router(gestiones_router, prefix="/api/v1/privada", ...)
+_PREFIX = "/api/v1/privada"
+app.include_router(me_router, prefix=_PREFIX)
+app.include_router(gestiones_router, prefix=_PREFIX)
+app.include_router(catalogos_router, prefix=_PREFIX)
+app.include_router(informe_router, prefix=_PREFIX)
+
 # Fase 3: app.include_router(internal_router)  # sin prefijo /api/v1
