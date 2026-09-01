@@ -40,35 +40,39 @@ class Gestion(Base):
         CheckConstraint(f"urgencia IN ({_URGENCIAS_SQL})", name="ck_priv_gestiones_urgencia"),
     )
 
+    # BQ es STRING sin límite en todas estas columnas — la muestra chica del Anexo D no
+    # reflejaba la diversidad real (datos cargados desde 2004). El primer --truncate contra
+    # datos reales rompió con "value too long for character varying(30)" en origen/geo_id.
+    # Anchos generosos acá; son "código" pero no enums reales — sin CHECK salvo estado/urgencia.
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    id_legacy: Mapped[str | None] = mapped_column(String(64), unique=True)
+    id_legacy: Mapped[str | None] = mapped_column(String(100), unique=True)
 
-    nro_expediente: Mapped[str | None] = mapped_column(String(60))
-    origen: Mapped[str | None] = mapped_column(String(30))
+    nro_expediente: Mapped[str | None] = mapped_column(String(120))
+    origen: Mapped[str | None] = mapped_column(String(100))
 
-    estado: Mapped[str] = mapped_column(String(40), nullable=False, server_default="INGRESADO")
+    estado: Mapped[str] = mapped_column(String(60), nullable=False, server_default="INGRESADO")
     fecha_ingreso: Mapped[date] = mapped_column(Date, nullable=False)
     fecha_estado: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     fecha_finalizacion: Mapped[date | None] = mapped_column(Date)
 
-    urgencia: Mapped[str | None] = mapped_column(String(10), server_default="Media")
+    urgencia: Mapped[str | None] = mapped_column(String(30), server_default="Media")
 
     ministerio_agencia_id: Mapped[str | None] = mapped_column(
-        String(80), ForeignKey("priv_cat_ministerio_agencia.id", name="fk_priv_gestion_ministerio")
+        String(120), ForeignKey("priv_cat_ministerio_agencia.id", name="fk_priv_gestion_ministerio")
     )
-    organismo_id: Mapped[str | None] = mapped_column(String(200))
-    derivado_a_id: Mapped[str | None] = mapped_column(String(200))
+    organismo_id: Mapped[str | None] = mapped_column(String(300))
+    derivado_a_id: Mapped[str | None] = mapped_column(String(300))
     categoria_general_id: Mapped[str | None] = mapped_column(
-        String(80), ForeignKey("priv_cat_categoria_general.id", name="fk_priv_gestion_categoria")
+        String(120), ForeignKey("priv_cat_categoria_general.id", name="fk_priv_gestion_categoria")
     )
-    subcategoria_id: Mapped[str | None] = mapped_column(String(80))
-    tipo_demanda_principal_id: Mapped[str | None] = mapped_column(String(80))
+    subcategoria_id: Mapped[str | None] = mapped_column(String(120))
+    tipo_demanda_principal_id: Mapped[str | None] = mapped_column(String(120))
     subtipo_detalle: Mapped[str | None] = mapped_column(Text)
 
     detalle: Mapped[str] = mapped_column(Text, nullable=False)
     observaciones: Mapped[str | None] = mapped_column(Text)
 
-    geo_id: Mapped[str | None] = mapped_column(String(30))
+    geo_id: Mapped[str | None] = mapped_column(String(60))
     departamento: Mapped[str] = mapped_column(String(120), nullable=False)
     localidad: Mapped[str] = mapped_column(String(200), nullable=False)
     direccion: Mapped[str | None] = mapped_column(Text)
@@ -78,10 +82,10 @@ class Gestion(Base):
     # BQ NUMERIC sin escala fija; hay al menos un valor sucio muy grande en el origen
     # (SUM(costo_estimado) ~ 7.2e13). Numeric(18,2) da margen.
     costo_estimado: Mapped[float | None] = mapped_column(Numeric(18, 2))
-    costo_moneda: Mapped[str | None] = mapped_column(String(10))
+    costo_moneda: Mapped[str | None] = mapped_column(String(20))
 
-    tipo_gestion: Mapped[str | None] = mapped_column(String(80))
-    canal_origen: Mapped[str | None] = mapped_column(String(80))
+    tipo_gestion: Mapped[str | None] = mapped_column(String(120))
+    canal_origen: Mapped[str | None] = mapped_column(String(120))
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
@@ -113,10 +117,10 @@ class GestionEvento(Base):
     )
     usuario: Mapped[str] = mapped_column(String(200), nullable=False)  # REQUIRED en el origen
     rol_usuario: Mapped[str | None] = mapped_column(String(40))
-    tipo_evento: Mapped[str] = mapped_column(String(30), nullable=False)
-    estado_anterior: Mapped[str | None] = mapped_column(String(40))
-    estado_nuevo: Mapped[str | None] = mapped_column(String(40))
-    campo_modificado: Mapped[str | None] = mapped_column(String(60))
+    tipo_evento: Mapped[str] = mapped_column(String(60), nullable=False)
+    estado_anterior: Mapped[str | None] = mapped_column(String(60))
+    estado_nuevo: Mapped[str | None] = mapped_column(String(60))
+    campo_modificado: Mapped[str | None] = mapped_column(String(100))
     valor_anterior: Mapped[str | None] = mapped_column(Text)
     valor_nuevo: Mapped[str | None] = mapped_column(Text)
     comentario: Mapped[str | None] = mapped_column(Text)
