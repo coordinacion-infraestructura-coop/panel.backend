@@ -13,6 +13,10 @@ substitutions:
   # Específico de svc-vivienda (sync checklist técnico Cordón Cuneta). Inofensivo
   # como env var no usada si este mismo archivo se reutiliza para otro _SERVICE.
   _GOOGLE_SHEET_CC_ID: "1U8-Rck1fgQHpQptC4hcqhTNzPxsIBixljBt3DB3Dn9U"
+  # Específico de svc-privada (ADR-015: lookup de portal_usuarios vía endpoint interno
+  # de svc-vivienda). Vacío por default -> inofensivo para otros _SERVICE.
+  # Deploy de privada: --substitutions=_SERVICE=svc-privada,_SVC_VIVIENDA_INTERNAL_URL=https://svc-vivienda-...run.app
+  _SVC_VIVIENDA_INTERNAL_URL: ""
 
 steps:
   # ---------------------------------------------------------------------------
@@ -61,7 +65,7 @@ steps:
       - "--no-allow-unauthenticated"
       - "--service-account=${_SERVICE}@${_PROJECT}.iam.gserviceaccount.com"
       - "--set-secrets=DATABASE_URL=${_SERVICE}-db-url:latest"
-      - "--set-env-vars=GCP_PROJECT_ID=${_PROJECT},SERVICE_NAME=${_SERVICE},ENVIRONMENT=production,GOOGLE_SHEET_CC_ID=${_GOOGLE_SHEET_CC_ID}"
+      - "--set-env-vars=GCP_PROJECT_ID=${_PROJECT},SERVICE_NAME=${_SERVICE},ENVIRONMENT=production,GOOGLE_SHEET_CC_ID=${_GOOGLE_SHEET_CC_ID},SVC_VIVIENDA_INTERNAL_URL=${_SVC_VIVIENDA_INTERNAL_URL}"
       - "--memory=512Mi"
       - "--cpu=1"
       - "--min-instances=0"
