@@ -199,8 +199,15 @@ async def fetch_privada_lineas() -> list[dict]:
         # Privada la federa el frontend con el token del usuario (spec §3.3, plan B).
         return []
 
-    url = settings.gateway_base_url.rstrip("/") + settings.privada_resumen_path
-    audience = settings.privada_gateway_audience or settings.gcp_project_id
+    if settings.svc_privada_internal_url:
+        # E5a / ADR-016: endpoint IAM-only de svc-privada, ID token dirigido a esa URL.
+        base = settings.svc_privada_internal_url.rstrip("/")
+        url = base + settings.privada_rollup_internal_path
+        audience = base
+    else:
+        # camino viejo (gateway) — svc-privada lo rechaza; efectivamente desactivado.
+        url = settings.gateway_base_url.rstrip("/") + settings.privada_resumen_path
+        audience = settings.privada_gateway_audience or settings.gcp_project_id
     try:
         token = _mint_id_token(audience)
         if not token:
@@ -256,12 +263,23 @@ def _map_privada_payload(data) -> list[dict]:
             continue
         dep = r.get("departamento") or r.get("depto")
         por_estado_raw = r.get("por_estado") or r.get("estados") or {}
+        if not por_estado_raw and ("abiertas" in r or "finalizadas" in r):
+            # forma del `rollup-territorial` interno (E5a): no trae desglose por
+            # estado, pero sí los conteos abiertas/finalizadas → sintetizamos lo
+            # justo para `resumen_privada_estado`.
+            por_estado_raw = {}
+            if r.get("abiertas"):
+                por_estado_raw["EN CURSO"] = r["abiertas"]
+            if r.get("finalizadas"):
+                por_estado_raw["FINALIZADA"] = r["finalizadas"]
         por_estado = (
             {str(k): int(v) for k, v in por_estado_raw.items()}
             if isinstance(por_estado_raw, dict)
             else {}
         )
         total = r.get("total")
+        if total is None:
+            total = r.get("total_gestiones")
         if total is None:
             total = sum(por_estado.values()) if por_estado else int(r.get("cantidad", 0) or 0)
         meta = (
@@ -275,7 +293,12 @@ def _map_privada_payload(data) -> list[dict]:
             detalle = aggregations._plural_gestiones(int(total))
         else:
             detalle = None
-        ult = r.get("ultima_fecha") or r.get("fecha_ultima_actividad") or r.get("fecha_estado")
+        ult = (
+            r.get("ultima_fecha")
+            or r.get("fecha_ultima_actividad")
+            or r.get("fecha_estado")
+            or r.get("fecha_estado_max")
+        )
         prog = {
             "area": "privada",
             "programa": "gestiones",

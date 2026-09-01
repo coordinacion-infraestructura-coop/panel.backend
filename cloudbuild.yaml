@@ -17,6 +17,11 @@ substitutions:
   # de svc-vivienda). Vacío por default -> inofensivo para otros _SERVICE.
   # Deploy de privada: --substitutions=_SERVICE=svc-privada,_SVC_VIVIENDA_INTERNAL_URL=https://svc-vivienda-...run.app
   _SVC_VIVIENDA_INTERNAL_URL: ""
+  # Específico de svc-vivienda (ADR-016 / E5a: federación server-side de Privada en
+  # resumen_territorial). Vacíos por default -> federación server-side desactivada.
+  # Deploy con E5a: --substitutions=_SERVICE=svc-vivienda,_PRIVADA_FETCH_ENABLED=true,_SVC_PRIVADA_INTERNAL_URL=https://svc-privada-...run.app
+  _PRIVADA_FETCH_ENABLED: "false"
+  _SVC_PRIVADA_INTERNAL_URL: ""
 
 steps:
   # ---------------------------------------------------------------------------
@@ -65,7 +70,7 @@ steps:
       - "--no-allow-unauthenticated"
       - "--service-account=${_SERVICE}@${_PROJECT}.iam.gserviceaccount.com"
       - "--set-secrets=DATABASE_URL=${_SERVICE}-db-url:latest"
-      - "--set-env-vars=GCP_PROJECT_ID=${_PROJECT},SERVICE_NAME=${_SERVICE},ENVIRONMENT=production,GOOGLE_SHEET_CC_ID=${_GOOGLE_SHEET_CC_ID},SVC_VIVIENDA_INTERNAL_URL=${_SVC_VIVIENDA_INTERNAL_URL}"
+      - "--set-env-vars=GCP_PROJECT_ID=${_PROJECT},SERVICE_NAME=${_SERVICE},ENVIRONMENT=production,GOOGLE_SHEET_CC_ID=${_GOOGLE_SHEET_CC_ID},SVC_VIVIENDA_INTERNAL_URL=${_SVC_VIVIENDA_INTERNAL_URL},PRIVADA_FETCH_ENABLED=${_PRIVADA_FETCH_ENABLED},SVC_PRIVADA_INTERNAL_URL=${_SVC_PRIVADA_INTERNAL_URL}"
       - "--memory=512Mi"
       - "--cpu=1"
       - "--min-instances=0"

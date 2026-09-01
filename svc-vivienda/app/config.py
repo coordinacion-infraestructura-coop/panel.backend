@@ -16,12 +16,16 @@ class Settings(BaseSettings):
     google_sheet_cc_id: str = ""
     google_sheet_cc_range: str = "Base TOTAL!A6:AR400"
 
-    # Resumen Territorial — fetch servidor-a-servidor a svc-privada (spec §3.3).
-    # DESACTIVADO por defecto: svc-privada valida el token con su propio client-id de
-    # Google Sign-In y rechaza el ID token de la SA ({"detail":"Invalid token"}).
-    # Hoy Privada la federa el frontend con el token del usuario. Encender este flag
-    # sólo si el equipo de svc-privada habilita la SA `svc-vivienda@…`.
+    # Resumen Territorial — federación server-side de svc-privada (ADR-016 / E5a).
+    # `privada_fetch_enabled=True` + `svc_privada_internal_url` seteada → el job de
+    # cómputo llama al endpoint IAM-only de svc-privada (`/internal/privada/rollup-territorial`)
+    # con un ID token cuyo audience es esa misma URL de Cloud Run. Requiere que la SA
+    # `svc-vivienda@` tenga `roles/run.invoker` sobre svc-privada.
+    # Si `svc_privada_internal_url` está vacía, cae al camino viejo (gateway + audience
+    # de proyecto), que svc-privada rechaza — dejar así desactiva la federación server-side.
     privada_fetch_enabled: bool = False
+    svc_privada_internal_url: str = ""
+    privada_rollup_internal_path: str = "/internal/privada/rollup-territorial"
     gateway_base_url: str = "https://ministerio-gateway-3j5k00ma.uc.gateway.dev"
     privada_resumen_path: str = "/api/v1/privada/gestiones/resumen-territorial"
     privada_gateway_audience: str = ""  # vacío → gcp_project_id como aud del ID token
