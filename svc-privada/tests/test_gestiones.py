@@ -237,6 +237,37 @@ async def test_cambiar_estado_registra_actualiza_dato(client, seed):
 
 
 @pytest.mark.asyncio
+async def test_patch_cambia_geo_valida(client, seed, db_session):
+    # agrego otra localidad geo válida
+    db_session.add(GeoLocalidad(id_geo="999", departamento="CALAMUCHITA", localidad="EMBALSE",
+                                lat=-32.2, lon=-64.4, activo=True))
+    await db_session.flush()
+    r = await client.patch(f"/api/v1/privada/gestiones/{seed['g1']}", json={"localidad": "EMBALSE"})
+    assert r.status_code == 200 and r.json()["localidad"] == "EMBALSE" and r.json()["geo_id"] == "999"
+    r2 = await client.patch(f"/api/v1/privada/gestiones/{seed['g1']}", json={"localidad": "NADA"})
+    assert r2.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_put_localidad_info_crea_fila_nueva(client, seed, db_session):
+    db_session.add(GeoLocalidad(id_geo="777", departamento="CALAMUCHITA", localidad="LOS MOLINOS",
+                                lat=-32.0, lon=-64.5, activo=True))
+    await db_session.flush()
+    r = await client.put("/api/v1/privada/localidades-info", json={
+        "departamento": "CALAMUCHITA", "localidad": "LOS MOLINOS", "habitantes": 300, "electores": 250,
+        "intendente_jefe_comunal": "Nuevo Jefe", "partido_politico": "PJ",
+    })
+    assert r.status_code == 200 and r.json()["habitantes"] == 300 and r.json()["intendente_jefe_comunal"] == "Nuevo Jefe"
+
+
+@pytest.mark.asyncio
+async def test_cambiar_estado_por_id_legacy(client, seed):
+    r = await client.post("/api/v1/privada/gestiones/leg-1/cambiar-estado", json={"nuevo_estado": "ARCHIVADO", "comentario": "x"})
+    assert r.status_code == 200
+    assert (await client.get(f"/api/v1/privada/gestiones/{seed['g1']}")).json()["estado"] == "ARCHIVADO"
+
+
+@pytest.mark.asyncio
 async def test_put_localidad_info(client, seed):
     r = await client.put("/api/v1/privada/localidades-info", json={
         "departamento": "CALAMUCHITA", "localidad": "AMBOY", "habitantes": 5000, "electores": 4000,

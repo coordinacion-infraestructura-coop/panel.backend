@@ -42,3 +42,9 @@ packages = ["app"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+
+[tool.coverage.run]
+# SQLAlchemy async corre el código sync dentro de un greenlet; sin esto coverage
+# no ve las líneas ejecutadas dentro de los services y reporta falsos negativos.
+concurrency = ["greenlet"]
+source = ["app"]
