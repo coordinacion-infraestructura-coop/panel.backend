@@ -56,10 +56,10 @@ def upgrade() -> None:
     op.create_table(
         "priv_geo_localidades",
         sa.Column("id_geo", sa.String(30), primary_key=True),
-        sa.Column("departamento", sa.String(120)),
-        sa.Column("localidad", sa.String(160)),
-        sa.Column("lat", sa.Numeric(10, 7)),
-        sa.Column("lon", sa.Numeric(10, 7)),
+        sa.Column("departamento", sa.String(120), nullable=False),
+        sa.Column("localidad", sa.String(200), nullable=False),
+        sa.Column("lat", sa.Numeric(12, 7)),  # ex lat_centro
+        sa.Column("lon", sa.Numeric(12, 7)),  # ex lon_centro
         sa.Column("activo", sa.Boolean, nullable=False, server_default="true"),
     )
 
@@ -74,6 +74,8 @@ def upgrade() -> None:
         sa.Column("partido_politico", sa.String(200)),
         sa.Column("tipo_localidad", sa.String(60)),
         sa.Column("color_semaforo", sa.String(20)),
+        sa.Column("created_at", sa.DateTime(timezone=True)),
+        sa.Column("created_by", sa.String(200)),
         sa.Column("updated_at", sa.DateTime(timezone=True)),
         sa.Column("updated_by", sa.String(200)),
     )
@@ -88,6 +90,8 @@ def upgrade() -> None:
         sa.Column("partido_politico_sabana1", sa.String(200)),
         sa.Column("legislador_sabana2", sa.String(200)),
         sa.Column("partido_politico_sabana2", sa.String(200)),
+        sa.Column("created_at", sa.DateTime(timezone=True)),
+        sa.Column("created_by", sa.String(200)),
         sa.Column("updated_at", sa.DateTime(timezone=True)),
         sa.Column("updated_by", sa.String(200)),
     )
@@ -110,16 +114,16 @@ def upgrade() -> None:
         sa.Column("categoria_general_id", sa.String(80)),
         sa.Column("subcategoria_id", sa.String(80)),
         sa.Column("tipo_demanda_principal_id", sa.String(80)),
-        sa.Column("subtipo_detalle", sa.String(300)),
+        sa.Column("subtipo_detalle", sa.Text),
         sa.Column("detalle", sa.Text, nullable=False),
         sa.Column("observaciones", sa.Text),
         sa.Column("geo_id", sa.String(30)),
         sa.Column("departamento", sa.String(120), nullable=False),
-        sa.Column("localidad", sa.String(160), nullable=False),
-        sa.Column("direccion", sa.String(300)),
+        sa.Column("localidad", sa.String(200), nullable=False),
+        sa.Column("direccion", sa.Text),
         sa.Column("lat", sa.Numeric(12, 7)),
         sa.Column("lon", sa.Numeric(12, 7)),
-        sa.Column("costo_estimado", sa.Numeric(16, 2)),
+        sa.Column("costo_estimado", sa.Numeric(18, 2)),
         sa.Column("costo_moneda", sa.String(10)),
         sa.Column("tipo_gestion", sa.String(80)),
         sa.Column("canal_origen", sa.String(80)),
@@ -154,7 +158,7 @@ def upgrade() -> None:
         sa.Column("id", sa.String(36), primary_key=True),
         sa.Column("gestion_id", sa.String(36), nullable=False),
         sa.Column("fecha_evento", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("usuario", sa.String(200)),
+        sa.Column("usuario", sa.String(200), nullable=False),
         sa.Column("rol_usuario", sa.String(40)),
         sa.Column("tipo_evento", sa.String(30), nullable=False),
         sa.Column("estado_anterior", sa.String(40)),

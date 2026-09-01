@@ -1,0 +1,6 @@
+# Material de trabajo de la migración (dumps de BigQuery, fixtures, contiene PII).
+# Se foldean versiones sanitizadas al texto de los specs; los dumps crudos no se commitean.
+anexos/
+
+# Verificación local de Alembic
+_verify.db

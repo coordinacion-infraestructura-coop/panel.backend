@@ -25,6 +25,8 @@ class LocalidadInfo(Base):
     partido_politico: Mapped[str | None] = mapped_column(String(200))
     tipo_localidad: Mapped[str | None] = mapped_column(String(60))
     color_semaforo: Mapped[str | None] = mapped_column(String(20))
+    created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_by: Mapped[str | None] = mapped_column(String(200))
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     updated_by: Mapped[str | None] = mapped_column(String(200))
 
@@ -41,6 +43,8 @@ class DepartamentoInfo(Base):
     partido_politico_sabana1: Mapped[str | None] = mapped_column(String(200))
     legislador_sabana2: Mapped[str | None] = mapped_column(String(200))
     partido_politico_sabana2: Mapped[str | None] = mapped_column(String(200))
+    created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_by: Mapped[str | None] = mapped_column(String(200))
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     updated_by: Mapped[str | None] = mapped_column(String(200))
 
@@ -49,8 +53,9 @@ class GeoLocalidad(Base):
     __tablename__ = "priv_geo_localidades"
 
     id_geo: Mapped[str] = mapped_column(String(30), primary_key=True)
-    departamento: Mapped[str | None] = mapped_column(String(120))
-    localidad: Mapped[str | None] = mapped_column(String(160))
-    lat: Mapped[float | None] = mapped_column(Numeric(10, 7))
-    lon: Mapped[float | None] = mapped_column(Numeric(10, 7))
+    departamento: Mapped[str] = mapped_column(String(120), nullable=False)
+    localidad: Mapped[str] = mapped_column(String(200), nullable=False)
+    # renombrados desde lat_centro/lon_centro del origen (spec §5)
+    lat: Mapped[float | None] = mapped_column(Numeric(12, 7))
+    lon: Mapped[float | None] = mapped_column(Numeric(12, 7))
     activo: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")

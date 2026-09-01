@@ -63,19 +63,21 @@ class Gestion(Base):
     )
     subcategoria_id: Mapped[str | None] = mapped_column(String(80))
     tipo_demanda_principal_id: Mapped[str | None] = mapped_column(String(80))
-    subtipo_detalle: Mapped[str | None] = mapped_column(String(300))
+    subtipo_detalle: Mapped[str | None] = mapped_column(Text)
 
     detalle: Mapped[str] = mapped_column(Text, nullable=False)
     observaciones: Mapped[str | None] = mapped_column(Text)
 
     geo_id: Mapped[str | None] = mapped_column(String(30))
     departamento: Mapped[str] = mapped_column(String(120), nullable=False)
-    localidad: Mapped[str] = mapped_column(String(160), nullable=False)
-    direccion: Mapped[str | None] = mapped_column(String(300))
+    localidad: Mapped[str] = mapped_column(String(200), nullable=False)
+    direccion: Mapped[str | None] = mapped_column(Text)
     lat: Mapped[float | None] = mapped_column(Numeric(12, 7))
     lon: Mapped[float | None] = mapped_column(Numeric(12, 7))
 
-    costo_estimado: Mapped[float | None] = mapped_column(Numeric(16, 2))
+    # BQ NUMERIC sin escala fija; hay al menos un valor sucio muy grande en el origen
+    # (SUM(costo_estimado) ~ 7.2e13). Numeric(18,2) da margen.
+    costo_estimado: Mapped[float | None] = mapped_column(Numeric(18, 2))
     costo_moneda: Mapped[str | None] = mapped_column(String(10))
 
     tipo_gestion: Mapped[str | None] = mapped_column(String(80))
@@ -109,7 +111,7 @@ class GestionEvento(Base):
     fecha_evento: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
     )
-    usuario: Mapped[str | None] = mapped_column(String(200))
+    usuario: Mapped[str] = mapped_column(String(200), nullable=False)  # REQUIRED en el origen
     rol_usuario: Mapped[str | None] = mapped_column(String(40))
     tipo_evento: Mapped[str] = mapped_column(String(30), nullable=False)
     estado_anterior: Mapped[str | None] = mapped_column(String(40))
