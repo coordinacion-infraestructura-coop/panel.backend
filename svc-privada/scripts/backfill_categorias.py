@@ -27,7 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.gestiones.models import Gestion, GestionEvento  # noqa: E402
-from app.informe.clasificacion import tema_informe  # noqa: E402
+from app.informe.clasificacion import entra_al_informe, tema_informe  # noqa: E402
 
 # ids de las 9 categorías sembradas en la migración 0002
 CAT = {
@@ -132,9 +132,31 @@ async def main() -> None:
         print(f"gestiones activas: {len(gestiones)}")
         print(f"categoria_id seteada: {cat_set}  | sin mapeo (NULL): {cat_skip}  | {'DRY-RUN' if args.dry_run else 'aplicado'}")
         print(f"acciones_implementadas backfilleadas: {acc_set}")
-        print("distribución por categoría (id → nº gestiones):")
+        _ID2LABEL = {v: k for k, v in CAT.items()}
+        print("distribución por categoría nueva:")
         for cid, n in sorted(por_cat.items(), key=lambda kv: -kv[1]):
-            print(f"  {cid}: {n}")
+            print(f"  {_ID2LABEL.get(cid, 'SIN CATEGORÍA (NULL)'):32} {n}")
+
+        if args.diff_informe:
+            # Comparación de control (RE-1): conteo por `tema_informe` actual (regex) vs
+            # la categoría nueva que le tocaría. E4 hará la reclasificación real; esto sólo
+            # deja ver si el mapa tema→categoría es razonable antes del sign-off del área.
+            por_tema: dict[str, int] = {}
+            tema_vs_cat: dict[tuple[str, str], int] = {}
+            for g in gestiones:
+                entra, tema = entra_al_informe(g.categoria_general_id, g.detalle, g.ministerio_agencia_id)
+                if not entra:
+                    continue
+                t = tema or "(sin tema)"
+                por_tema[t] = por_tema.get(t, 0) + 1
+                c = _ID2LABEL.get(categoria_para(g), "SIN CATEGORÍA")
+                tema_vs_cat[(t, c)] = tema_vs_cat.get((t, c), 0) + 1
+            print("\n--- informe actual (regex) por tema ---")
+            for t, n in sorted(por_tema.items(), key=lambda kv: -kv[1]):
+                print(f"  {t:32} {n}")
+            print("\n--- tema (regex)  →  categoría nueva ---")
+            for (t, c), n in sorted(tema_vs_cat.items(), key=lambda kv: (-kv[1], kv[0])):
+                print(f"  {t:28} → {c:26} {n}")
 
     await engine.dispose()
 
