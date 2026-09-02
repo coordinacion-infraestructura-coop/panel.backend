@@ -100,12 +100,16 @@ async def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--force", action="store_true", help="recalcular aunque ya tenga valor")
-    ap.add_argument("--diff-informe", action="store_true")
+    ap.add_argument("--diff-informe", action="store_true", help="sólo reporta (implica --dry-run)")
     args = ap.parse_args()
+    if args.diff_informe:
+        args.dry_run = True  # --diff-informe es herramienta de revisión, no escribe
 
     url = os.environ["DATABASE_URL"]
     engine = create_async_engine(url)
-    async with AsyncSession(engine) as db:
+    # expire_on_commit=False: si se hace commit, los objetos ORM siguen usables
+    # (el reporte los recorre después).
+    async with AsyncSession(engine, expire_on_commit=False) as db:
         gestiones = (await db.execute(select(Gestion).where(Gestion.deleted_at.is_(None)))).scalars().all()
         acciones = await _acciones_por_gestion(db)
 
