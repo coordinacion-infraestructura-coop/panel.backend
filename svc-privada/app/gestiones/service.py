@@ -167,11 +167,32 @@ async def _resolve(db: AsyncSession, id_or_legacy: str, *, incluir_borradas: boo
 
 # ── endpoints ──────────────────────────────────────────────────────────────
 
+# Columnas por las que se puede ordenar la lista (whitelist — el valor es la
+# columna del modelo). `dias_transcurridos` es derivado de `fecha_estado` (a más
+# días, fecha más vieja) → se ordena por esa columna con el sentido invertido.
+_SORT_COLS = {
+    "fecha_ingreso": Gestion.fecha_ingreso,
+    "fecha_estado": Gestion.fecha_estado,
+    "dias_transcurridos": Gestion.fecha_estado,
+    "estado": Gestion.estado,
+    "urgencia": Gestion.urgencia,
+    "departamento": Gestion.departamento,
+    "localidad": Gestion.localidad,
+    "nro_expediente": Gestion.nro_expediente,
+    "costo_estimado": Gestion.costo_estimado,
+    "ministerio": Gestion.ministerio_agencia_id,
+    "categoria": Gestion.categoria_general_id,
+    "tipo_gestion": Gestion.tipo_gestion,
+    "canal_origen": Gestion.canal_origen,
+}
+
+
 async def listar_gestiones(
     db: AsyncSession,
     *,
     estado=None, ministerio=None, categoria=None, departamento=None, localidad=None,
-    q=None, tipo_gestion=None, canal_origen=None, limit=50, offset=0,
+    q=None, tipo_gestion=None, canal_origen=None, sort=None, sort_dir="desc",
+    limit=50, offset=0,
 ) -> dict:
     conds = [Gestion.deleted_at.is_(None)]
     if estado:
@@ -200,11 +221,21 @@ async def listar_gestiones(
 
     where = and_(*conds)
     total = (await db.execute(select(func.count()).select_from(Gestion).where(where))).scalar_one()
+
+    col = _SORT_COLS.get(sort) if sort else None
+    if col is not None:
+        asc = str(sort_dir).lower() != "desc"
+        # `dias_transcurridos` va al revés: más días == fecha más vieja
+        if sort == "dias_transcurridos":
+            asc = not asc
+        primary = col.asc() if asc else col.desc()
+        order_by = (primary, Gestion.id)
+    else:
+        order_by = (Gestion.fecha_ingreso.desc(), Gestion.fecha_estado.desc(), Gestion.id)
+
     rows = (
         await db.execute(
-            select(Gestion).where(where)
-            .order_by(Gestion.fecha_ingreso.desc(), Gestion.fecha_estado.desc(), Gestion.id)
-            .limit(limit).offset(offset)
+            select(Gestion).where(where).order_by(*order_by).limit(limit).offset(offset)
         )
     ).scalars().all()
     return {"items": [_list_item(g) for g in rows], "total": int(total), "limit": limit, "offset": offset}
@@ -510,6 +541,32 @@ async def _localidad_info(db: AsyncSession, departamento: str, localidad: str) -
         "updated_at": iso(row.updated_at) if row else None,
         "updated_by": row.updated_by if row else None,
     }
+
+
+def _localidad_info_row(row: LocalidadInfo) -> dict:
+    return {
+        "departamento": row.departamento,
+        "localidad": row.localidad,
+        "habitantes": row.habitantes,
+        "electores": row.electores,
+        "intendente_jefe_comunal": row.intendente_jefe_comunal,
+        "partido_politico": row.partido_politico,
+        "tipo_localidad": row.tipo_localidad,
+        "color_semaforo": row.color_semaforo,
+        "updated_at": iso(row.updated_at),
+        "updated_by": row.updated_by,
+    }
+
+
+async def listar_localidades_info(db: AsyncSession) -> list[dict]:
+    """Todas las filas de `priv_localidades_info` — para el export Excel / impresión
+    del Resumen Territorial (evita el N+1 de `GET /localidades-info` de a una)."""
+    rows = (
+        await db.execute(
+            select(LocalidadInfo).order_by(LocalidadInfo.departamento, LocalidadInfo.localidad)
+        )
+    ).scalars().all()
+    return [_localidad_info_row(r) for r in rows]
 
 
 async def _departamento_info(db: AsyncSession, departamento: str) -> dict:

@@ -32,6 +32,8 @@ async def list_gestiones(
     q: str | None = None,
     tipo_gestion: str | None = None,
     canal_origen: str | None = None,
+    sort: str | None = Query(None, description="fecha_ingreso|fecha_estado|dias_transcurridos|estado|urgencia|departamento|localidad|nro_expediente|costo_estimado|ministerio|categoria|tipo_gestion|canal_origen"),
+    sort_dir: str = Query("desc", pattern="^(asc|desc)$"),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
@@ -40,7 +42,8 @@ async def list_gestiones(
     return await service.listar_gestiones(
         db, estado=estado, ministerio=ministerio, categoria=categoria,
         departamento=departamento, localidad=localidad, q=q,
-        tipo_gestion=tipo_gestion, canal_origen=canal_origen, limit=limit, offset=offset,
+        tipo_gestion=tipo_gestion, canal_origen=canal_origen,
+        sort=sort, sort_dir=sort_dir, limit=limit, offset=offset,
     )
 
 
@@ -101,6 +104,11 @@ async def delete_gestion(id_gestion: str, db: AsyncSession = Depends(get_db), us
 
 
 # ── Datos territoriales ──────────────────────────────────────────────────
+
+@router.get("/localidades-info/all")
+async def list_localidades_info(db: AsyncSession = Depends(get_db), _: AuthUser = _LECT):
+    return await service.listar_localidades_info(db)
+
 
 @router.get("/localidades-info")
 async def get_localidad_info(

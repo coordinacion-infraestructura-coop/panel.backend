@@ -76,6 +76,38 @@ async def test_list_filtros(client, seed):
 
 
 @pytest.mark.asyncio
+async def test_list_sort(client, seed):
+    # default: fecha_ingreso desc → g1 (ago) antes que g2 (jul)
+    ids = [i["id_gestion"] for i in (await client.get("/api/v1/privada/gestiones")).json()["items"]]
+    assert ids[0].startswith("1111")
+    # sort=fecha_ingreso asc → invierte
+    r = await client.get("/api/v1/privada/gestiones", params={"sort": "fecha_ingreso", "sort_dir": "asc"})
+    assert [i["id_gestion"][:4] for i in r.json()["items"]] == ["2222", "1111"]
+    # sort=urgencia asc → "Alta" (g2) antes que "Media" (g1)
+    r = await client.get("/api/v1/privada/gestiones", params={"sort": "urgencia", "sort_dir": "asc"})
+    assert r.json()["items"][0]["id_gestion"][:4] == "2222"
+    # sort_dir inválido → 422
+    assert (await client.get("/api/v1/privada/gestiones", params={"sort_dir": "arriba"})).status_code == 422
+    # sort desconocido → se ignora (orden default), no rompe
+    assert (await client.get("/api/v1/privada/gestiones", params={"sort": "no_existe"})).status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_localidades_info_all(client, seed):
+    r = await client.get("/api/v1/privada/localidades-info/all")
+    assert r.status_code == 200
+    body = r.json()
+    assert isinstance(body, list) and len(body) == 1
+    assert body[0]["localidad"] == "AMBOY"
+    assert body[0]["electores"] == 800
+    assert body[0]["color_semaforo"] == "verde"
+    assert set(body[0]) == {
+        "departamento", "localidad", "habitantes", "electores", "intendente_jefe_comunal",
+        "partido_politico", "tipo_localidad", "color_semaforo", "updated_at", "updated_by",
+    }
+
+
+@pytest.mark.asyncio
 async def test_get_por_uuid_y_legacy(client, seed):
     r = await client.get(f"/api/v1/privada/gestiones/{seed['g1']}")
     assert r.status_code == 200
