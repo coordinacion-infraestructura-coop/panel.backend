@@ -58,17 +58,20 @@ async def seed(db_session):
 
 @pytest.mark.asyncio
 async def test_gestiones_list_keys(client, seed):
+    # E1 (spec-privada-categorias-programas): la respuesta gana campos aditivos
+    # (categoria_id/programa_id/area_id/ok_gobernador/ok_ministro) — se exige que
+    # siga conteniendo TODAS las del viejo (superset), no igualdad estricta.
     viejo = _load("gestiones_list.json")
     nuevo = (await client.get("/api/v1/privada/gestiones", params={"limit": 5})).json()
     assert _keys(nuevo) == _keys(viejo)
-    assert _keys(nuevo["items"][0]) == _keys(viejo["items"][0])
+    assert _keys(nuevo["items"][0]) >= _keys(viejo["items"][0])
 
 
 @pytest.mark.asyncio
 async def test_gestion_detalle_keys(client, seed):
     viejo = _load("gestion_detalle.json")
     nuevo = (await client.get(f"/api/v1/privada/gestiones/{seed}")).json()
-    assert _keys(nuevo) == _keys(viejo)
+    assert _keys(nuevo) >= _keys(viejo)  # superset (E1 aditivo)
 
 
 @pytest.mark.asyncio

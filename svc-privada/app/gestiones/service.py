@@ -51,6 +51,11 @@ def _list_item(g: Gestion) -> dict:
         "nro_expediente": g.nro_expediente,
         "fecha_ingreso": iso(g.fecha_ingreso),
         "dias_transcurridos": dias_transcurridos(g.fecha_estado),
+        "categoria_id": g.categoria_id,
+        "programa_id": g.programa_id,
+        "area_id": g.area_id,
+        "ok_gobernador": g.ok_gobernador,
+        "ok_ministro": g.ok_ministro,
     }
 
 
@@ -88,6 +93,12 @@ def _detail(g: Gestion) -> dict:
         "is_deleted": g.deleted_at is not None,
         "tipo_gestion": g.tipo_gestion,
         "canal_origen": g.canal_origen,
+        "categoria_id": g.categoria_id,
+        "programa_id": g.programa_id,
+        "area_id": g.area_id,
+        "ok_gobernador": g.ok_gobernador,
+        "ok_ministro": g.ok_ministro,
+        "acciones_implementadas": g.acciones_implementadas,
     }
 
 
@@ -191,8 +202,8 @@ async def listar_gestiones(
     db: AsyncSession,
     *,
     estado=None, ministerio=None, categoria=None, departamento=None, localidad=None,
-    q=None, tipo_gestion=None, canal_origen=None, sort=None, sort_dir="desc",
-    limit=50, offset=0,
+    q=None, tipo_gestion=None, canal_origen=None, ok_gobernador=None, ok_ministro=None,
+    sort=None, sort_dir="desc", limit=50, offset=0,
 ) -> dict:
     conds = [Gestion.deleted_at.is_(None)]
     if estado:
@@ -201,6 +212,10 @@ async def listar_gestiones(
         conds.append(Gestion.ministerio_agencia_id == ministerio)
     if categoria:
         conds.append(Gestion.categoria_general_id == categoria)
+    if ok_gobernador:
+        conds.append(Gestion.ok_gobernador == ok_gobernador)
+    if ok_ministro:
+        conds.append(Gestion.ok_ministro == ok_ministro)
     if departamento:
         conds.append(func.upper(func.trim(Gestion.departamento)) == norm(departamento))
     if localidad:
@@ -309,6 +324,12 @@ async def crear_gestion(db: AsyncSession, actor: AuthUser, payload: GestionCreat
         nro_expediente=payload.nro_expediente,
         tipo_gestion=payload.tipo_gestion,
         canal_origen=payload.canal_origen,
+        categoria_id=payload.categoria_id,
+        programa_id=payload.programa_id,
+        area_id=payload.area_id,
+        ok_gobernador=payload.ok_gobernador or "PENDIENTE",
+        ok_ministro=payload.ok_ministro or "PENDIENTE",
+        acciones_implementadas=payload.acciones_implementadas,
         created_at=now,
         updated_at=now,
         created_by=actor.email or actor.uid,
@@ -393,6 +414,20 @@ async def cambiar_estado(db: AsyncSession, actor: AuthUser, id_or_legacy: str, p
     g.estado = payload.nuevo_estado
     g.fecha_estado = now
     g.derivado_a_id = payload.derivado_a if payload.derivado_a is not None else g.derivado_a_id
+    # E2: `acciones_implementadas` se persiste en la gestión (antes sólo quedaba en el evento)
+    if payload.acciones_implementadas is not None:
+        g.acciones_implementadas = payload.acciones_implementadas
+    # E1: catálogos + Ok Gob/Min seteables al cambiar estado (aditivo, sólo si vienen)
+    if payload.categoria_id is not None:
+        g.categoria_id = payload.categoria_id
+    if payload.programa_id is not None:
+        g.programa_id = payload.programa_id
+    if payload.area_id is not None:
+        g.area_id = payload.area_id
+    if payload.ok_gobernador is not None:
+        g.ok_gobernador = payload.ok_gobernador
+    if payload.ok_ministro is not None:
+        g.ok_ministro = payload.ok_ministro
     g.nro_expediente = nuevo_nro
     g.fecha_ingreso = nueva_fecha_ingreso
     g.departamento = nuevo_departamento

@@ -1,9 +1,11 @@
 from datetime import date, datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
 Estado = str  # VARCHAR + CHECK (ADR-009); los 6 valores validos en models.ESTADOS
 Urgencia = str
+OkEstado = Literal["SI", "NO", "PENDIENTE"]  # tri-estado ok_gobernador / ok_ministro (E2)
 
 
 class GestionCreate(BaseModel):
@@ -26,6 +28,14 @@ class GestionCreate(BaseModel):
     costo_moneda: str | None = None
     nro_expediente: str | None = None
 
+    # Mejora E1/E2 (aditivo, opcional) — catálogos editables + campos nuevos.
+    categoria_id: int | None = None
+    programa_id: int | None = None
+    area_id: int | None = None
+    ok_gobernador: OkEstado | None = None
+    ok_ministro: OkEstado | None = None
+    acciones_implementadas: str | None = None
+
 
 class GestionUpdate(BaseModel):
     """PATCH /gestiones/{id} — edición de campos sin cambio de estado (nuevo en v1)."""
@@ -45,6 +55,14 @@ class GestionUpdate(BaseModel):
     departamento: str | None = None
     localidad: str | None = None
 
+    # Mejora E1/E2 (aditivo).
+    categoria_id: int | None = None
+    programa_id: int | None = None
+    area_id: int | None = None
+    ok_gobernador: OkEstado | None = None
+    ok_ministro: OkEstado | None = None
+    acciones_implementadas: str | None = None
+
     # lock optimista (spec §3.6). Si viene y no coincide -> 409.
     updated_at: datetime | None = None
 
@@ -60,6 +78,13 @@ class CambioEstado(BaseModel):
 
     derivado_a: str | None = None
     acciones_implementadas: str | None = None
+
+    # Mejora E1/E2 — seteables al cambiar estado (aditivo).
+    categoria_id: int | None = None
+    programa_id: int | None = None
+    area_id: int | None = None
+    ok_gobernador: OkEstado | None = None
+    ok_ministro: OkEstado | None = None
 
     # lock optimista (spec §3.6). Opcional para no romper el frontend viejo.
     updated_at: datetime | None = None

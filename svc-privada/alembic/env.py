@@ -19,6 +19,7 @@ from app.catalogos.models import (  # noqa: F401
 )
 from app.gestiones.models import Gestion, GestionEvento  # noqa: F401
 from app.territorial.models import DepartamentoInfo, GeoLocalidad, LocalidadInfo  # noqa: F401
+from app.catalogos_editables.models import Area, Categoria, Programa  # noqa: F401
 
 config = context.config
 

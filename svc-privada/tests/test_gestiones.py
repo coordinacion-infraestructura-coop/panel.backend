@@ -62,6 +62,8 @@ async def test_list_gestiones(client, seed):
         "ministerio_agencia_id", "categoria_general_id", "tipo_gestion", "canal_origen",
         "detalle", "costo_estimado", "costo_moneda", "nro_expediente", "fecha_ingreso",
         "dias_transcurridos",
+        # E1/E2 (aditivo)
+        "categoria_id", "programa_id", "area_id", "ok_gobernador", "ok_ministro",
     }
 
 
@@ -113,7 +115,7 @@ async def test_get_por_uuid_y_legacy(client, seed):
     assert r.status_code == 200
     d = r.json()
     assert d["origen"] == "APP" and d["is_deleted"] is False
-    assert len(set(d)) == 32
+    assert len(set(d)) == 38  # 32 base + 6 de E1/E2
     r2 = await client.get("/api/v1/privada/gestiones/leg-1")
     assert r2.status_code == 200 and r2.json()["id_gestion"] == seed["g1"]
     assert (await client.get("/api/v1/privada/gestiones/nope")).status_code == 404

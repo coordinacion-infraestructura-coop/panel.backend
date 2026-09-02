@@ -12,8 +12,11 @@ Las columnas legacy `categoria_general_id`, `subcategoria_id`, `tipo_demanda_pri
 import uuid
 from datetime import date, datetime, timezone
 
-from sqlalchemy import JSON, CheckConstraint, Date, DateTime, ForeignKey, Numeric, String, Text
+from sqlalchemy import BigInteger, JSON, CheckConstraint, Date, DateTime, ForeignKey, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
+
+OK_VALUES = ("SI", "NO", "PENDIENTE")
+_OK_SQL = ", ".join(f"'{v}'" for v in OK_VALUES)
 
 from app.database import Base
 
@@ -38,6 +41,8 @@ class Gestion(Base):
     __table_args__ = (
         CheckConstraint(f"estado IN ({_ESTADOS_SQL})", name="ck_priv_gestiones_estado"),
         CheckConstraint(f"urgencia IN ({_URGENCIAS_SQL})", name="ck_priv_gestiones_urgencia"),
+        CheckConstraint(f"ok_gobernador IN ({_OK_SQL})", name="ck_priv_gestiones_ok_gob"),
+        CheckConstraint(f"ok_ministro IN ({_OK_SQL})", name="ck_priv_gestiones_ok_min"),
     )
 
     # BQ es STRING sin límite en todas estas columnas — la muestra chica del Anexo D no
@@ -86,6 +91,14 @@ class Gestion(Base):
 
     tipo_gestion: Mapped[str | None] = mapped_column(String(120))
     canal_origen: Mapped[str | None] = mapped_column(String(120))
+
+    # Mejora E1/E2 (migración 0002) — catálogos editables + campos nuevos.
+    categoria_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("priv_categorias.id"))
+    programa_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("priv_programas.id"))
+    area_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("priv_areas.id"))
+    ok_gobernador: Mapped[str] = mapped_column(String(20), nullable=False, server_default="PENDIENTE")
+    ok_ministro: Mapped[str] = mapped_column(String(20), nullable=False, server_default="PENDIENTE")
+    acciones_implementadas: Mapped[str | None] = mapped_column(Text)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
