@@ -299,6 +299,11 @@ def _map_privada_payload(data) -> list[dict]:
             or r.get("fecha_estado")
             or r.get("fecha_estado_max")
         )
+        # `ultima_comunicacion.fecha` es un `date` en el schema — el rollup interno
+        # trae un timestamp ISO completo; truncar a YYYY-MM-DD (igual que el merge
+        # client-side de `privadaGestiones.ts`).
+        if isinstance(ult, str) and len(ult) > 10:
+            ult = ult[:10]
         prog = {
             "area": "privada",
             "programa": "gestiones",

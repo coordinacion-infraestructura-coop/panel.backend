@@ -389,3 +389,35 @@ def test_map_privada_payload_reconoce_formas_plausibles_y_descarta_lo_raro():
     assert ag["programa"]["area"] == "privada"
     assert ag["programa"]["privada_conteos"]["total"] == 3
     assert _map_privada_payload("no reconocido") == []
+
+
+def test_map_privada_payload_forma_rollup_interno_e5a():
+    """La forma del `GET /internal/privada/rollup-territorial` de svc-privada:
+    sin `por_estado`, con abiertas/finalizadas y `fecha_estado_max` timestamp ISO."""
+    from datetime import date
+
+    from app.resumen_territorial.schemas import ResumenLocalidad
+    from app.resumen_territorial.service import _map_privada_payload
+
+    data = [
+        {
+            "departamento": "COLON",
+            "localidad": "JESUS MARIA",
+            "total_gestiones": 5,
+            "abiertas": 3,
+            "finalizadas": 2,
+            "urgentes": 1,
+            "costo_estimado_sum": None,
+            "fecha_estado_max": "2026-08-31T13:29:57.128044+00:00",
+        }
+    ]
+    lineas = _map_privada_payload(data)
+    assert len(lineas) == 1
+    prog = lineas[0]["programa"]
+    assert prog["privada_conteos"]["total"] == 5
+    assert prog["privada_conteos"]["por_estado"] == {"EN CURSO": 3, "FINALIZADA": 2}
+    # el timestamp se truncó a fecha → el schema (fecha: date) valida
+    assert prog["ultima_comunicacion"]["fecha"] == "2026-08-31"
+    ResumenLocalidad(
+        localidad="Jesús María", departamento="Colón", programas=[prog]
+    )  # no debe levantar ValidationError
