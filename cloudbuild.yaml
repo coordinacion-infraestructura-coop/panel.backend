@@ -14,14 +14,16 @@ substitutions:
   # como env var no usada si este mismo archivo se reutiliza para otro _SERVICE.
   _GOOGLE_SHEET_CC_ID: "1U8-Rck1fgQHpQptC4hcqhTNzPxsIBixljBt3DB3Dn9U"
   # Específico de svc-privada (ADR-015: lookup de portal_usuarios vía endpoint interno
-  # de svc-vivienda). Vacío por default -> inofensivo para otros _SERVICE.
-  # Deploy de privada: --substitutions=_SERVICE=svc-privada,_SVC_VIVIENDA_INTERNAL_URL=https://svc-vivienda-...run.app
-  _SVC_VIVIENDA_INTERNAL_URL: ""
+  # de svc-vivienda). Default con la URL real -> si CI redeploya svc-privada, no le
+  # borra la config de auth (`--set-env-vars` reemplaza todo). Inofensivo para svc-vivienda.
+  _SVC_VIVIENDA_INTERNAL_URL: "https://svc-vivienda-iwni7vc2qq-rj.a.run.app"
   # Específico de svc-vivienda (ADR-016 / E5a: federación server-side de Privada en
-  # resumen_territorial). Vacíos por default -> federación server-side desactivada.
-  # Deploy con E5a: --substitutions=_SERVICE=svc-vivienda,_PRIVADA_FETCH_ENABLED=true,_SVC_PRIVADA_INTERNAL_URL=https://svc-privada-...run.app
-  _PRIVADA_FETCH_ENABLED: "false"
-  _SVC_PRIVADA_INTERNAL_URL: ""
+  # resumen_territorial). E5a EN PRODUCCIÓN desde 2026-09-02 -> defaults encendidos, para
+  # que cada redeploy de CI conserve la config (`--set-env-vars` reemplaza todo el set).
+  # Rollback: pasar --substitutions=...,_PRIVADA_FETCH_ENABLED=false o `gcloud run services
+  # update` con --update-env-vars. Inofensivo para otros _SERVICE (env var no leída).
+  _PRIVADA_FETCH_ENABLED: "true"
+  _SVC_PRIVADA_INTERNAL_URL: "https://svc-privada-iwni7vc2qq-rj.a.run.app"
 
 steps:
   # ---------------------------------------------------------------------------
