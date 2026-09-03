@@ -89,3 +89,6 @@ async def test_gestion_con_campos_e1(client, db_session):
     assert (await client.get("/api/v1/privada/gestiones", params={"ok_gobernador": "NO"})).json()["total"] == 0
     # valor inválido → 422
     assert (await client.get("/api/v1/privada/gestiones", params={"ok_gobernador": "quizas"})).status_code == 422
+    # filtro por categoria_id (Campo de Trabajo)
+    assert (await client.get("/api/v1/privada/gestiones", params={"categoria_id": 888001})).json()["total"] == 1
+    assert (await client.get("/api/v1/privada/gestiones", params={"categoria_id": 999999})).json()["total"] == 0

@@ -203,6 +203,7 @@ async def listar_gestiones(
     *,
     estado=None, ministerio=None, categoria=None, departamento=None, localidad=None,
     q=None, tipo_gestion=None, canal_origen=None, ok_gobernador=None, ok_ministro=None,
+    categoria_id=None, programa_id=None, area_id=None,
     sort=None, sort_dir="desc", limit=50, offset=0,
 ) -> dict:
     conds = [Gestion.deleted_at.is_(None)]
@@ -212,6 +213,12 @@ async def listar_gestiones(
         conds.append(Gestion.ministerio_agencia_id == ministerio)
     if categoria:
         conds.append(Gestion.categoria_general_id == categoria)
+    if categoria_id is not None:
+        conds.append(Gestion.categoria_id == categoria_id)
+    if programa_id is not None:
+        conds.append(Gestion.programa_id == programa_id)
+    if area_id is not None:
+        conds.append(Gestion.area_id == area_id)
     if ok_gobernador:
         conds.append(Gestion.ok_gobernador == ok_gobernador)
     if ok_ministro:

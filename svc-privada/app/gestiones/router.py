@@ -34,6 +34,9 @@ async def list_gestiones(
     canal_origen: str | None = None,
     ok_gobernador: str | None = Query(None, pattern="^(SI|NO|PENDIENTE)$"),
     ok_ministro: str | None = Query(None, pattern="^(SI|NO|PENDIENTE)$"),
+    categoria_id: int | None = Query(None, description="filtra por priv_categorias.id (Campo de Trabajo)"),
+    programa_id: int | None = Query(None),
+    area_id: int | None = Query(None),
     sort: str | None = Query(None, description="fecha_ingreso|fecha_estado|dias_transcurridos|estado|urgencia|departamento|localidad|nro_expediente|costo_estimado|ministerio|categoria|tipo_gestion|canal_origen"),
     sort_dir: str = Query("desc", pattern="^(asc|desc)$"),
     limit: int = Query(50, ge=1, le=200),
@@ -46,6 +49,7 @@ async def list_gestiones(
         departamento=departamento, localidad=localidad, q=q,
         tipo_gestion=tipo_gestion, canal_origen=canal_origen,
         ok_gobernador=ok_gobernador, ok_ministro=ok_ministro,
+        categoria_id=categoria_id, programa_id=programa_id, area_id=area_id,
         sort=sort, sort_dir=sort_dir, limit=limit, offset=offset,
     )
 
