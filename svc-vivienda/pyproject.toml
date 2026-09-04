@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "svc-vivienda"
 version = "0.1.0"
-description = "Servicio de Vivienda — Ministerio de Cooperativas y Mutuales de Córdoba"
+description = "Servicio de Vivienda — Secretaría General de Gobierno de Córdoba"
 requires-python = ">=3.12"
 
 dependencies = [
