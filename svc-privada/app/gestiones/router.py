@@ -10,7 +10,7 @@ from app.auth import (
 )
 from app.database import get_db
 from app.gestiones import service
-from app.gestiones.schemas import CambioEstado, GestionCreate, GestionUpdate, LocalidadInfoUpsert
+from app.gestiones.schemas import CambioEstado, DetalleCorreccion, GestionCreate, GestionUpdate, LocalidadInfoUpsert
 
 router = APIRouter(tags=["privada-gestiones"])
 
@@ -103,6 +103,13 @@ async def patch_gestion(
     id_gestion: str, payload: GestionUpdate, db: AsyncSession = Depends(get_db), user: AuthUser = _ESCR
 ):
     return await service.patch_gestion(db, user, id_gestion, payload)
+
+
+@router.patch("/gestiones/{id_gestion}/detalle")
+async def corregir_detalle(
+    id_gestion: str, payload: DetalleCorreccion, db: AsyncSession = Depends(get_db), user: AuthUser = _ESCR
+):
+    return await service.corregir_detalle(db, user, id_gestion, payload)
 
 
 @router.delete("/gestiones/{id_gestion}")

@@ -67,6 +67,20 @@ class GestionUpdate(BaseModel):
     updated_at: datetime | None = None
 
 
+class DetalleCorreccion(BaseModel):
+    """PATCH /gestiones/{id}/detalle — corrección manual de `detalle` por error de carga.
+
+    Deliberadamente separado de `GestionUpdate`: no es una modificación de negocio, así
+    que el evento que genera (`CORRECCION_DETALLE`) queda excluido del timeline de
+    Movimientos que ve el usuario (ver `listar_eventos`), aunque sigue auditado en
+    `priv_gestiones_eventos` + `audit_log` para trazabilidad interna (decisión 2026-09-04)."""
+
+    detalle: str = Field(min_length=1)
+
+    # lock optimista (spec §3.6), igual que en GestionUpdate/CambioEstado.
+    updated_at: datetime | None = None
+
+
 class CambioEstado(BaseModel):
     nuevo_estado: Estado
     comentario: str | None = None

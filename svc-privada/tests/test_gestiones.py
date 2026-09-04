@@ -3,6 +3,7 @@ from datetime import date, datetime, timezone
 
 import pytest
 import pytest_asyncio
+from sqlalchemy import select
 
 from app.catalogos.models import CatCategoriaGeneral, CatEstado
 from app.gestiones.models import Gestion, GestionEvento
@@ -64,6 +65,8 @@ async def test_list_gestiones(client, seed):
         "dias_transcurridos",
         # E1/E2 (aditivo)
         "categoria_id", "programa_id", "area_id", "ok_gobernador", "ok_ministro",
+        # lock optimista para la corrección inline de `detalle` desde el panel
+        "updated_at",
     }
 
 
@@ -257,6 +260,40 @@ async def test_patch_gestion_genera_evento(client, seed):
     assert r.status_code == 200 and r.json()["observaciones"] == "nueva obs"
     evs = (await client.get(f"/api/v1/privada/gestiones/{seed['g1']}/eventos")).json()
     assert any(e["tipo_evento"] == "ACTUALIZA_DATO" and e["campo_modificado"] == "observaciones" for e in evs)
+
+
+@pytest.mark.asyncio
+async def test_corregir_detalle_no_aparece_en_eventos_pero_persiste(client, seed, db_session):
+    r = await client.patch(f"/api/v1/privada/gestiones/{seed['g1']}/detalle", json={"detalle": "OBRA DE GAS (corregido)"})
+    assert r.status_code == 200
+    assert r.json()["detalle"] == "OBRA DE GAS (corregido)"
+
+    # No debe verse en el timeline que consume el frontend...
+    evs = (await client.get(f"/api/v1/privada/gestiones/{seed['g1']}/eventos")).json()
+    assert not any(e["tipo_evento"] == "CORRECCION_DETALLE" for e in evs)
+    assert not any(e["tipo_evento"] == "ACTUALIZA_DATO" and e["campo_modificado"] == "detalle" for e in evs)
+
+    # ...pero sí queda registrado en la tabla de eventos para auditoría interna.
+    rows = (await db_session.execute(
+        select(GestionEvento).where(GestionEvento.gestion_id == seed["g1"])
+    )).scalars().all()
+    assert any(e.tipo_evento == "CORRECCION_DETALLE" and e.valor_nuevo == "OBRA DE GAS (corregido)" for e in rows)
+
+
+@pytest.mark.asyncio
+async def test_corregir_detalle_lock_optimista(client, seed):
+    r = await client.patch(
+        f"/api/v1/privada/gestiones/{seed['g1']}/detalle",
+        json={"detalle": "x", "updated_at": "2000-01-01T00:00:00+00:00"},
+    )
+    assert r.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_corregir_detalle_requiere_escritura(client, seed, as_user):
+    as_user(CONSULTA_USER)
+    r = await client.patch(f"/api/v1/privada/gestiones/{seed['g1']}/detalle", json={"detalle": "x"})
+    assert r.status_code == 403
 
 
 @pytest.mark.asyncio

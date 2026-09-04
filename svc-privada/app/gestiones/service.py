@@ -18,10 +18,14 @@ from app import audit
 from app.auth import AuthUser
 from app.common import as_float, dias_transcurridos, iso, norm, now_utc
 from app.gestiones.models import ESTADOS, Gestion, GestionEvento
-from app.gestiones.schemas import CambioEstado, GestionCreate, GestionUpdate, LocalidadInfoUpsert
+from app.gestiones.schemas import CambioEstado, DetalleCorreccion, GestionCreate, GestionUpdate, LocalidadInfoUpsert
 from app.territorial.models import DepartamentoInfo, GeoLocalidad, LocalidadInfo
 
 _CERRADOS = {"FINALIZADA", "ARCHIVADO"}
+
+# Eventos que quedan en `priv_gestiones_eventos` (auditoría interna) pero no se muestran
+# en el timeline de Movimientos del usuario — ver DetalleCorreccion.
+_TIPO_EVENTO_OCULTO = {"CORRECCION_DETALLE"}
 
 
 def _err(code: int, detail):
@@ -56,6 +60,7 @@ def _list_item(g: Gestion) -> dict:
         "area_id": g.area_id,
         "ok_gobernador": g.ok_gobernador,
         "ok_ministro": g.ok_ministro,
+        "updated_at": iso(g.updated_at),
     }
 
 
@@ -275,7 +280,10 @@ async def listar_eventos(db: AsyncSession, id_or_legacy: str) -> list[dict]:
     gid = g.id if g else id_or_legacy
     rows = (
         await db.execute(
-            select(GestionEvento).where(GestionEvento.gestion_id == gid)
+            select(GestionEvento).where(
+                GestionEvento.gestion_id == gid,
+                GestionEvento.tipo_evento.notin_(_TIPO_EVENTO_OCULTO),
+            )
             .order_by(GestionEvento.fecha_evento.desc())
         )
     ).scalars().all()
@@ -519,6 +527,41 @@ async def patch_gestion(db: AsyncSession, actor: AuthUser, id_or_legacy: str, pa
     g.updated_by = actor.email or actor.uid
     await db.flush()
     await audit.log_audit(db, actor=actor, action="UPDATE", resource_type="privada_gestion", resource_id=g.id, payload={"campos": [c[0] for c in cambios]})
+    return _detail(g)
+
+
+async def corregir_detalle(db: AsyncSession, actor: AuthUser, id_or_legacy: str, payload: DetalleCorreccion) -> dict:
+    """Corrección manual de `detalle` (error de carga) desde el panel general.
+
+    No es un `patch_gestion` más: no dispara ACTUALIZA_DATO ni aparece en el timeline de
+    Movimientos — queda como `CORRECCION_DETALLE` únicamente en `priv_gestiones_eventos` +
+    `audit_log`, para no confundir a quien lee el historial con un cambio de negocio."""
+    g = await _resolve(db, id_or_legacy)
+    if g is None:
+        _err(404, "Gestión no encontrada")
+    _check_lock(g, payload.updated_at)
+
+    anterior = g.detalle
+    nuevo = payload.detalle.strip()
+    if anterior == nuevo:
+        return _detail(g)
+
+    now = now_utc()
+    g.detalle = nuevo
+    g.updated_at = now
+    g.updated_by = actor.email or actor.uid
+
+    db.add(_nuevo_evento(
+        g.id, actor, "CORRECCION_DETALLE",
+        campo_modificado="detalle", valor_anterior=anterior, valor_nuevo=nuevo,
+        comentario="Corrección manual de error de carga (no es un cambio de gestión)",
+        metadata_json={"motivo": "correccion_error_carga"},
+    ))
+    await db.flush()
+    await audit.log_audit(
+        db, actor=actor, action="CORRECCION_DETALLE", resource_type="privada_gestion", resource_id=g.id,
+        payload={"valor_anterior": anterior, "valor_nuevo": nuevo},
+    )
     return _detail(g)
 
 
