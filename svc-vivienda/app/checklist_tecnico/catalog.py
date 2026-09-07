@@ -1,16 +1,15 @@
-"""Catálogo de ítems de checklist por programa — hardcodeado, no administrable (spec §4).
+"""Catálogo de ítems de checklist por programa — etiquetas hardcodeadas (spec §4).
 
-A diferencia de "Estado del expediente" y "Repartición" (tablas, editables por Admin),
-las etiquetas de los ítems de documentación son fijas en código, igual que hizo el sync
-de Cordón Cuneta (`spec-sync-cc-checklist-tecnico.md` §5.2).
+Las *etiquetas* de los ítems de documentación son fijas en código, igual que hizo el sync
+de Cordón Cuneta (`spec-sync-cc-checklist-tecnico.md` §5.2). En cambio, "Estado del
+expediente", "Repartición" y —desde la corrección DGV 2026-09 (spec v1.2.0)— el "Estado de
+la documentación" por ítem (`viv_checklist_item_estado`) son tablas editables por Admin.
 """
 from typing import Literal
 
 Programa = Literal["cc", "ch", "ml"]
-ValorItem = Literal["sin_presentar", "eval_tecnica", "a_corregir", "eval_juridica", "completo"]
 TipoHito = Literal["anticipo", "40", "70", "100"]
 
-VALORES_ITEM: tuple[ValorItem, ...] = ("sin_presentar", "eval_tecnica", "a_corregir", "eval_juridica", "completo")
 PROGRAMAS: tuple[Programa, ...] = ("cc", "ch", "ml")
 
 CC_ITEMS: dict[int, str] = {

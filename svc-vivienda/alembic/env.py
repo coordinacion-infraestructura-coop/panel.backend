@@ -23,6 +23,7 @@ from app.cordon_cuneta.models import (
 from app.cordon_cuneta.checklist_models import ChecklistItemCC, ChecklistTecnicoCC, SyncLogCC
 from app.checklist_tecnico.models import (
     CatalogoEstadoExpediente,
+    CatalogoItemEstado,
     CatalogoReparticion,
     ChecklistItem,
     ChecklistObraHito,

@@ -10,6 +10,7 @@ from sqlalchemy import (
     Integer,
     SmallInteger,
     String,
+    Text,
     UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column
@@ -40,6 +41,27 @@ class CatalogoReparticion(Base):
     activo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
 
+class CatalogoItemEstado(Base):
+    """Catálogo administrable de "Estado de la documentación" (por ítem del checklist).
+
+    Antes era un enum fijo en código (`ValorItem`); el área técnica pidió poder editarlo
+    (corrección DGV 2026-09, spec-checklist-tecnico-dgv.md v1.2.0). Misma forma que
+    `viv_cc_estados` — `bg`/`text_color` para el chip de color en el frontend.
+    """
+
+    __tablename__ = "viv_checklist_item_estado"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=False)
+    label: Mapped[str] = mapped_column(String(120), nullable=False)
+    orden: Mapped[int] = mapped_column(Integer, nullable=False)
+    activo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    bg: Mapped[str] = mapped_column(String(10), nullable=False, default="#f1f5f9")
+    text_color: Mapped[str] = mapped_column(String(10), nullable=False, default="#64748b")
+    # Marca el estado "terminado" del ítem — lo usan resumen_territorial / tablero para
+    # contar documentación faltante. Editable por Admin (antes era el literal "completo").
+    es_completo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+
 class ChecklistTecnico(Base):
     """Fila 1:1 con una entidad existente (viv_cordon_cuneta / viv_cordoba_hogar / viv_ml_proyectos).
 
@@ -59,6 +81,10 @@ class ChecklistTecnico(Base):
     )
     fecha_radicacion: Mapped[date | None] = mapped_column(Date)
     reparticion_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("viv_checklist_reparticion.id"))
+    # Observaciones de la etapa de obra — separadas de las del expediente (que van a
+    # `viv_cc_pedidos`/`viv_ch_pedidos`/`viv_ml_pedidos`). Columna AT del Excel DGV: una
+    # sola celda por localidad, no una bitácora.
+    obs_obra: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
     )
@@ -72,7 +98,11 @@ class ChecklistTecnico(Base):
 
 
 class ChecklistItem(Base):
-    """Un ítem (o sub-ítem) del checklist de documentación. `valor` es uno de los 5 estados de §3 del spec."""
+    """Un ítem (o sub-ítem) del checklist de documentación.
+
+    `item_estado_id` apunta al catálogo administrable `viv_checklist_item_estado` (antes era
+    un enum fijo `valor`, spec v1.2.0).
+    """
 
     __tablename__ = "viv_checklist_items"
     __table_args__ = (
@@ -85,15 +115,19 @@ class ChecklistItem(Base):
     )
     item_num: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     sub_item_num: Mapped[int | None] = mapped_column(SmallInteger)
-    valor: Mapped[str] = mapped_column(String(30), nullable=False)
+    item_estado_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("viv_checklist_item_estado.id"), nullable=False
+    )
 
 
 class ChecklistObraHito(Base):
-    """Hito de ejecución de obra — solo `programa='cc'` en esta entrega.
+    """Hito de ejecución de obra — los 3 programas (CC/CH/ML) desde la corrección DGV 2026-09.
 
-    No persiste `monto`: se recalcula en `service.py` sobre `viv_cordon_cuneta.monto` vigente en
-    cada lectura (decisión confirmada — un hito ya acreditado debe reflejar el monto actual del
-    convenio, no un valor congelado al momento de acreditarlo).
+    No persiste `monto`: se recalcula en `service.py` sobre el `monto` vigente de la entidad
+    del programa (`viv_cordon_cuneta` / `viv_cordoba_hogar` / `viv_ml_proyectos`) en cada
+    lectura — un hito ya acreditado debe reflejar el monto actual del convenio, no un valor
+    congelado. Proporciones 50/25/25/0 (confirmadas sobre el Excel para CC y CH; para ML se
+    asume la misma a falta de datos de referencia).
     """
 
     __tablename__ = "viv_checklist_obra_hitos"

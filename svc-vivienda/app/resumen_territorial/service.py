@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit import log_audit
 from app.auth import AuthUser
-from app.checklist_tecnico.models import ChecklistItem, ChecklistTecnico
+from app.checklist_tecnico.models import CatalogoItemEstado, ChecklistItem, ChecklistTecnico
 from app.config import settings
 from app.cordoba_hogar.models import EstadoCordobaHogar, LocalidadCordobaHogar, PedidoCordobaHogar
 from app.cordon_cuneta.models import EstadoCordonCuneta, MunicipioCordonCuneta, PedidoCordonCuneta
@@ -105,10 +105,21 @@ async def compute_resumen_territorial(db: AsyncSession) -> ResumenTerritorialPay
         (c.programa, c.entidad_id): c.id
         for c in (await db.execute(select(ChecklistTecnico))).scalars().all()
     }
+    # "completo" ya no es un literal: es el/los estado(s) del catálogo con es_completo=True.
+    completo_ids = {
+        e.id
+        for e in (
+            await db.execute(select(CatalogoItemEstado).where(CatalogoItemEstado.es_completo.is_(True)))
+        ).scalars().all()
+    }
     items_by_chk: dict[str, list[dict]] = {}
     for it in (await db.execute(select(ChecklistItem))).scalars().all():
         items_by_chk.setdefault(it.checklist_id, []).append(
-            {"item_num": it.item_num, "sub_item_num": it.sub_item_num, "valor": it.valor}
+            {
+                "item_num": it.item_num,
+                "sub_item_num": it.sub_item_num,
+                "valor": "completo" if it.item_estado_id in completo_ids else "pendiente",
+            }
         )
 
     cc_ped = _pedidos_por_entidad(

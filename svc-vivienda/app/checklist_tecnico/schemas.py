@@ -2,7 +2,7 @@ from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict
 
-from app.checklist_tecnico.catalog import Programa, TipoHito, ValorItem
+from app.checklist_tecnico.catalog import Programa, TipoHito
 
 
 class CatalogoEstadoExpedienteResponse(BaseModel):
@@ -48,6 +48,35 @@ class CatalogoReparticionUpdate(BaseModel):
     activo: bool | None = None
 
 
+class CatalogoItemEstadoResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    label: str
+    orden: int
+    activo: bool
+    bg: str
+    text_color: str
+    es_completo: bool
+
+
+class CatalogoItemEstadoCreate(BaseModel):
+    label: str
+    orden: int
+    activo: bool = True
+    bg: str = "#f1f5f9"
+    text_color: str = "#64748b"
+    es_completo: bool = False
+
+
+class CatalogoItemEstadoUpdate(BaseModel):
+    label: str | None = None
+    orden: int | None = None
+    activo: bool | None = None
+    bg: str | None = None
+    text_color: str | None = None
+    es_completo: bool | None = None
+
+
 class ItemSubDefinicion(BaseModel):
     sub_item_num: int
     label: str
@@ -62,6 +91,7 @@ class ItemDefinicion(BaseModel):
 class CatalogosResponse(BaseModel):
     estados_expediente: list[CatalogoEstadoExpedienteResponse]
     reparticiones: list[CatalogoReparticionResponse]
+    items_estado: list[CatalogoItemEstadoResponse]
     items_por_programa: dict[str, list[ItemDefinicion]]
 
 
@@ -107,11 +137,14 @@ class ChecklistItemResponse(BaseModel):
     item_num: int
     sub_item_num: int | None
     label: str
-    valor: ValorItem
+    item_estado_id: int
+    item_estado_label: str
+    bg: str
+    text_color: str
 
 
 class ChecklistItemUpdate(BaseModel):
-    valor: ValorItem
+    item_estado_id: int
     sub_item_num: int | None = None
 
 
@@ -135,6 +168,7 @@ class ChecklistTecnicoResponse(BaseModel):
     fecha_radicacion: date | None
     reparticion_id: int | None
     reparticion_label: str | None
+    obs_obra: str | None
     items: list[ChecklistItemResponse]
     hitos: list[HitoResponse] | None
     updated_at: datetime
@@ -145,3 +179,4 @@ class ChecklistTecnicoUpdate(BaseModel):
     estado_expediente_id: int | None = None
     fecha_radicacion: date | None = None
     reparticion_id: int | None = None
+    obs_obra: str | None = None

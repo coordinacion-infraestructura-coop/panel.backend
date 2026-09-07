@@ -8,6 +8,9 @@ from app.checklist_tecnico.schemas import (
     CatalogoEstadoExpedienteCreate,
     CatalogoEstadoExpedienteResponse,
     CatalogoEstadoExpedienteUpdate,
+    CatalogoItemEstadoCreate,
+    CatalogoItemEstadoResponse,
+    CatalogoItemEstadoUpdate,
     CatalogoReparticionCreate,
     CatalogoReparticionResponse,
     CatalogoReparticionUpdate,
@@ -165,3 +168,26 @@ async def actualizar_reparticion(
     actor: AuthUser = Depends(require_roles(*ROLES_ADMIN)),
 ):
     return await service.actualizar_reparticion(db, reparticion_id, data, actor)
+
+
+@router.post(
+    "/checklist-tecnico/admin/item-estado",
+    response_model=CatalogoItemEstadoResponse,
+    status_code=201,
+)
+async def crear_item_estado(
+    data: CatalogoItemEstadoCreate,
+    db: AsyncSession = Depends(get_db),
+    actor: AuthUser = Depends(require_roles(*ROLES_ADMIN)),
+):
+    return await service.crear_item_estado(db, data, actor)
+
+
+@router.patch("/checklist-tecnico/admin/item-estado/{item_estado_id}", response_model=CatalogoItemEstadoResponse)
+async def actualizar_item_estado(
+    item_estado_id: int,
+    data: CatalogoItemEstadoUpdate,
+    db: AsyncSession = Depends(get_db),
+    actor: AuthUser = Depends(require_roles(*ROLES_ADMIN)),
+):
+    return await service.actualizar_item_estado(db, item_estado_id, data, actor)

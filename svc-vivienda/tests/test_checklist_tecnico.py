@@ -6,7 +6,11 @@ import pytest_asyncio
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.checklist_tecnico.models import CatalogoEstadoExpediente, CatalogoReparticion
+from app.checklist_tecnico.models import (
+    CatalogoEstadoExpediente,
+    CatalogoItemEstado,
+    CatalogoReparticion,
+)
 from app.cordoba_hogar.models import LocalidadCordobaHogar
 from app.cordon_cuneta.models import MunicipioCordonCuneta
 from app.mi_lugar.models import ProyectoML
@@ -17,15 +21,21 @@ CH_BASE = "/api/v1/vivienda/cordoba-hogar"
 ML_BASE = "/api/v1/vivienda/mi-lugar/proyectos"
 PROGRAMAS_BASE = "/api/v1/vivienda/programas"
 
+# Estado de la documentación: id inicial (menor orden) y el marcado es_completo.
+ITEM_ESTADO_INICIAL = 1
+ITEM_ESTADO_COMPLETO = 5
+
 
 # ── Fixtures ───────────────────────────────────────────────────────────────────
 
 @pytest_asyncio.fixture
 async def catalogos(db_session: AsyncSession) -> None:
-    """Mismo seed que la migración 0022 (7 estados + 3 reparticiones)."""
+    """Mismo seed que la migración 0024 (9 estados de expediente + 3 reparticiones +
+    5 estados de documentación)."""
     estados = [
-        "A INICIAR en DGV", "En CURSO en DGV", "COMPLETO en DGV",
-        "En CURSO en TC", "APROBADO por TC", "OBRA en EJECUCIÓN", "OBRA TERMINADA",
+        "A ESPERA de DOC.TÉCNICA", "RECHAZADO por M/C", "SIN AUTORIZACION MIN.GOB",
+        "En CURSO en TÉCNICA", "COMPLETO en TÉCNICA", "En CURSO en TRIB.C",
+        "APROBADO por TRIB.C", "OBRA en EJECUCIÓN", "OBRA TERMINADA",
     ]
     for i, label in enumerate(estados, start=1):
         db_session.add(CatalogoEstadoExpediente(id=i, label=label, orden=i - 1, activo=True))
@@ -36,6 +46,15 @@ async def catalogos(db_session: AsyncSession) -> None:
     ]
     for i, label in enumerate(reparticiones, start=1):
         db_session.add(CatalogoReparticion(id=i, programa=None, label=label, orden=i - 1, activo=True))
+    items_estado = [
+        ("A ESPERA de DOC.TÉCNICA", False),
+        ("DIR. JUR. LEGAL Y NOTARIAL", False),
+        ("En Evaluación TÉCNICA", False),
+        ("A corregir por M/C", False),
+        ("Completo OK", True),
+    ]
+    for i, (label, es_completo) in enumerate(items_estado, start=1):
+        db_session.add(CatalogoItemEstado(id=i, label=label, orden=i - 1, activo=True, es_completo=es_completo))
     await db_session.flush()
 
 
@@ -79,9 +98,13 @@ async def test_get_catalogos(client: AsyncClient, catalogos: None):
     r = await client.get(f"{BASE}/catalogos")
     assert r.status_code == 200
     data = r.json()
-    assert len(data["estados_expediente"]) == 7
-    assert data["estados_expediente"][0]["label"] == "A INICIAR en DGV"
+    assert len(data["estados_expediente"]) == 9
+    assert data["estados_expediente"][0]["label"] == "A ESPERA de DOC.TÉCNICA"
+    assert data["estados_expediente"][-1]["label"] == "OBRA TERMINADA"
     assert len(data["reparticiones"]) == 3
+    assert len(data["items_estado"]) == 5
+    assert data["items_estado"][0]["label"] == "A ESPERA de DOC.TÉCNICA"
+    assert [e for e in data["items_estado"] if e["es_completo"]][0]["label"] == "Completo OK"
     assert set(data["items_por_programa"].keys()) == {"cc", "ch", "ml"}
     assert len(data["items_por_programa"]["cc"]) == 9
     assert len(data["items_por_programa"]["ch"]) == 14
@@ -104,9 +127,11 @@ async def test_get_checklist_crea_fila_on_the_fly(client: AsyncClient, municipio
     assert data["entidad"]["monto"] == 100_000_000
     # 9 items top-level + 10 sub-items del item 4 = 19
     assert len(data["items"]) == 19
-    assert all(i["valor"] == "sin_presentar" for i in data["items"])
+    assert all(i["item_estado_id"] == ITEM_ESTADO_INICIAL for i in data["items"])
+    assert all(i["item_estado_label"] == "A ESPERA de DOC.TÉCNICA" for i in data["items"])
     assert data["hitos"] is not None
     assert len(data["hitos"]) == 4
+    assert data["obs_obra"] is None
 
 
 @pytest.mark.asyncio
@@ -123,12 +148,15 @@ async def test_get_checklist_entidad_inexistente_404(client: AsyncClient, catalo
 
 
 @pytest.mark.asyncio
-async def test_get_checklist_ch_sin_hitos(client: AsyncClient, localidad_ch: str, catalogos: None):
+async def test_get_checklist_ch_con_hitos(client: AsyncClient, localidad_ch: str, catalogos: None):
+    """Los hitos de obra existen para los 3 programas desde la corrección DGV 2026-09."""
     r = await client.get(f"{BASE}/ch/{localidad_ch}")
     assert r.status_code == 200
     data = r.json()
-    assert data["hitos"] is None
+    assert data["hitos"] is not None and len(data["hitos"]) == 4
     assert len(data["items"]) == 14
+    hitos = {h["tipo"]: h for h in data["hitos"]}
+    assert hitos["anticipo"]["monto"] == 1_360_000_000  # 50% de 2_720_000_000
 
 
 @pytest.mark.asyncio
@@ -140,51 +168,59 @@ async def test_get_checklist_ml_item14_con_6_subitems(client: AsyncClient, proye
     assert len(data["items"]) == 20
     sub_items_14 = [i for i in data["items"] if i["item_num"] == 14 and i["sub_item_num"] is not None]
     assert len(sub_items_14) == 6
+    assert data["hitos"] is not None and len(data["hitos"]) == 4
 
 
 # ── Actualizar ítems ─────────────────────────────────────────────────────────
 
 @pytest.mark.asyncio
-async def test_actualizar_item_persiste_valor(client: AsyncClient, municipio_cc: str, catalogos: None):
+async def test_actualizar_item_persiste_estado(client: AsyncClient, municipio_cc: str, catalogos: None):
     await client.get(f"{BASE}/cc/{municipio_cc}")  # crea la fila
-    r = await client.patch(f"{BASE}/cc/{municipio_cc}/items/1", json={"valor": "completo"})
+    r = await client.patch(f"{BASE}/cc/{municipio_cc}/items/1", json={"item_estado_id": ITEM_ESTADO_COMPLETO})
     assert r.status_code == 200
     item1 = next(i for i in r.json()["items"] if i["item_num"] == 1 and i["sub_item_num"] is None)
-    assert item1["valor"] == "completo"
+    assert item1["item_estado_id"] == ITEM_ESTADO_COMPLETO
+    assert item1["item_estado_label"] == "Completo OK"
 
 
 @pytest.mark.asyncio
-async def test_actualizar_subitem_persiste_valor(client: AsyncClient, municipio_cc: str, catalogos: None):
-    r = await client.patch(f"{BASE}/cc/{municipio_cc}/items/4", json={"valor": "a_corregir", "sub_item_num": 3})
+async def test_actualizar_subitem_persiste_estado(client: AsyncClient, municipio_cc: str, catalogos: None):
+    r = await client.patch(f"{BASE}/cc/{municipio_cc}/items/4", json={"item_estado_id": 4, "sub_item_num": 3})
     assert r.status_code == 200
     sub3 = next(i for i in r.json()["items"] if i["item_num"] == 4 and i["sub_item_num"] == 3)
-    assert sub3["valor"] == "a_corregir"
+    assert sub3["item_estado_id"] == 4
     # El item 4 "padre" (sub_item_num null) no debe verse afectado
     padre = next(i for i in r.json()["items"] if i["item_num"] == 4 and i["sub_item_num"] is None)
-    assert padre["valor"] == "sin_presentar"
+    assert padre["item_estado_id"] == ITEM_ESTADO_INICIAL
 
 
 @pytest.mark.asyncio
 async def test_actualizar_item_inexistente_404(client: AsyncClient, municipio_cc: str, catalogos: None):
-    r = await client.patch(f"{BASE}/cc/{municipio_cc}/items/999", json={"valor": "completo"})
+    r = await client.patch(f"{BASE}/cc/{municipio_cc}/items/999", json={"item_estado_id": ITEM_ESTADO_COMPLETO})
     assert r.status_code == 404
 
 
 @pytest.mark.asyncio
-async def test_actualizar_item_valor_invalido_422(client: AsyncClient, municipio_cc: str, catalogos: None):
-    r = await client.patch(f"{BASE}/cc/{municipio_cc}/items/1", json={"valor": "no_existe"})
+async def test_actualizar_item_estado_inexistente_404(client: AsyncClient, municipio_cc: str, catalogos: None):
+    r = await client.patch(f"{BASE}/cc/{municipio_cc}/items/1", json={"item_estado_id": 999})
+    assert r.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_actualizar_item_estado_no_numerico_422(client: AsyncClient, municipio_cc: str, catalogos: None):
+    r = await client.patch(f"{BASE}/cc/{municipio_cc}/items/1", json={"item_estado_id": "no_existe"})
     assert r.status_code == 422
 
 
-# ── Actualizar estado / repartición / fecha ─────────────────────────────────────
+# ── Actualizar estado / repartición / fecha / obs de obra ─────────────────────
 
 @pytest.mark.asyncio
 async def test_actualizar_estado_expediente(client: AsyncClient, municipio_cc: str, catalogos: None):
-    r = await client.patch(f"{BASE}/cc/{municipio_cc}", json={"estado_expediente_id": 2, "reparticion_id": 1})
+    r = await client.patch(f"{BASE}/cc/{municipio_cc}", json={"estado_expediente_id": 4, "reparticion_id": 1})
     assert r.status_code == 200
     data = r.json()
-    assert data["estado_expediente_id"] == 2
-    assert data["estado_expediente_label"] == "En CURSO en DGV"
+    assert data["estado_expediente_id"] == 4
+    assert data["estado_expediente_label"] == "En CURSO en TÉCNICA"
     assert data["reparticion_id"] == 1
 
 
@@ -192,6 +228,25 @@ async def test_actualizar_estado_expediente(client: AsyncClient, municipio_cc: s
 async def test_actualizar_estado_expediente_inexistente_404(client: AsyncClient, municipio_cc: str, catalogos: None):
     r = await client.patch(f"{BASE}/cc/{municipio_cc}", json={"estado_expediente_id": 999})
     assert r.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_obs_obra_persiste_y_es_independiente_de_los_pedidos(
+    client: AsyncClient, municipio_cc: str, catalogos: None
+):
+    r = await client.patch(f"{BASE}/cc/{municipio_cc}", json={"obs_obra": "Certificado 40% aprobado en visita del 3/9."})
+    assert r.status_code == 200
+    assert r.json()["obs_obra"] == "Certificado 40% aprobado en visita del 3/9."
+
+    # las observaciones del expediente (pedidos) siguen vacías — son 2 etapas diferentes
+    r_ped = await client.get(f"{BASE}/cc/{municipio_cc}/pedidos")
+    assert r_ped.status_code == 200
+    assert r_ped.json() == []
+
+    # se puede vaciar de nuevo
+    r2 = await client.patch(f"{BASE}/cc/{municipio_cc}", json={"obs_obra": None})
+    assert r2.status_code == 200
+    assert r2.json()["obs_obra"] is None
 
 
 # ── Hitos de obra ────────────────────────────────────────────────────────────
@@ -227,11 +282,32 @@ async def test_hito_recalcula_sobre_monto_vigente_no_congelado(
 
 
 @pytest.mark.asyncio
-async def test_hito_404_para_ch_y_ml(client: AsyncClient, localidad_ch: str, proyecto_ml: str, catalogos: None):
+async def test_hito_fecha_puede_cargarse_y_vaciarse(client: AsyncClient, municipio_cc: str, catalogos: None):
+    """Las fechas de certificados se cargan solo tras la visita de obra → deben poder quedar vacías."""
+    r_set = await client.patch(f"{BASE}/cc/{municipio_cc}/hitos/40", json={"fecha_acreditado": "2026-06-01"})
+    assert r_set.status_code == 200
+    assert next(h for h in r_set.json()["hitos"] if h["tipo"] == "40")["fecha_acreditado"] == "2026-06-01"
+
+    r_clear = await client.patch(f"{BASE}/cc/{municipio_cc}/hitos/40", json={"fecha_acreditado": None})
+    assert r_clear.status_code == 200
+    assert next(h for h in r_clear.json()["hitos"] if h["tipo"] == "40")["fecha_acreditado"] is None
+
+
+@pytest.mark.asyncio
+async def test_hito_ok_para_ch_y_ml(client: AsyncClient, localidad_ch: str, proyecto_ml: str, catalogos: None):
     r_ch = await client.patch(f"{BASE}/ch/{localidad_ch}/hitos/anticipo", json={"fecha_acreditado": "2026-05-08"})
-    assert r_ch.status_code == 404
+    assert r_ch.status_code == 200
+    assert next(h for h in r_ch.json()["hitos"] if h["tipo"] == "anticipo")["monto"] == 1_360_000_000
+
     r_ml = await client.patch(f"{BASE}/ml/{proyecto_ml}/hitos/anticipo", json={"fecha_acreditado": "2026-05-08"})
-    assert r_ml.status_code == 404
+    assert r_ml.status_code == 200
+    assert next(h for h in r_ml.json()["hitos"] if h["tipo"] == "anticipo")["monto"] == 25_000_000
+
+
+@pytest.mark.asyncio
+async def test_hito_tipo_desconocido_422(client: AsyncClient, municipio_cc: str, catalogos: None):
+    r = await client.patch(f"{BASE}/cc/{municipio_cc}/hitos/99", json={"fecha_acreditado": "2026-05-08"})
+    assert r.status_code == 422
 
 
 # ── Permisos — TecnicoDGV ve Tablero + Checklist, NUNCA los paneles completos ──
@@ -257,13 +333,13 @@ async def test_tecnico_dgv_bloqueado_en_paneles_completos(
 
 @pytest.mark.asyncio
 async def test_tecnico_dgv_puede_escribir_checklist(client_tecnico_dgv: AsyncClient, municipio_cc: str, catalogos: None):
-    r = await client_tecnico_dgv.patch(f"{BASE}/cc/{municipio_cc}/items/1", json={"valor": "completo"})
+    r = await client_tecnico_dgv.patch(f"{BASE}/cc/{municipio_cc}/items/1", json={"item_estado_id": ITEM_ESTADO_COMPLETO})
     assert r.status_code == 200
 
 
 @pytest.mark.asyncio
 async def test_consulta_no_puede_escribir_checklist(client_consulta: AsyncClient, municipio_cc: str, catalogos: None):
-    r = await client_consulta.patch(f"{BASE}/cc/{municipio_cc}/items/1", json={"valor": "completo"})
+    r = await client_consulta.patch(f"{BASE}/cc/{municipio_cc}/items/1", json={"item_estado_id": ITEM_ESTADO_COMPLETO})
     assert r.status_code == 403
 
 
@@ -363,20 +439,20 @@ async def test_observacion_checklist_consulta_no_escribe(
 
 @pytest.mark.asyncio
 async def test_admin_crear_estado_expediente(client: AsyncClient, catalogos: None):
-    r = await client.post(f"{BASE}/admin/estado-expediente", json={"label": "Nuevo Estado", "orden": 7})
+    r = await client.post(f"{BASE}/admin/estado-expediente", json={"label": "Nuevo Estado", "orden": 9})
     assert r.status_code == 201
     assert r.json()["label"] == "Nuevo Estado"
 
 
 @pytest.mark.asyncio
 async def test_admin_estado_expediente_403_para_no_admin(client_tecnico_dgv: AsyncClient, catalogos: None):
-    r = await client_tecnico_dgv.post(f"{BASE}/admin/estado-expediente", json={"label": "X", "orden": 7})
+    r = await client_tecnico_dgv.post(f"{BASE}/admin/estado-expediente", json={"label": "X", "orden": 9})
     assert r.status_code == 403
 
 
 @pytest.mark.asyncio
 async def test_admin_estado_expediente_403_para_operador(client_operador: AsyncClient, catalogos: None):
-    r = await client_operador.post(f"{BASE}/admin/estado-expediente", json={"label": "X", "orden": 7})
+    r = await client_operador.post(f"{BASE}/admin/estado-expediente", json={"label": "X", "orden": 9})
     assert r.status_code == 403
 
 
@@ -392,3 +468,42 @@ async def test_admin_actualizar_reparticion(client: AsyncClient, catalogos: None
     r = await client.patch(f"{BASE}/admin/reparticion/1", json={"activo": False})
     assert r.status_code == 200
     assert r.json()["activo"] is False
+
+
+@pytest.mark.asyncio
+async def test_admin_crear_item_estado(client: AsyncClient, catalogos: None):
+    r = await client.post(
+        f"{BASE}/admin/item-estado",
+        json={"label": "En pausa", "orden": 5, "bg": "#fee2e2", "text_color": "#991b1b"},
+    )
+    assert r.status_code == 201
+    body = r.json()
+    assert body["label"] == "En pausa"
+    assert body["bg"] == "#fee2e2"
+    assert body["es_completo"] is False
+    # aparece en el catálogo
+    cat = (await client.get(f"{BASE}/catalogos")).json()
+    assert any(e["label"] == "En pausa" for e in cat["items_estado"])
+
+
+@pytest.mark.asyncio
+async def test_admin_actualizar_item_estado(client: AsyncClient, catalogos: None):
+    r = await client.patch(f"{BASE}/admin/item-estado/3", json={"label": "En evaluación técnica (rev.)", "activo": False})
+    assert r.status_code == 200
+    assert r.json()["label"] == "En evaluación técnica (rev.)"
+    assert r.json()["activo"] is False
+
+
+@pytest.mark.asyncio
+async def test_admin_item_estado_403_para_no_admin(
+    client_tecnico_dgv: AsyncClient, client_operador: AsyncClient, catalogos: None
+):
+    for c in (client_tecnico_dgv, client_operador):
+        r = await c.post(f"{BASE}/admin/item-estado", json={"label": "X", "orden": 5})
+        assert r.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_admin_item_estado_inexistente_404(client: AsyncClient, catalogos: None):
+    r = await client.patch(f"{BASE}/admin/item-estado/999", json={"label": "X"})
+    assert r.status_code == 404

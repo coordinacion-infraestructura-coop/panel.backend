@@ -14,7 +14,7 @@ import pytest_asyncio
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.checklist_tecnico.models import ChecklistItem, ChecklistTecnico
+from app.checklist_tecnico.models import CatalogoItemEstado, ChecklistItem, ChecklistTecnico
 from app.cordoba_hogar.models import EstadoCordobaHogar, LocalidadCordobaHogar
 from app.cordon_cuneta.models import EstadoCordonCuneta, MunicipioCordonCuneta, PedidoCordonCuneta
 from app.geo.models import GeoLocalidad
@@ -197,13 +197,18 @@ async def datos_vivienda(db_session: AsyncSession) -> dict:
     ))
     await db_session.flush()
 
+    db_session.add_all([
+        CatalogoItemEstado(id=1, label="A ESPERA de DOC.TÉCNICA", orden=0, es_completo=False),
+        CatalogoItemEstado(id=4, label="A corregir por M/C", orden=3, es_completo=False),
+        CatalogoItemEstado(id=5, label="Completo OK", orden=4, es_completo=True),
+    ])
     chk_id = str(uuid.uuid4())
     db_session.add(ChecklistTecnico(id=chk_id, programa="cc", entidad_id=cc_id))
     await db_session.flush()
     db_session.add_all([
-        ChecklistItem(checklist_id=chk_id, item_num=1, sub_item_num=None, valor="completo"),
-        ChecklistItem(checklist_id=chk_id, item_num=2, sub_item_num=None, valor="sin_presentar"),
-        ChecklistItem(checklist_id=chk_id, item_num=3, sub_item_num=None, valor="a_corregir"),
+        ChecklistItem(checklist_id=chk_id, item_num=1, sub_item_num=None, item_estado_id=5),  # completo
+        ChecklistItem(checklist_id=chk_id, item_num=2, sub_item_num=None, item_estado_id=1),  # sin presentar
+        ChecklistItem(checklist_id=chk_id, item_num=3, sub_item_num=None, item_estado_id=4),  # a corregir
     ])
     db_session.add(PedidoCordonCuneta(
         municipio_id=cc_id, descripcion="Se pidió el cómputo métrico.", fecha_pedido=date(2026, 8, 12),
