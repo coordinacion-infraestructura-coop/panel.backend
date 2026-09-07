@@ -146,6 +146,27 @@ async def _default_item_estado_id(db: AsyncSession) -> int:
     return estado_id
 
 
+async def _ensure_hitos(db: AsyncSession, checklist_id: str) -> None:
+    """Crea las filas de hito de obra que falten (los 4 tipos, los 3 programas).
+
+    Self-heal para las 54 localidades de Cordón Cuneta sembradas por la migración 0022, que
+    creó la fila de `viv_checklist_tecnico` directamente sin pasar por acá y por eso quedaron
+    sin hitos. Idempotente.
+    """
+    existentes = set(
+        (
+            await db.execute(
+                select(ChecklistObraHito.tipo).where(ChecklistObraHito.checklist_id == checklist_id)
+            )
+        ).scalars().all()
+    )
+    faltantes = [t for t in catalog.HITOS_TIPOS if t not in existentes]
+    for tipo in faltantes:
+        db.add(ChecklistObraHito(id=str(uuid.uuid4()), checklist_id=checklist_id, tipo=tipo))
+    if faltantes:
+        await db.flush()
+
+
 async def _get_or_create_checklist(
     db: AsyncSession, programa: str, entidad_id: str, actor: AuthUser | None = None
 ) -> ChecklistTecnico:
@@ -156,6 +177,7 @@ async def _get_or_create_checklist(
     )
     checklist = result.scalar_one_or_none()
     if checklist is not None:
+        await _ensure_hitos(db, checklist.id)
         return checklist
 
     checklist = ChecklistTecnico(
@@ -180,8 +202,7 @@ async def _get_or_create_checklist(
         )
 
     # Hitos de obra para los 3 programas (antes solo 'cc') — corrección DGV 2026-09.
-    for tipo in catalog.HITOS_TIPOS:
-        db.add(ChecklistObraHito(id=str(uuid.uuid4()), checklist_id=checklist.id, tipo=tipo))
+    await _ensure_hitos(db, checklist.id)
 
     await db.flush()
     if actor:

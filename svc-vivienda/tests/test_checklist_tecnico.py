@@ -160,6 +160,33 @@ async def test_get_checklist_ch_con_hitos(client: AsyncClient, localidad_ch: str
 
 
 @pytest.mark.asyncio
+async def test_hitos_self_heal_en_fila_preexistente(
+    client: AsyncClient, db_session: AsyncSession, catalogos: None
+):
+    """Las 54 localidades CC sembradas por la migración 0022 tienen la fila de
+    viv_checklist_tecnico pero NO las de viv_checklist_obra_hitos. El GET las completa."""
+    from app.checklist_tecnico.models import ChecklistTecnico
+
+    mid = str(uuid.uuid4())
+    db_session.add(MunicipioCordonCuneta(
+        id=mid, orden=9, municipio="Sin Hitos", departamento="X", monto=80_000_000,
+    ))
+    db_session.add(ChecklistTecnico(id=str(uuid.uuid4()), programa="cc", entidad_id=mid))
+    await db_session.flush()
+
+    r = await client.get(f"{BASE}/cc/{mid}")
+    assert r.status_code == 200
+    hitos = r.json()["hitos"]
+    assert hitos is not None and len(hitos) == 4
+    assert {h["tipo"] for h in hitos} == {"anticipo", "40", "70", "100"}
+    assert next(h for h in hitos if h["tipo"] == "anticipo")["monto"] == 40_000_000  # 50% de 80M
+
+    # idempotente: un segundo GET no duplica
+    r2 = await client.get(f"{BASE}/cc/{mid}")
+    assert len(r2.json()["hitos"]) == 4
+
+
+@pytest.mark.asyncio
 async def test_get_checklist_ml_item14_con_6_subitems(client: AsyncClient, proyecto_ml: str, catalogos: None):
     r = await client.get(f"{BASE}/ml/{proyecto_ml}")
     assert r.status_code == 200
