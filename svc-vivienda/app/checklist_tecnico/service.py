@@ -416,8 +416,8 @@ async def actualizar_item(
 
     await log_audit(
         db, actor=actor, action="UPDATE", resource_type="checklist_tecnico_item",
-        resource_id=f"{checklist.id}:{item_num}:{data.sub_item_num or ''}",
-        payload={"item_estado_id": data.item_estado_id},
+        resource_id=checklist.id,  # viv_audit_log.resource_id es VARCHAR(36): el detalle va en payload
+        payload={"item_num": item_num, "sub_item_num": data.sub_item_num, "item_estado_id": data.item_estado_id},
     )
     return await _build_response(db, programa, checklist, entidad)
 
@@ -448,7 +448,8 @@ async def actualizar_hito(
 
     await log_audit(
         db, actor=actor, action="UPDATE", resource_type="checklist_tecnico_hito",
-        resource_id=f"{checklist.id}:{tipo}", payload={"fecha_acreditado": str(data.fecha_acreditado)},
+        resource_id=checklist.id,  # viv_audit_log.resource_id es VARCHAR(36): el detalle va en payload
+        payload={"tipo": tipo, "fecha_acreditado": str(data.fecha_acreditado)},
     )
     return await _build_response(db, programa, checklist, entidad)
 

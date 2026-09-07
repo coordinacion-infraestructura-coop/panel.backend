@@ -310,6 +310,22 @@ async def test_hito_tipo_desconocido_422(client: AsyncClient, municipio_cc: str,
     assert r.status_code == 422
 
 
+@pytest.mark.asyncio
+async def test_audit_resource_id_cabe_en_varchar36(client: AsyncClient, municipio_cc: str, catalogos: None):
+    """viv_audit_log.resource_id es VARCHAR(36) (no lo enforcea SQLite ni el mock de log_audit
+    en tests, pero sí Postgres en prod). El detalle del ítem/hito va en payload, no en resource_id."""
+    from app.checklist_tecnico import service as chk_service
+
+    await client.patch(f"{BASE}/cc/{municipio_cc}/items/1", json={"item_estado_id": ITEM_ESTADO_COMPLETO})
+    await client.patch(f"{BASE}/cc/{municipio_cc}/items/4", json={"item_estado_id": 4, "sub_item_num": 3})
+    await client.patch(f"{BASE}/cc/{municipio_cc}/hitos/anticipo", json={"fecha_acreditado": "2026-06-01"})
+
+    assert chk_service.log_audit.call_count >= 3
+    for call in chk_service.log_audit.call_args_list:
+        rid = call.kwargs["resource_id"]
+        assert len(rid) <= 36, f"resource_id no entra en VARCHAR(36) ({len(rid)}): {rid!r}"
+
+
 # ── Permisos — TecnicoDGV ve Tablero + Checklist, NUNCA los paneles completos ──
 
 @pytest.mark.asyncio
