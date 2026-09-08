@@ -15,6 +15,7 @@ from app.checklist_tecnico.models import (
     CatalogoReparticion,
     ChecklistItem,
     ChecklistObraHito,
+    ChecklistObraObs,
     ChecklistTecnico,
 )
 from app.checklist_tecnico.schemas import (
@@ -39,6 +40,8 @@ from app.checklist_tecnico.schemas import (
     HitoResponse,
     HitoUpdate,
     ItemDefinicion,
+    ObraObsCreate,
+    ObraObsOut,
 )
 from app.cordoba_hogar import service as ch_service
 from app.cordoba_hogar.models import LocalidadCordobaHogar
@@ -276,7 +279,6 @@ async def _build_response(db: AsyncSession, programa: str, checklist: ChecklistT
         fecha_radicacion=checklist.fecha_radicacion,
         reparticion_id=checklist.reparticion_id,
         reparticion_label=reparticion_labels.get(checklist.reparticion_id) if checklist.reparticion_id else None,
-        obs_obra=checklist.obs_obra,
         items=items,
         hitos=hitos,
         updated_at=checklist.updated_at,
@@ -370,6 +372,49 @@ async def crear_pedido(
 
         pedido = await ml_service.crear_pedido_ml(db, entidad_id, _PedidoMLCreate(**data.model_dump()), actor)
     return ChecklistPedidoOut.model_validate(pedido)
+
+
+# ── Observaciones de obra — bitácora propia del módulo (spec v1.3.0) ──────────────
+# A diferencia de las observaciones del expediente (que delegan en viv_*_pedidos), estas
+# viven en viv_checklist_obra_obs y son idénticas para los 3 programas.
+
+async def listar_obs_obra(
+    db: AsyncSession, programa: str, entidad_id: str
+) -> list[ObraObsOut]:
+    _validar_programa(programa)
+    await _get_entidad(db, programa, entidad_id)
+    checklist = await _get_or_create_checklist(db, programa, entidad_id)
+    rows = (
+        await db.execute(
+            select(ChecklistObraObs)
+            .where(ChecklistObraObs.checklist_id == checklist.id)
+            .order_by(ChecklistObraObs.fecha.desc(), ChecklistObraObs.created_at.desc())
+        )
+    ).scalars().all()
+    return [ObraObsOut.model_validate(r) for r in rows]
+
+
+async def crear_obs_obra(
+    db: AsyncSession, programa: str, entidad_id: str, data: ObraObsCreate, actor: AuthUser
+) -> ObraObsOut:
+    _validar_programa(programa)
+    await _get_entidad(db, programa, entidad_id)
+    checklist = await _get_or_create_checklist(db, programa, entidad_id, actor)
+    row = ChecklistObraObs(
+        id=str(uuid.uuid4()),
+        checklist_id=checklist.id,
+        descripcion=data.descripcion,
+        fecha=data.fecha,
+        created_by=actor.email,
+        created_by_nombre=actor.nombre,
+    )
+    db.add(row)
+    await db.flush()
+    await log_audit(
+        db, actor=actor, action="CREATE", resource_type="checklist_obra_obs",
+        resource_id=checklist.id, payload={"fecha": str(data.fecha)},
+    )
+    return ObraObsOut.model_validate(row)
 
 
 async def actualizar_checklist(

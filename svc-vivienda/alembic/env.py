@@ -27,6 +27,7 @@ from app.checklist_tecnico.models import (
     CatalogoReparticion,
     ChecklistItem,
     ChecklistObraHito,
+    ChecklistObraObs,
     ChecklistTecnico,
 )
 from app.cordoba_hogar.models import (

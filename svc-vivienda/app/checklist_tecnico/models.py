@@ -81,10 +81,6 @@ class ChecklistTecnico(Base):
     )
     fecha_radicacion: Mapped[date | None] = mapped_column(Date)
     reparticion_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("viv_checklist_reparticion.id"))
-    # Observaciones de la etapa de obra — separadas de las del expediente (que van a
-    # `viv_cc_pedidos`/`viv_ch_pedidos`/`viv_ml_pedidos`). Columna AT del Excel DGV: una
-    # sola celda por localidad, no una bitácora.
-    obs_obra: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
     )
@@ -139,3 +135,24 @@ class ChecklistObraHito(Base):
     )
     tipo: Mapped[str] = mapped_column(String(10), nullable=False)  # 'anticipo' | '40' | '70' | '100'
     fecha_acreditado: Mapped[date | None] = mapped_column(Date)
+
+
+class ChecklistObraObs(Base):
+    """Bitácora de observaciones de la etapa de obra — misma forma que `viv_*_pedidos`
+    (observaciones del expediente): una entrada fechada por carga, con el usuario que la hizo.
+    Reemplaza al campo único `viv_checklist_tecnico.obs_obra` (spec v1.3.0).
+    """
+
+    __tablename__ = "viv_checklist_obra_obs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    checklist_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("viv_checklist_tecnico.id", ondelete="CASCADE"), nullable=False
+    )
+    descripcion: Mapped[str] = mapped_column(Text, nullable=False)
+    fecha: Mapped[date] = mapped_column(Date, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+    created_by: Mapped[str | None] = mapped_column(String(200))
+    created_by_nombre: Mapped[str | None] = mapped_column(String(255))

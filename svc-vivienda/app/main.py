@@ -29,6 +29,7 @@ from app.checklist_tecnico.models import (  # noqa: F401 — ensures tables are 
     CatalogoReparticion,
     ChecklistItem,
     ChecklistObraHito,
+    ChecklistObraObs,
     ChecklistTecnico,
 )
 from app.informes.models import InformeSnapshot  # noqa: F401 — ensures table is registered with Base

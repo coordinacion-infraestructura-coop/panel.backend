@@ -133,6 +133,21 @@ class ChecklistPedidoOut(BaseModel):
     secretaria: str | None = None
 
 
+class ObraObsCreate(BaseModel):
+    descripcion: str
+    fecha: date
+
+
+class ObraObsOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    descripcion: str
+    fecha: date
+    created_at: datetime
+    created_by: str | None = None
+    created_by_nombre: str | None = None
+
+
 class ChecklistItemResponse(BaseModel):
     item_num: int
     sub_item_num: int | None
@@ -168,7 +183,6 @@ class ChecklistTecnicoResponse(BaseModel):
     fecha_radicacion: date | None
     reparticion_id: int | None
     reparticion_label: str | None
-    obs_obra: str | None
     items: list[ChecklistItemResponse]
     hitos: list[HitoResponse] | None
     updated_at: datetime
@@ -179,4 +193,3 @@ class ChecklistTecnicoUpdate(BaseModel):
     estado_expediente_id: int | None = None
     fecha_radicacion: date | None = None
     reparticion_id: int | None = None
-    obs_obra: str | None = None

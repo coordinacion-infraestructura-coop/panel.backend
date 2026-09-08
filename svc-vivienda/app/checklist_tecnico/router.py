@@ -22,6 +22,8 @@ from app.checklist_tecnico.schemas import (
     ChecklistTecnicoUpdate,
     EntidadListItem,
     HitoUpdate,
+    ObraObsCreate,
+    ObraObsOut,
 )
 from app.database import get_db
 
@@ -89,6 +91,34 @@ async def crear_pedido(
     actor: AuthUser = Depends(require_roles(*ROLES_ESCRITURA_CHECKLIST)),
 ):
     return await service.crear_pedido(db, programa, entidad_id, data, actor)
+
+
+@router.get(
+    "/checklist-tecnico/{programa}/{entidad_id}/obs-obra",
+    response_model=list[ObraObsOut],
+)
+async def listar_obs_obra(
+    programa: Programa,
+    entidad_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: AuthUser = Depends(require_roles(*ROLES_LECTURA_CHECKLIST)),
+):
+    return await service.listar_obs_obra(db, programa, entidad_id)
+
+
+@router.post(
+    "/checklist-tecnico/{programa}/{entidad_id}/obs-obra",
+    response_model=ObraObsOut,
+    status_code=201,
+)
+async def crear_obs_obra(
+    programa: Programa,
+    entidad_id: str,
+    data: ObraObsCreate,
+    db: AsyncSession = Depends(get_db),
+    actor: AuthUser = Depends(require_roles(*ROLES_ESCRITURA_CHECKLIST)),
+):
+    return await service.crear_obs_obra(db, programa, entidad_id, data, actor)
 
 
 @router.patch("/checklist-tecnico/{programa}/{entidad_id}", response_model=ChecklistTecnicoResponse)

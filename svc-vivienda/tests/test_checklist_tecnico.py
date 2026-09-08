@@ -131,7 +131,7 @@ async def test_get_checklist_crea_fila_on_the_fly(client: AsyncClient, municipio
     assert all(i["item_estado_label"] == "A ESPERA de DOC.TÉCNICA" for i in data["items"])
     assert data["hitos"] is not None
     assert len(data["hitos"]) == 4
-    assert data["obs_obra"] is None
+    assert "obs_obra" not in data
 
 
 @pytest.mark.asyncio
@@ -258,22 +258,54 @@ async def test_actualizar_estado_expediente_inexistente_404(client: AsyncClient,
 
 
 @pytest.mark.asyncio
-async def test_obs_obra_persiste_y_es_independiente_de_los_pedidos(
+async def test_obs_obra_es_bitacora_con_usuario_e_independiente_de_los_pedidos(
     client: AsyncClient, municipio_cc: str, catalogos: None
 ):
-    r = await client.patch(f"{BASE}/cc/{municipio_cc}", json={"obs_obra": "Certificado 40% aprobado en visita del 3/9."})
-    assert r.status_code == 200
-    assert r.json()["obs_obra"] == "Certificado 40% aprobado en visita del 3/9."
+    # dos entradas fechadas, se listan más nueva primero
+    r1 = await client.post(
+        f"{BASE}/cc/{municipio_cc}/obs-obra",
+        json={"descripcion": "Certificado 40% aprobado en visita.", "fecha": "2026-09-03"},
+    )
+    assert r1.status_code == 201
+    assert r1.json()["descripcion"] == "Certificado 40% aprobado en visita."
+    assert r1.json()["created_by"] == "admin@test.com"  # queda registrado el usuario
 
-    # las observaciones del expediente (pedidos) siguen vacías — son 2 etapas diferentes
+    await client.post(
+        f"{BASE}/cc/{municipio_cc}/obs-obra",
+        json={"descripcion": "Se inicia obra.", "fecha": "2026-09-10"},
+    )
+    r_list = await client.get(f"{BASE}/cc/{municipio_cc}/obs-obra")
+    assert r_list.status_code == 200
+    fechas = [o["fecha"] for o in r_list.json()]
+    assert fechas == ["2026-09-10", "2026-09-03"]
+
+    # independientes de las observaciones del expediente (pedidos)
     r_ped = await client.get(f"{BASE}/cc/{municipio_cc}/pedidos")
     assert r_ped.status_code == 200
     assert r_ped.json() == []
 
-    # se puede vaciar de nuevo
-    r2 = await client.patch(f"{BASE}/cc/{municipio_cc}", json={"obs_obra": None})
-    assert r2.status_code == 200
-    assert r2.json()["obs_obra"] is None
+
+@pytest.mark.asyncio
+async def test_obs_obra_disponible_en_ch_y_ml(
+    client: AsyncClient, localidad_ch: str, proyecto_ml: str, catalogos: None
+):
+    for programa, ent in (("ch", localidad_ch), ("ml", proyecto_ml)):
+        r = await client.post(
+            f"{BASE}/{programa}/{ent}/obs-obra",
+            json={"descripcion": "obs", "fecha": "2026-09-01"},
+        )
+        assert r.status_code == 201, (programa, r.text)
+
+
+@pytest.mark.asyncio
+async def test_obs_obra_consulta_no_escribe(
+    client_consulta: AsyncClient, municipio_cc: str, catalogos: None
+):
+    r = await client_consulta.post(
+        f"{BASE}/cc/{municipio_cc}/obs-obra",
+        json={"descripcion": "x", "fecha": "2026-09-01"},
+    )
+    assert r.status_code == 403
 
 
 # ── Hitos de obra ────────────────────────────────────────────────────────────
