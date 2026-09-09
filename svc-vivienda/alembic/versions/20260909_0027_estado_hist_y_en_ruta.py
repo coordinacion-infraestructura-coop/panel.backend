@@ -73,18 +73,21 @@ def upgrade() -> None:
     )
 
     # 1) Historial reconstruido desde la auditoría (cada PATCH de checklist que tocó el estado).
+    # `viv_audit_log.payload` es TEXT en prod (guarda el JSON como texto) — `payload::text::jsonb`
+    # funciona tanto si la columna es TEXT como si fuese JSONB. El prefiltro LIKE + la comprobación
+    # numérica evitan castear filas sin ese campo o con valor no numérico.
     filas_audit = conn.execute(
         sa.text(
             """
             SELECT resource_id AS checklist_id,
-                   (payload->>'estado_expediente_id')::bigint AS estado_id,
+                   (payload::text::jsonb ->> 'estado_expediente_id')::bigint AS estado_id,
                    created_at, actor_email
             FROM viv_audit_log
             WHERE resource_type = 'checklist_tecnico'
-              AND payload ? 'estado_expediente_id'
-              AND payload->>'estado_expediente_id' IS NOT NULL
+              AND payload LIKE '%"estado_expediente_id"%'
+              AND (payload::text::jsonb ->> 'estado_expediente_id') ~ '^[0-9]+$'
               AND resource_id IN (SELECT id FROM viv_checklist_tecnico)
-              AND (payload->>'estado_expediente_id')::bigint
+              AND (payload::text::jsonb ->> 'estado_expediente_id')::bigint
                     IN (SELECT id FROM viv_checklist_estado_expediente)
             ORDER BY created_at
             """
