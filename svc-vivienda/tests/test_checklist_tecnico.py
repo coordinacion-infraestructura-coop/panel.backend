@@ -37,8 +37,11 @@ async def catalogos(db_session: AsyncSession) -> None:
         "En CURSO en TÉCNICA", "COMPLETO en TÉCNICA", "En CURSO en TRIB.C",
         "APROBADO por TRIB.C", "OBRA en EJECUCIÓN", "OBRA TERMINADA",
     ]
+    _excepcion = {"RECHAZADO por M/C", "SIN AUTORIZACION MIN.GOB"}
     for i, label in enumerate(estados, start=1):
-        db_session.add(CatalogoEstadoExpediente(id=i, label=label, orden=i - 1, activo=True))
+        db_session.add(CatalogoEstadoExpediente(
+            id=i, label=label, orden=i - 1, activo=True, en_ruta=label not in _excepcion,
+        ))
     reparticiones = [
         "Dirección de Regularización de Obras y Proyectos",
         "Dirección Legal y Notarial",
@@ -101,6 +104,8 @@ async def test_get_catalogos(client: AsyncClient, catalogos: None):
     assert len(data["estados_expediente"]) == 9
     assert data["estados_expediente"][0]["label"] == "A ESPERA de DOC.TÉCNICA"
     assert data["estados_expediente"][-1]["label"] == "OBRA TERMINADA"
+    fuera_de_ruta = {e["label"] for e in data["estados_expediente"] if not e["en_ruta"]}
+    assert fuera_de_ruta == {"RECHAZADO por M/C", "SIN AUTORIZACION MIN.GOB"}
     assert len(data["reparticiones"]) == 3
     assert len(data["items_estado"]) == 5
     assert data["items_estado"][0]["label"] == "A ESPERA de DOC.TÉCNICA"
@@ -132,6 +137,7 @@ async def test_get_checklist_crea_fila_on_the_fly(client: AsyncClient, municipio
     assert data["hitos"] is not None
     assert len(data["hitos"]) == 4
     assert "obs_obra" not in data
+    assert data["estados_visitados"] == []
 
 
 @pytest.mark.asyncio
@@ -249,6 +255,30 @@ async def test_actualizar_estado_expediente(client: AsyncClient, municipio_cc: s
     assert data["estado_expediente_id"] == 4
     assert data["estado_expediente_label"] == "En CURSO en TÉCNICA"
     assert data["reparticion_id"] == 1
+    assert data["estados_visitados"] == [4]
+
+
+@pytest.mark.asyncio
+async def test_estados_visitados_registra_solo_lo_transitado(
+    client: AsyncClient, municipio_cc: str, catalogos: None
+):
+    """El stepper marca ✓ un estado de excepción SOLO si el expediente lo transitó de verdad."""
+    # Camino regular: A ESPERA (1) -> En CURSO en TÉCNICA (4) -> COMPLETO en TÉCNICA (5)
+    await client.patch(f"{BASE}/cc/{municipio_cc}", json={"estado_expediente_id": 1})
+    await client.patch(f"{BASE}/cc/{municipio_cc}", json={"estado_expediente_id": 4})
+    r = await client.patch(f"{BASE}/cc/{municipio_cc}", json={"estado_expediente_id": 5})
+    # NO incluye "RECHAZADO por M/C" (2) ni "SIN AUTORIZACION MIN.GOB" (3)
+    assert set(r.json()["estados_visitados"]) == {1, 4, 5}
+
+    # Ahora sí pasa por RECHAZADO por M/C (2) y vuelve a En CURSO en TÉCNICA (4)
+    await client.patch(f"{BASE}/cc/{municipio_cc}", json={"estado_expediente_id": 2})
+    r2 = await client.patch(f"{BASE}/cc/{municipio_cc}", json={"estado_expediente_id": 4})
+    assert set(r2.json()["estados_visitados"]) == {1, 2, 4, 5}
+    assert r2.json()["estado_expediente_id"] == 4  # vuelve al camino regular
+
+    # re-setear el mismo estado no duplica el historial
+    r3 = await client.patch(f"{BASE}/cc/{municipio_cc}", json={"estado_expediente_id": 4})
+    assert set(r3.json()["estados_visitados"]) == {1, 2, 4, 5}
 
 
 @pytest.mark.asyncio
@@ -517,6 +547,16 @@ async def test_admin_crear_estado_expediente(client: AsyncClient, catalogos: Non
     r = await client.post(f"{BASE}/admin/estado-expediente", json={"label": "Nuevo Estado", "orden": 9})
     assert r.status_code == 201
     assert r.json()["label"] == "Nuevo Estado"
+    assert r.json()["en_ruta"] is True  # por defecto, parte del camino
+
+
+@pytest.mark.asyncio
+async def test_admin_estado_expediente_en_ruta_editable(client: AsyncClient, catalogos: None):
+    r = await client.patch(f"{BASE}/admin/estado-expediente/1", json={"en_ruta": False})
+    assert r.status_code == 200
+    assert r.json()["en_ruta"] is False
+    cat = (await client.get(f"{BASE}/catalogos")).json()
+    assert next(e for e in cat["estados_expediente"] if e["id"] == 1)["en_ruta"] is False
 
 
 @pytest.mark.asyncio

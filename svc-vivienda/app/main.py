@@ -27,6 +27,7 @@ from app.checklist_tecnico.models import (  # noqa: F401 — ensures tables are 
     CatalogoEstadoExpediente,
     CatalogoItemEstado,
     CatalogoReparticion,
+    ChecklistEstadoHist,
     ChecklistItem,
     ChecklistObraHito,
     ChecklistObraObs,

@@ -11,18 +11,21 @@ class CatalogoEstadoExpedienteResponse(BaseModel):
     label: str
     orden: int
     activo: bool
+    en_ruta: bool
 
 
 class CatalogoEstadoExpedienteCreate(BaseModel):
     label: str
     orden: int
     activo: bool = True
+    en_ruta: bool = True
 
 
 class CatalogoEstadoExpedienteUpdate(BaseModel):
     label: str | None = None
     orden: int | None = None
     activo: bool | None = None
+    en_ruta: bool | None = None
 
 
 class CatalogoReparticionResponse(BaseModel):
@@ -183,6 +186,7 @@ class ChecklistTecnicoResponse(BaseModel):
     fecha_radicacion: date | None
     reparticion_id: int | None
     reparticion_label: str | None
+    estados_visitados: list[int]
     items: list[ChecklistItemResponse]
     hitos: list[HitoResponse] | None
     updated_at: datetime

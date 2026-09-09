@@ -27,6 +27,9 @@ class CatalogoEstadoExpediente(Base):
     label: Mapped[str] = mapped_column(String(100), nullable=False)
     orden: Mapped[int] = mapped_column(Integer, nullable=False)
     activo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # `en_ruta=False` → estado de excepción (RECHAZADO por M/C, SIN AUTORIZACION MIN.GOB): no es
+    # parte del camino lineal del stepper; se marca solo si el expediente lo transitó de verdad.
+    en_ruta: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
 
 class CatalogoReparticion(Base):
@@ -156,3 +159,24 @@ class ChecklistObraObs(Base):
     )
     created_by: Mapped[str | None] = mapped_column(String(200))
     created_by_nombre: Mapped[str | None] = mapped_column(String(255))
+
+
+class ChecklistEstadoHist(Base):
+    """Cada vez que cambia el "Estado del expediente" se registra acá — sirve para saber si el
+    expediente transitó un estado de excepción (RECHAZADO / SIN AUTORIZACION), que no está en el
+    camino lineal del stepper (spec v1.4.0). Solo se escribe en cambios de estado, no en cada PATCH.
+    """
+
+    __tablename__ = "viv_checklist_estado_hist"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    checklist_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("viv_checklist_tecnico.id", ondelete="CASCADE"), nullable=False
+    )
+    estado_expediente_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("viv_checklist_estado_expediente.id"), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+    created_by: Mapped[str | None] = mapped_column(String(200))

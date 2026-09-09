@@ -13,6 +13,7 @@ from app.checklist_tecnico.models import (
     CatalogoEstadoExpediente,
     CatalogoItemEstado,
     CatalogoReparticion,
+    ChecklistEstadoHist,
     ChecklistItem,
     ChecklistObraHito,
     ChecklistObraObs,
@@ -270,6 +271,18 @@ async def _build_response(db: AsyncSession, programa: str, checklist: ChecklistT
         )
     hitos.sort(key=lambda h: catalog.HITOS_TIPOS.index(h.tipo))
 
+    visitados = set(
+        (
+            await db.execute(
+                select(ChecklistEstadoHist.estado_expediente_id).where(
+                    ChecklistEstadoHist.checklist_id == checklist.id
+                )
+            )
+        ).scalars().all()
+    )
+    if checklist.estado_expediente_id:
+        visitados.add(checklist.estado_expediente_id)
+
     return ChecklistTecnicoResponse(
         programa=programa,
         entidad_id=checklist.entidad_id,
@@ -279,6 +292,7 @@ async def _build_response(db: AsyncSession, programa: str, checklist: ChecklistT
         fecha_radicacion=checklist.fecha_radicacion,
         reparticion_id=checklist.reparticion_id,
         reparticion_label=reparticion_labels.get(checklist.reparticion_id) if checklist.reparticion_id else None,
+        estados_visitados=sorted(visitados),
         items=items,
         hitos=hitos,
         updated_at=checklist.updated_at,
@@ -425,8 +439,9 @@ async def actualizar_checklist(
     checklist = await _get_or_create_checklist(db, programa, entidad_id, actor)
 
     updates = data.model_dump(exclude_unset=True)
-    if "estado_expediente_id" in updates and updates["estado_expediente_id"] is not None:
-        exists = await db.get(CatalogoEstadoExpediente, updates["estado_expediente_id"])
+    nuevo_estado = updates.get("estado_expediente_id")
+    if "estado_expediente_id" in updates and nuevo_estado is not None:
+        exists = await db.get(CatalogoEstadoExpediente, nuevo_estado)
         if not exists:
             raise _recurso_no_encontrado("Estado del expediente no encontrado en el catálogo")
     if "reparticion_id" in updates and updates["reparticion_id"] is not None:
@@ -434,9 +449,26 @@ async def actualizar_checklist(
         if not exists:
             raise _recurso_no_encontrado("Repartición no encontrada en el catálogo")
 
+    # Registrar el paso por el estado (para el stepper: los estados de excepción se marcan
+    # solo si el expediente los transitó de verdad).
+    hubo_cambio_estado = (
+        "estado_expediente_id" in updates
+        and nuevo_estado is not None
+        and nuevo_estado != checklist.estado_expediente_id
+    )
+
     for key, value in updates.items():
         setattr(checklist, key, value)
     checklist.updated_by = actor.email
+    if hubo_cambio_estado:
+        db.add(
+            ChecklistEstadoHist(
+                id=str(uuid.uuid4()),
+                checklist_id=checklist.id,
+                estado_expediente_id=nuevo_estado,
+                created_by=actor.email,
+            )
+        )
     await db.flush()
     await db.refresh(checklist)
 
@@ -547,7 +579,9 @@ async def crear_estado_expediente(
     db: AsyncSession, data: CatalogoEstadoExpedienteCreate, actor: AuthUser
 ) -> CatalogoEstadoExpedienteResponse:
     new_id = int(time.time() * 1000)
-    estado = CatalogoEstadoExpediente(id=new_id, label=data.label, orden=data.orden, activo=data.activo)
+    estado = CatalogoEstadoExpediente(
+        id=new_id, label=data.label, orden=data.orden, activo=data.activo, en_ruta=data.en_ruta
+    )
     db.add(estado)
     await db.flush()
     await log_audit(

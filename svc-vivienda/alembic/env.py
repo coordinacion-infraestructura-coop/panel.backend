@@ -25,6 +25,7 @@ from app.checklist_tecnico.models import (
     CatalogoEstadoExpediente,
     CatalogoItemEstado,
     CatalogoReparticion,
+    ChecklistEstadoHist,
     ChecklistItem,
     ChecklistObraHito,
     ChecklistObraObs,
