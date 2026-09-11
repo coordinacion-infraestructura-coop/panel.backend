@@ -15,6 +15,8 @@ from app.auth import AuthUser
 from app.cordon_cuneta import checklist_sync
 from app.cordon_cuneta.checklist_schemas import SyncResultResponse
 from app.database import get_db
+from app.notificaciones import service as notificaciones_service
+from app.notificaciones.schemas import NotificacionIn
 from app.portal.repository import get_portal_user
 from app.resumen_territorial import service as resumen_service
 
@@ -60,6 +62,17 @@ async def portal_usuario_por_email(email: str, db: AsyncSession = Depends(get_db
         "secretarias": [s.secretaria for s in usuario.secretarias],
         "activo": usuario.activo,
     }
+
+
+@router.post("/notificaciones")
+async def crear_notificacion_interna(
+    payload: NotificacionIn, db: AsyncSession = Depends(get_db)
+):
+    """Alta de una notificación del feed interno. La invocan jobs (Cloud Scheduler) u
+    otros servicios vía IAM — este path NO se declara en el API Gateway. El alta desde
+    la UI todavía no existe (se define en un paso posterior)."""
+    n = await notificaciones_service.crear(db, _SCHEDULER_ACTOR, payload.model_dump())
+    return {"id": n.id}
 
 
 @router.post("/resumen-territorial/actualizar")

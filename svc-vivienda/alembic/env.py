@@ -50,6 +50,7 @@ from app.mi_lugar.models import (
     ProyectoML,
 )
 from app.portal.models import PortalUsuario, PortalUsuarioSecretaria
+from app.notificaciones.models import Notificacion, NotificacionLectura
 
 config = context.config
 
