@@ -62,6 +62,22 @@ def _ok_valor(ok_gob: str | None) -> str:
     return "SI" if (ok_gob or "").strip().upper() == "SI" else "PENDIENTE"
 
 
+async def _notificar_creacion(
+    db: AsyncSession, *, caso_tipo: str, caso_id: str, gestion_id: str | None
+) -> None:
+    await notificaciones_service.crear(db, _SYNC_ACTOR, {
+        "titulo": "Nueva gestión creada en Privada",
+        "mensaje": (
+            f"Se creó automáticamente una gestión en Privada a partir del caso "
+            f"{caso_tipo.upper()} ({caso_id})."
+        ),
+        "nivel": "info",
+        "origen": "privada_sync",
+        "destino_tipo": "secretaria",
+        "destino_valor": "privada",
+    })
+
+
 async def _notificar_correccion(
     db: AsyncSession, *, caso_tipo: str, caso_id: str, diff: dict
 ) -> None:
@@ -189,10 +205,12 @@ async def sync_gestion_privada(
     ))
     await db.flush()
 
-    # Alertas al panel de notificaciones (ADR-019) — sólo en los dos casos que el
-    # usuario pidió: campos corregidos en una gestión ya vinculada, o caso que queda
-    # pendiente de revisión manual. Nunca por un ERROR transitorio (sería ruido).
-    if resultado == "LINKED_EXISTING" and diff:
+    # Alertas al panel de notificaciones (ADR-019): gestión nueva creada, campos
+    # corregidos en una gestión ya vinculada, o caso que queda pendiente de revisión
+    # manual. Nunca por un ERROR transitorio (sería ruido).
+    if resultado == "LINKED_NEW":
+        await _notificar_creacion(db, caso_tipo=caso_tipo, caso_id=caso_id, gestion_id=gestion_id)
+    elif resultado == "LINKED_EXISTING" and diff:
         await _notificar_correccion(db, caso_tipo=caso_tipo, caso_id=caso_id, diff=diff)
     elif resultado == "PENDING_REVIEW":
         await _notificar_pendiente_revision(db, caso_tipo=caso_tipo, caso_id=caso_id, motivo=motivo)

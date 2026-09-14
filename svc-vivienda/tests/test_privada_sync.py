@@ -111,6 +111,11 @@ async def test_linked_new_crea_vinculo(db_session, _privada_sync_on):
     log = (await db_session.execute(select(VinculoPrivadaSyncLog))).scalar_one()
     assert log.resultado == "LINKED_NEW" and log.http_status == 200
 
+    notif = (await db_session.execute(select(Notificacion))).scalar_one()
+    assert notif.destino_tipo == "secretaria" and notif.destino_valor == "privada"
+    assert notif.nivel == "info" and notif.origen == "privada_sync"
+    assert "Nueva gestión" in notif.titulo
+
 
 @pytest.mark.asyncio
 async def test_linked_existing_con_diff_genera_notificacion(db_session, _privada_sync_on):
