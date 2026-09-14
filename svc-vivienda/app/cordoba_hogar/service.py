@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit import log_audit
 from app.auth import AuthUser
+from app.integrations.privada_sync import sync_gestion_privada
 from app.cordoba_hogar.models import (
     ConfigCordobaHogar,
     EstadoCordobaHogar,
@@ -203,6 +204,10 @@ async def actualizar_localidad(
         db, actor=actor, action="UPDATE", resource_type="cordoba_hogar",
         resource_id=localidad_id, payload=updates
     )
+    await sync_gestion_privada(
+        db, caso_tipo="ch", caso_id=localidad.id, nro_expediente=localidad.expediente,
+        localidad=localidad.localidad, departamento=localidad.departamento, ok_gob=localidad.ok_gob,
+    )
     return LocalidadResponse.model_validate(localidad)
 
 
@@ -275,6 +280,10 @@ async def crear_localidad(
     await log_audit(
         db, actor=actor, action="CREATE", resource_type="cordoba_hogar",
         resource_id=localidad.id, payload=data.model_dump()
+    )
+    await sync_gestion_privada(
+        db, caso_tipo="ch", caso_id=localidad.id, nro_expediente=localidad.expediente,
+        localidad=localidad.localidad, departamento=localidad.departamento, ok_gob=localidad.ok_gob,
     )
     return LocalidadResponse.model_validate(localidad)
 

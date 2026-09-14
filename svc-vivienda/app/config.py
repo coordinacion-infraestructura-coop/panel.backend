@@ -30,5 +30,12 @@ class Settings(BaseSettings):
     privada_resumen_path: str = "/api/v1/privada/gestiones/resumen-territorial"
     privada_gateway_audience: str = ""  # vacío → gcp_project_id como aud del ID token
 
+    # Vinculación Vivienda -> Privada (ADR-020 / spec-vinculacion-vivienda-privada.md).
+    # Flag independiente de `privada_fetch_enabled` (que es sólo para el fetch de
+    # resumen_territorial) — permite prender/apagar el sync de gestiones por separado.
+    # Reusa `svc_privada_internal_url` de arriba como base + audience del ID token.
+    privada_sync_gestiones_enabled: bool = False
+    privada_gestiones_sync_internal_path: str = "/internal/privada/gestiones/sync"
+
 
 settings = Settings()

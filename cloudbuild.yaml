@@ -24,6 +24,12 @@ substitutions:
   # update` con --update-env-vars. Inofensivo para otros _SERVICE (env var no leída).
   _PRIVADA_FETCH_ENABLED: "true"
   _SVC_PRIVADA_INTERNAL_URL: "https://svc-privada-iwni7vc2qq-rj.a.run.app"
+  # Específico de svc-vivienda (ADR-020: vinculación de casos DGV con gestiones de
+  # Privada). Confirmado 2026-09-14 contra docs/data/cat_ministerio_agencia.json
+  # (MIN_GOBIERNO existe y está activo) -> encendido por default, mismo criterio que
+  # _PRIVADA_FETCH_ENABLED. Rollback: --substitutions=...,_PRIVADA_SYNC_GESTIONES_ENABLED=false
+  # o `gcloud run services update` con --update-env-vars. Inofensivo para otros _SERVICE.
+  _PRIVADA_SYNC_GESTIONES_ENABLED: "true"
 
 steps:
   # ---------------------------------------------------------------------------
@@ -72,7 +78,7 @@ steps:
       - "--no-allow-unauthenticated"
       - "--service-account=${_SERVICE}@${_PROJECT}.iam.gserviceaccount.com"
       - "--set-secrets=DATABASE_URL=${_SERVICE}-db-url:latest"
-      - "--set-env-vars=GCP_PROJECT_ID=${_PROJECT},SERVICE_NAME=${_SERVICE},ENVIRONMENT=production,GOOGLE_SHEET_CC_ID=${_GOOGLE_SHEET_CC_ID},SVC_VIVIENDA_INTERNAL_URL=${_SVC_VIVIENDA_INTERNAL_URL},PRIVADA_FETCH_ENABLED=${_PRIVADA_FETCH_ENABLED},SVC_PRIVADA_INTERNAL_URL=${_SVC_PRIVADA_INTERNAL_URL}"
+      - "--set-env-vars=GCP_PROJECT_ID=${_PROJECT},SERVICE_NAME=${_SERVICE},ENVIRONMENT=production,GOOGLE_SHEET_CC_ID=${_GOOGLE_SHEET_CC_ID},SVC_VIVIENDA_INTERNAL_URL=${_SVC_VIVIENDA_INTERNAL_URL},PRIVADA_FETCH_ENABLED=${_PRIVADA_FETCH_ENABLED},SVC_PRIVADA_INTERNAL_URL=${_SVC_PRIVADA_INTERNAL_URL},PRIVADA_SYNC_GESTIONES_ENABLED=${_PRIVADA_SYNC_GESTIONES_ENABLED}"
       - "--memory=512Mi"
       - "--cpu=1"
       - "--min-instances=0"

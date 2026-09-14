@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit import log_audit
 from app.auth import AuthUser
+from app.integrations.privada_sync import sync_gestion_privada
 from app.cordon_cuneta.models import (
     ConfigCordonCuneta,
     EstadoCordonCuneta,
@@ -200,6 +201,10 @@ async def actualizar_municipio(
         db, actor=actor, action="UPDATE", resource_type="cordon_cuneta",
         resource_id=municipio_id, payload=updates
     )
+    await sync_gestion_privada(
+        db, caso_tipo="cc", caso_id=municipio.id, nro_expediente=municipio.expediente,
+        localidad=municipio.municipio, departamento=municipio.departamento, ok_gob=municipio.ok_gob,
+    )
     return MunicipioResponse.model_validate(municipio)
 
 
@@ -270,6 +275,10 @@ async def crear_municipio(
     await log_audit(
         db, actor=actor, action="CREATE", resource_type="cordon_cuneta",
         resource_id=municipio.id, payload=data.model_dump()
+    )
+    await sync_gestion_privada(
+        db, caso_tipo="cc", caso_id=municipio.id, nro_expediente=municipio.expediente,
+        localidad=municipio.municipio, departamento=municipio.departamento, ok_gob=municipio.ok_gob,
     )
     return MunicipioResponse.model_validate(municipio)
 

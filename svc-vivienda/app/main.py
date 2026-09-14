@@ -37,6 +37,7 @@ from app.checklist_tecnico.models import (  # noqa: F401 — ensures tables are 
 from app.informes.models import InformeSnapshot  # noqa: F401 — ensures table is registered with Base
 from app.resumen_territorial.models import ResumenTerritorialSnapshot  # noqa: F401 — registra la tabla en Base
 from app.notificaciones.models import Notificacion, NotificacionLectura  # noqa: F401 — registra las tablas en Base
+from app.integrations.models import VinculoPrivada, VinculoPrivadaSyncLog  # noqa: F401 — registra las tablas en Base
 from app.mi_lugar.models import (  # noqa: F401 — ensures tables are registered with Base
     ConfigML,
     EstadoHistorialML,

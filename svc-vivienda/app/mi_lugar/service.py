@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit import log_audit
 from app.auth import AuthUser
+from app.integrations.privada_sync import sync_gestion_privada
 from app.mi_lugar.models import (
     ConfigML,
     EstadoHistorialML,
@@ -229,6 +230,10 @@ async def crear_proyecto_ml(
     await db.refresh(proy)
     await log_audit(db, actor=actor, action="CREATE", resource_type="ml_proyecto",
                     resource_id=proy.id, payload=data.model_dump(mode="json"))
+    await sync_gestion_privada(
+        db, caso_tipo="ml", caso_id=proy.id, nro_expediente=proy.expediente,
+        localidad=proy.localidad_nombre, departamento=proy.departamento, ok_gob=proy.ok_gob,
+    )
     return _proyecto_con_geo(proy, puntos)
 
 
@@ -297,6 +302,10 @@ async def actualizar_proyecto_ml(
     await db.refresh(proy)
     await log_audit(db, actor=actor, action="UPDATE", resource_type="ml_proyecto",
                     resource_id=proyecto_id, payload=data.model_dump(mode="json", exclude_unset=True))
+    await sync_gestion_privada(
+        db, caso_tipo="ml", caso_id=proy.id, nro_expediente=proy.expediente,
+        localidad=proy.localidad_nombre, departamento=proy.departamento, ok_gob=proy.ok_gob,
+    )
     return _proyecto_con_geo(proy, puntos)
 
 

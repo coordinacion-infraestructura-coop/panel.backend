@@ -51,6 +51,7 @@ from app.mi_lugar.models import (
 )
 from app.portal.models import PortalUsuario, PortalUsuarioSecretaria
 from app.notificaciones.models import Notificacion, NotificacionLectura
+from app.integrations.models import VinculoPrivada, VinculoPrivadaSyncLog
 
 config = context.config
 
