@@ -37,5 +37,10 @@ class Settings(BaseSettings):
     privada_sync_gestiones_enabled: bool = False
     privada_gestiones_sync_internal_path: str = "/internal/privada/gestiones/sync"
 
+    # Informe "Localidades por Departamento" (spec-informe-localidades-departamento.md).
+    # Reusa `privada_fetch_enabled` + `svc_privada_internal_url` de arriba — mismo
+    # flag/URL, sólo agrega el path del endpoint IAM-only de habitantes.
+    privada_localidades_internal_path: str = "/internal/privada/localidades-habitantes"
+
 
 settings = Settings()

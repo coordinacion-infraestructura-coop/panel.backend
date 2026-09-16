@@ -31,6 +31,18 @@ async def rollup_territorial(db: AsyncSession = Depends(get_db)):
     return await service.rollup_territorial(db)
 
 
+@router.get("/localidades-habitantes")
+async def localidades_habitantes(db: AsyncSession = Depends(get_db)):
+    """Habitantes por (departamento, localidad) para el informe "Localidades por
+    Departamento" de svc-vivienda (docs/files/spec-informe-localidades-departamento.md).
+
+    Mismo patrón IAM-only que `rollup_territorial` — reusa tal cual
+    `gestiones.service.listar_localidades_info`, que ya está pensada para export
+    bulk ("evita el N+1 de GET /localidades-info de a una").
+    """
+    return await service.listar_localidades_info(db)
+
+
 @router.post("/gestiones/sync", response_model=GestionSyncResult)
 async def sync_gestion_desde_vivienda(
     payload: GestionSyncFromVivienda, db: AsyncSession = Depends(get_db)
