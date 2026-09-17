@@ -181,7 +181,10 @@ async def main() -> None:
             "Falta DATABASE_URL (postgresql+asyncpg://user_privada:PASS@127.0.0.1:5432/db_privada)"
         )
 
-    engine = create_async_engine(url) if url else None
+    # ssl=False: asyncpg intenta negociar TLS por default, y cloud-sql-proxy
+    # (que ya cifra la conexión real hacia Cloud SQL) resetea la conexión local
+    # en texto plano al recibir el SSLRequest -> "Connection reset by peer".
+    engine = create_async_engine(url, connect_args={"ssl": False}) if url else None
     db_cm = AsyncSession(engine, expire_on_commit=False) if engine else None
 
     async def _run(db: AsyncSession | None):
