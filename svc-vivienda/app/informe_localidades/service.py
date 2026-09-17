@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.cordoba_hogar.models import LocalidadCordobaHogar
 from app.cordon_cuneta.models import MunicipioCordonCuneta
-from app.geo.matching import normalize_name
+from app.geo.matching import candidatos_localidad, normalize_name
 from app.geo.models import GeoLocalidad
 from app.informe_localidades.schemas import LocalidadInformeRow
 
@@ -57,11 +57,18 @@ def _mint_id_token(audience: str) -> str | None:
 
 
 async def fetch_habitantes_privada() -> dict[tuple[str, str], int | None]:
-    """Habitantes por (departamento, localidad) desde `priv_localidades_info`
-    (svc-privada), vía el endpoint IAM-only `/internal/privada/localidades-habitantes`
-    — mismo patrón fail-open que `resumen_territorial.service.fetch_privada_lineas`:
-    cualquier fallo, o el flag apagado, devuelve `{}` y el informe se genera igual
-    con `cant_habitantes=None` en todas las filas (nunca se inventa un valor)."""
+    """Habitantes por cada candidato (departamento, alias-de-localidad) desde
+    `priv_localidades_info` (svc-privada), vía el endpoint IAM-only
+    `/internal/privada/localidades-habitantes` — mismo patrón fail-open que
+    `resumen_territorial.service.fetch_privada_lineas`: cualquier fallo, o el
+    flag apagado, devuelve `{}` y el informe se genera igual con
+    `cant_habitantes=None` en todas las filas (nunca se inventa un valor).
+
+    Cada fila de `priv_localidades_info` se indexa por TODOS sus candidatos de
+    alias (`candidatos_localidad`), no sólo su nombre tal cual — misma lógica
+    que usa `services/svc-privada/scripts/cargar_habitantes_censo2022.py` del
+    lado del censo, para poder resolver localidades con alias entre
+    paréntesis/guion (ej. "SANTA CATALINA (EST. HOLMBERG)")."""
     if not settings.privada_fetch_enabled or not settings.svc_privada_internal_url:
         return {}
 
@@ -86,14 +93,25 @@ async def fetch_habitantes_privada() -> dict[tuple[str, str], int | None]:
         rows = resp.json()
         if not isinstance(rows, list):
             return {}
-        return {
-            _key(r.get("departamento"), r.get("localidad")): r.get("habitantes")
-            for r in rows
-            if isinstance(r, dict)
-        }
+        habitantes: dict[tuple[str, str], int | None] = {}
+        for r in rows:
+            if not isinstance(r, dict):
+                continue
+            depto = normalize_name(r.get("departamento"))
+            for loc_key in candidatos_localidad(r.get("localidad")):
+                habitantes[(depto, loc_key)] = r.get("habitantes")
+        return habitantes
     except Exception as exc:  # noqa: BLE001 — tolerante por diseño
         logger.warning("informe_localidades: fetch de Privada falló (%s): %r", url, exc)
         return {}
+
+
+def _habitantes_de(g: GeoLocalidad, habitantes: dict[tuple[str, str], int | None]) -> int | None:
+    d = normalize_name(g.departamento)
+    for loc_key in candidatos_localidad(g.localidad):
+        if (d, loc_key) in habitantes:
+            return habitantes[(d, loc_key)]
+    return None
 
 
 async def compute_informe(db: AsyncSession) -> list[LocalidadInformeRow]:
@@ -111,7 +129,7 @@ async def compute_informe(db: AsyncSession) -> list[LocalidadInformeRow]:
             LocalidadInformeRow(
                 departamento=g.departamento,
                 localidad=g.localidad,
-                cant_habitantes=habitantes.get(k),
+                cant_habitantes=_habitantes_de(g, habitantes),
                 tiene_cordon_cuneta=cc is not None,
                 ml_cordon_cuneta=cc.cordon_cuneta_ml if cc else None,
                 tiene_viviendas=ch is not None,

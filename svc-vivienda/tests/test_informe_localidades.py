@@ -9,6 +9,7 @@ import pytest
 
 from app.cordoba_hogar.models import LocalidadCordobaHogar
 from app.cordon_cuneta.models import MunicipioCordonCuneta
+from app.geo.matching import candidatos_localidad
 from app.geo.models import GeoLocalidad
 
 BASE = "/api/v1/vivienda/informe-localidades"
@@ -125,6 +126,35 @@ async def test_fetch_habitantes_privada_default_deshabilitado_da_diccionario_vac
     from app.informe_localidades.service import fetch_habitantes_privada
 
     assert await fetch_habitantes_privada() == {}
+
+
+def test_candidatos_localidad_extrae_alias_entre_parentesis_y_guion():
+    assert "holmberg" in candidatos_localidad("Santa Catalina (Est. Holmberg)")
+    assert "santa catalina" in candidatos_localidad("Santa Catalina (Est. Holmberg)")
+    assert "maria elena" in candidatos_localidad("Elena - Maria Elena")
+    assert candidatos_localidad(None) == set()
+    assert candidatos_localidad("") == set()
+
+
+@pytest.mark.asyncio
+async def test_informe_matchea_habitantes_por_alias_de_localidad(client, db_session):
+    """Geo con alias entre paréntesis debe encontrar habitantes aunque
+    Privada lo devuelva bajo el alias corto (no el nombre completo) — mismo
+    caso real que resolvió cargar_habitantes_censo2022.py con
+    "Santa Catalina Holmberg"."""
+    db_session.add(GeoLocalidad(
+        id_geo="g5", departamento="Río Cuarto",
+        localidad="Santa Catalina (Est. Holmberg)", activo=True,
+    ))
+    await db_session.flush()
+
+    with patch(
+        "app.informe_localidades.service.fetch_habitantes_privada",
+        new=AsyncMock(return_value={("rio cuarto", "holmberg"): 5057}),
+    ):
+        resp = await client.get(BASE)
+    fila = next(f for f in resp.json() if f["localidad"] == "Santa Catalina (Est. Holmberg)")
+    assert fila["cant_habitantes"] == 5057
 
 
 @pytest.mark.asyncio
