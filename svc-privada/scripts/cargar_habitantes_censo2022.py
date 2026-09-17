@@ -21,7 +21,7 @@ en `OVERRIDES_AMBIGUOS`/`OVERRIDES_ALIAS`/`OVERRIDES_NUEVAS` más abajo:
   automático no reconoció (ej. "Santa Catalina Holmberg" censo →
   "SANTA CATALINA (EST. HOLMBERG)" geo) — se usa la grafía del geo, no la
   del censo, para no crear una fila con localidad duplicada.
-- `OVERRIDES_NUEVAS`: 13 localidades reales que NO existen en
+- `OVERRIDES_NUEVAS`: 10 localidades reales que NO existen en
   `priv_geo_localidades` bajo ningún nombre — departamento confirmado vía
   fuentes oficiales (Wikipedia/municipio/INDEC, ver conversación del
   2026-09-17). Por decisión del usuario, **no** se agregan al padrón
@@ -30,6 +30,11 @@ en `OVERRIDES_AMBIGUOS`/`OVERRIDES_ALIAS`/`OVERRIDES_NUEVAS` más abajo:
   nombre tal cual el censo. Esto implica que NO van a aparecer en el
   informe-localidades de vivienda ni en `resumen_territorial`, porque esos
   módulos arrancan del padrón geo, no de `priv_localidades_info`.
+  (De las 13 candidatas originales, 3 —Parque Calmayo/Estación General
+  Paz/Santiago Temple— resultaron ya existir directo en
+  `priv_localidades_info` bajo un nombre más corto, detectado por el
+  chequeo de nombre-parecido antes de aplicar; quedan documentadas aparte al
+  final de este mismo diccionario, no en las 10 genuinamente nuevas.)
 
 Si después del match automático + los overrides sigue quedando algo sin
 resolver, usar `--list-unresolved` para verlo (no debería haber nada: las 37
@@ -104,6 +109,12 @@ OVERRIDES_ALIAS: dict[str, tuple[str, str]] = {
     "pacheco de melo": ("JUÁREZ CELMAN", "ESTACION PACHECO DE MELO"),
     "canada del sauce": ("CALAMUCHITA", "VILLA CAÑADA DEL SAUCE"),
     "saturnino maria laspiur": ("SAN JUSTO", "SATURNINO M. LASPIUR"),
+    # Estos 3 NO están en priv_geo_localidades, pero SÍ ya existían directo en
+    # priv_localidades_info bajo un nombre más corto (detectado por el chequeo
+    # de "similares" del 2026-09-17, antes de aplicar — ver conversación).
+    "parque calmayo": ("CALAMUCHITA", "CALMAYO"),
+    "estacion general paz": ("COLÓN", "GENERAL PAZ"),
+    "santiago temple": ("RÍO SEGUNDO", "SANTIAGO TEMPLE"),
 }
 
 # Localidades reales ausentes de priv_geo_localidades. No se agregan al
@@ -115,14 +126,11 @@ OVERRIDES_NUEVAS: dict[str, tuple[str, str]] = {
     "brinkmann": ("SAN JUSTO", "Brinkmann"),
     "james craik": ("TERCERO ARRIBA", "James Craik"),
     "general levalle": ("PTE ROQUE SAENZ PEÑA", "General Levalle"),
-    "santiago temple": ("RÍO SEGUNDO", "Santiago Temple"),
     "bouwer": ("SANTA MARÍA", "Bouwer"),
-    "estacion general paz": ("COLÓN", "Estación General Paz"),
     "lucio victorio mansilla": ("TULUMBA", "Lucio Victorio Mansilla"),
     "capitan general bernardo o'higgins": ("MARCOS JUAREZ", "Capitán General Bernardo O'Higgins"),
     "kilometro 658": ("RÍO PRIMERO", "Kilómetro 658"),
     "nicolas bruzzone": ("GRAL ROCA", "Nicolás Bruzzone"),
-    "parque calmayo": ("CALAMUCHITA", "Parque Calmayo"),
     "colonia barge": ("MARCOS JUAREZ", "Colonia Barge"),
 }
 
