@@ -21,7 +21,7 @@ en `OVERRIDES_AMBIGUOS`/`OVERRIDES_ALIAS`/`OVERRIDES_NUEVAS` más abajo:
   automático no reconoció (ej. "Santa Catalina Holmberg" censo →
   "SANTA CATALINA (EST. HOLMBERG)" geo) — se usa la grafía del geo, no la
   del censo, para no crear una fila con localidad duplicada.
-- `OVERRIDES_NUEVAS`: 10 localidades reales que NO existen en
+- `OVERRIDES_NUEVAS`: 7 localidades reales que NO existen en
   `priv_geo_localidades` bajo ningún nombre — departamento confirmado vía
   fuentes oficiales (Wikipedia/municipio/INDEC, ver conversación del
   2026-09-17). Por decisión del usuario, **no** se agregan al padrón
@@ -30,11 +30,19 @@ en `OVERRIDES_AMBIGUOS`/`OVERRIDES_ALIAS`/`OVERRIDES_NUEVAS` más abajo:
   nombre tal cual el censo. Esto implica que NO van a aparecer en el
   informe-localidades de vivienda ni en `resumen_territorial`, porque esos
   módulos arrancan del padrón geo, no de `priv_localidades_info`.
-  (De las 13 candidatas originales, 3 —Parque Calmayo/Estación General
-  Paz/Santiago Temple— resultaron ya existir directo en
-  `priv_localidades_info` bajo un nombre más corto, detectado por el
-  chequeo de nombre-parecido antes de aplicar; quedan documentadas aparte al
-  final de este mismo diccionario, no en las 10 genuinamente nuevas.)
+
+  De las 13 candidatas originales, 6 en realidad ya existían y quedaron
+  documentadas en `OVERRIDES_ALIAS` en vez de acá:
+  - Parque Calmayo / Estación General Paz / Santiago Temple ya estaban en
+    `priv_localidades_info` bajo un nombre más corto (CALMAYO/GENERAL
+    PAZ/SANTIAGO TEMPLE), detectado por el chequeo de nombre-parecido.
+  - General Levalle / Nicolás Bruzzone ya estaban en `priv_geo_localidades`
+    con una variante de escritura (GENERAL LE VALLE / NICOLAS BRUZONE) que
+    el matching por substring no reconocía.
+  - Montecristo ya estaba en `priv_geo_localidades` como "MONTE CRISTO",
+    pero con departamento incorrecto (COLÓN) — corregido a RÍO PRIMERO en
+    `geo_localidades.json`/`viv_geo_localidades`/`priv_geo_localidades`
+    (coincide con fuentes oficiales y con las coordenadas de esa fila).
 
 Si después del match automático + los overrides sigue quedando algo sin
 resolver, usar `--list-unresolved` para verlo (no debería haber nada: las 37
@@ -122,6 +130,11 @@ OVERRIDES_ALIAS: dict[str, tuple[str, str]] = {
     # haber insertado por error una fila nueva para cada uno (ver DELETE_DUPLICADOS).
     "general levalle": ("PTE ROQUE SAENZ PEÑA", "GENERAL LE VALLE"),
     "nicolas bruzzone": ("GRAL ROCA", "NICOLAS BRUZONE"),
+    # Montecristo: geo_localidades.json tenía "COLÓN / MONTE CRISTO" (dato
+    # viejo incorrecto, ya corregido a RÍO PRIMERO el 2026-09-17 — coincide
+    # con Wikipedia/municipalidad y con las coordenadas de esa fila). Se usa
+    # la grafía del geo ("MONTE CRISTO", dos palabras), no la del censo.
+    "montecristo": ("RÍO PRIMERO", "MONTE CRISTO"),
 }
 
 # Localidades reales ausentes de priv_geo_localidades. No se agregan al
@@ -129,12 +142,6 @@ OVERRIDES_ALIAS: dict[str, tuple[str, str]] = {
 # priv_localidades_info, con el nombre tal cual el censo. Departamento
 # confirmado vía fuente oficial (Wikipedia/municipio/INDEC).
 OVERRIDES_NUEVAS: dict[str, tuple[str, str]] = {
-    # Montecristo: geo_localidades.json YA tiene "COLÓN / MONTE CRISTO", pero
-    # todas las fuentes externas (Wikipedia, municipalidad) confirman
-    # "Río Primero" — decisión del usuario 2026-09-17: confiar en la fuente
-    # externa. "COLÓN / MONTE CRISTO" queda como posible error a revisar
-    # aparte en geo_localidades.json (no se toca en esta carga).
-    "montecristo": ("RÍO PRIMERO", "Montecristo"),
     "brinkmann": ("SAN JUSTO", "Brinkmann"),
     "james craik": ("TERCERO ARRIBA", "James Craik"),
     "bouwer": ("SANTA MARÍA", "Bouwer"),
@@ -145,12 +152,14 @@ OVERRIDES_NUEVAS: dict[str, tuple[str, str]] = {
 }
 
 # Filas insertadas de más en la corrida del 2026-09-17 (antes de descubrir que
-# General Levalle / Nicolás Bruzzone ya existían con otra grafía) — se borran
-# con --fix-duplicados una sola vez, después de que el override de arriba ya
-# haya actualizado la fila correcta.
+# General Levalle / Nicolás Bruzzone ya existían con otra grafía, y antes de
+# corregir el departamento de Montecristo) — se borran con --fix-duplicados
+# una sola vez, después de que el override de arriba ya haya actualizado la
+# fila correcta.
 FILAS_DUPLICADAS_A_BORRAR: list[tuple[str, str]] = [
     ("PTE ROQUE SAENZ PEÑA", "General Levalle"),
     ("GRAL ROCA", "Nicolás Bruzzone"),
+    ("RÍO PRIMERO", "Montecristo"),
 ]
 
 
