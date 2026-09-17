@@ -21,18 +21,13 @@ en `OVERRIDES_AMBIGUOS`/`OVERRIDES_ALIAS`/`OVERRIDES_NUEVAS` más abajo:
   automático no reconoció (ej. "Santa Catalina Holmberg" censo →
   "SANTA CATALINA (EST. HOLMBERG)" geo) — se usa la grafía del geo, no la
   del censo, para no crear una fila con localidad duplicada.
-- `OVERRIDES_NUEVAS`: 7 localidades reales que NO existen en
-  `priv_geo_localidades` bajo ningún nombre — departamento confirmado vía
-  fuentes oficiales (Wikipedia/municipio/INDEC, ver conversación del
-  2026-09-17). Por decisión del usuario, **no** se agregan al padrón
-  geográfico (`geo_localidades.json`/`viv_geo_localidades`/
-  `priv_geo_localidades`) — sólo quedan en `priv_localidades_info` con el
-  nombre tal cual el censo. Esto implica que NO van a aparecer en el
-  informe-localidades de vivienda ni en `resumen_territorial`, porque esos
-  módulos arrancan del padrón geo, no de `priv_localidades_info`.
-
-  De las 13 candidatas originales, 6 en realidad ya existían y quedaron
-  documentadas en `OVERRIDES_ALIAS` en vez de acá:
+- `OVERRIDES_NUEVAS`: vacío. **Ninguna de las 13 candidatas originales
+  resultó ser una localidad genuinamente ausente del padrón** — las 13 ya
+  existían en `priv_geo_localidades` (o directo en `priv_localidades_info`)
+  bajo un nombre tan distinto (typo viejo, abreviatura, nombre histórico o
+  alias entre paréntesis) que ni la búsqueda inicial ni el primer chequeo de
+  nombre-parecido las reconocieron. Todas terminaron documentadas en
+  `OVERRIDES_ALIAS`:
   - Parque Calmayo / Estación General Paz / Santiago Temple ya estaban en
     `priv_localidades_info` bajo un nombre más corto (CALMAYO/GENERAL
     PAZ/SANTIAGO TEMPLE), detectado por el chequeo de nombre-parecido.
@@ -43,6 +38,15 @@ en `OVERRIDES_AMBIGUOS`/`OVERRIDES_ALIAS`/`OVERRIDES_NUEVAS` más abajo:
     pero con departamento incorrecto (COLÓN) — corregido a RÍO PRIMERO en
     `geo_localidades.json`/`viv_geo_localidades`/`priv_geo_localidades`
     (coincide con fuentes oficiales y con las coordenadas de esa fila).
+  - Brinkmann / James Craik / Bouwer / Lucio Victorio Mansilla / Capitán
+    General Bernardo O'Higgins / Kilómetro 658 / Colonia Barge ya estaban en
+    `priv_geo_localidades` como BRINCKMANN / JAMES CRAICK / BOWER / LUCIO V.
+    MANSILLA / CAP. GRAL. B.OHIGGINS (Colonia Progreso) / PEDRO E. VIVAS
+    (KM. 658) / CASTRO URDIALES - Colonia 25 de Mayo respectivamente —
+    detectado con `scripts/buscar_habitantes_faltantes.py` (similitud de
+    texto), **después** de haberlas agregado por error como localidades
+    nuevas a `geo_localidades.json` (revertido, commit `fbe68db` en
+    `panel.docs`).
 
 Si después del match automático + los overrides sigue quedando algo sin
 resolver, usar `--list-unresolved` para verlo (no debería haber nada: las 37
@@ -135,31 +139,44 @@ OVERRIDES_ALIAS: dict[str, tuple[str, str]] = {
     # con Wikipedia/municipalidad y con las coordenadas de esa fila). Se usa
     # la grafía del geo ("MONTE CRISTO", dos palabras), no la del censo.
     "montecristo": ("RÍO PRIMERO", "MONTE CRISTO"),
+    # Las 7 restantes: NO eran localidades ausentes del padrón — ya estaban
+    # cargadas bajo un nombre tan distinto (typo viejo, abreviatura, nombre
+    # histórico) que ni la búsqueda original ni el chequeo de nombre-parecido
+    # las reconocieron. Detectado con scripts/buscar_habitantes_faltantes.py
+    # (similitud de texto) el 2026-09-17, después de haber insertado por
+    # error una fila nueva para cada una (ver FILAS_DUPLICADAS_A_BORRAR).
+    "brinkmann": ("SAN JUSTO", "BRINCKMANN"),
+    "james craik": ("TERCERO ARRIBA", "JAMES CRAICK"),
+    "bouwer": ("SANTA MARÍA", "BOWER"),
+    "lucio victorio mansilla": ("TULUMBA", "LUCIO V. MANSILLA"),
+    "capitan general bernardo o'higgins": ("MARCOS JUAREZ", "CAP. GRAL. B.OHIGGINS (Colonia Progreso)"),
+    "kilometro 658": ("RÍO PRIMERO", "PEDRO E. VIVAS (KM. 658)"),
+    "colonia barge": ("MARCOS JUAREZ", "CASTRO URDIALES - Colonia 25 de Mayo"),
 }
 
-# Localidades reales ausentes de priv_geo_localidades. No se agregan al
-# padrón geográfico (decisión del usuario, 2026-09-17) — sólo quedan en
-# priv_localidades_info, con el nombre tal cual el censo. Departamento
-# confirmado vía fuente oficial (Wikipedia/municipio/INDEC).
-OVERRIDES_NUEVAS: dict[str, tuple[str, str]] = {
-    "brinkmann": ("SAN JUSTO", "Brinkmann"),
-    "james craik": ("TERCERO ARRIBA", "James Craik"),
-    "bouwer": ("SANTA MARÍA", "Bouwer"),
-    "lucio victorio mansilla": ("TULUMBA", "Lucio Victorio Mansilla"),
-    "capitan general bernardo o'higgins": ("MARCOS JUAREZ", "Capitán General Bernardo O'Higgins"),
-    "kilometro 658": ("RÍO PRIMERO", "Kilómetro 658"),
-    "colonia barge": ("MARCOS JUAREZ", "Colonia Barge"),
-}
+# Ya no queda ninguna localidad genuinamente ausente del padrón geográfico —
+# las 13 candidatas originales resultaron ser, todas, variantes de escritura
+# de algo que ya existía (ver OVERRIDES_ALIAS de arriba y la conversación del
+# 2026-09-17). Se deja el diccionario vacío (en vez de borrarlo) para que
+# quede documentado el caso, y por si aparece una localidad realmente nueva
+# en el futuro.
+OVERRIDES_NUEVAS: dict[str, tuple[str, str]] = {}
 
-# Filas insertadas de más en la corrida del 2026-09-17 (antes de descubrir que
-# General Levalle / Nicolás Bruzzone ya existían con otra grafía, y antes de
-# corregir el departamento de Montecristo) — se borran con --fix-duplicados
+# Filas insertadas de más en la corrida del 2026-09-17 (antes de descubrir
+# que estas 9 ya existían con otra grafía) — se borran con --fix-duplicados
 # una sola vez, después de que el override de arriba ya haya actualizado la
 # fila correcta.
 FILAS_DUPLICADAS_A_BORRAR: list[tuple[str, str]] = [
     ("PTE ROQUE SAENZ PEÑA", "General Levalle"),
     ("GRAL ROCA", "Nicolás Bruzzone"),
     ("RÍO PRIMERO", "Montecristo"),
+    ("SAN JUSTO", "Brinkmann"),
+    ("TERCERO ARRIBA", "James Craik"),
+    ("SANTA MARÍA", "Bouwer"),
+    ("TULUMBA", "Lucio Victorio Mansilla"),
+    ("MARCOS JUAREZ", "Capitán General Bernardo O'Higgins"),
+    ("RÍO PRIMERO", "Kilómetro 658"),
+    ("MARCOS JUAREZ", "Colonia Barge"),
 ]
 
 
