@@ -245,16 +245,33 @@ async def main() -> None:
             return
 
         assert db is not None
-        existentes = {
-            (r.departamento, r.localidad): r
-            for r in (await db.execute(select(LocalidadInfo))).scalars().all()
-        }
+        todas = (await db.execute(select(LocalidadInfo))).scalars().all()
+        existentes = {(r.departamento, r.localidad): r for r in todas}
+        print(f"priv_localidades_info: {len(todas)} filas existentes en total")
+
+        # Chequeo de duplicados por nombre parecido: priv_localidades_info puede
+        # tener filas que no vienen de priv_geo_localidades (carga manual previa,
+        # PUT del panel, etc.) — antes de un INSERT, avisar si ya existe algo con
+        # nombre normalizado parecido bajo OTRA clave (departamento/localidad
+        # distinta), para no crear una fila duplicada del mismo lugar real.
+        existentes_norm = [(d, l, normalize(l)) for (d, l) in existentes]
+
+        def similares(localidad_nueva: str, depto_nuevo: str) -> list[tuple[str, str]]:
+            n = normalize(localidad_nueva)
+            return [
+                (d, l) for d, l, ln in existentes_norm
+                if (n in ln or ln in n) and (d, l) != (depto_nuevo, localidad_nueva)
+            ]
+
         ahora = datetime.now(timezone.utc)
         insertados = actualizados = sin_cambio = 0
         for m in matches:
             key = (m["departamento"], m["localidad"])
             actual = existentes.get(key)
             if actual is None:
+                parecidos = similares(m["localidad"], m["departamento"])
+                if parecidos:
+                    print(f"  [WARNING] {m['departamento']} / {m['localidad']}: ya existe algo parecido -> {parecidos} — revisar antes de aplicar")
                 print(f"  [INSERT] {m['departamento']} / {m['localidad']}: habitantes=None -> {m['poblacion']}")
                 if not args.dry_run:
                     db.add(LocalidadInfo(
