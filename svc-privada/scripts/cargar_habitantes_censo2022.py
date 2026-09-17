@@ -115,6 +115,13 @@ OVERRIDES_ALIAS: dict[str, tuple[str, str]] = {
     "parque calmayo": ("CALAMUCHITA", "CALMAYO"),
     "estacion general paz": ("COLÓN", "GENERAL PAZ"),
     "santiago temple": ("RÍO SEGUNDO", "SANTIAGO TEMPLE"),
+    # Estos 2 SÍ están en priv_geo_localidades (mismo departamento confirmado
+    # por fuente externa), pero con una variante de escritura que el matching
+    # exacto por substring no reconocía (espaciado / letra doble) — detectado
+    # con un chequeo "sin espacios" corrido a mano el 2026-09-17, después de
+    # haber insertado por error una fila nueva para cada uno (ver DELETE_DUPLICADOS).
+    "general levalle": ("PTE ROQUE SAENZ PEÑA", "GENERAL LE VALLE"),
+    "nicolas bruzzone": ("GRAL ROCA", "NICOLAS BRUZONE"),
 }
 
 # Localidades reales ausentes de priv_geo_localidades. No se agregan al
@@ -122,17 +129,29 @@ OVERRIDES_ALIAS: dict[str, tuple[str, str]] = {
 # priv_localidades_info, con el nombre tal cual el censo. Departamento
 # confirmado vía fuente oficial (Wikipedia/municipio/INDEC).
 OVERRIDES_NUEVAS: dict[str, tuple[str, str]] = {
+    # Montecristo: geo_localidades.json YA tiene "COLÓN / MONTE CRISTO", pero
+    # todas las fuentes externas (Wikipedia, municipalidad) confirman
+    # "Río Primero" — decisión del usuario 2026-09-17: confiar en la fuente
+    # externa. "COLÓN / MONTE CRISTO" queda como posible error a revisar
+    # aparte en geo_localidades.json (no se toca en esta carga).
     "montecristo": ("RÍO PRIMERO", "Montecristo"),
     "brinkmann": ("SAN JUSTO", "Brinkmann"),
     "james craik": ("TERCERO ARRIBA", "James Craik"),
-    "general levalle": ("PTE ROQUE SAENZ PEÑA", "General Levalle"),
     "bouwer": ("SANTA MARÍA", "Bouwer"),
     "lucio victorio mansilla": ("TULUMBA", "Lucio Victorio Mansilla"),
     "capitan general bernardo o'higgins": ("MARCOS JUAREZ", "Capitán General Bernardo O'Higgins"),
     "kilometro 658": ("RÍO PRIMERO", "Kilómetro 658"),
-    "nicolas bruzzone": ("GRAL ROCA", "Nicolás Bruzzone"),
     "colonia barge": ("MARCOS JUAREZ", "Colonia Barge"),
 }
+
+# Filas insertadas de más en la corrida del 2026-09-17 (antes de descubrir que
+# General Levalle / Nicolás Bruzzone ya existían con otra grafía) — se borran
+# con --fix-duplicados una sola vez, después de que el override de arriba ya
+# haya actualizado la fila correcta.
+FILAS_DUPLICADAS_A_BORRAR: list[tuple[str, str]] = [
+    ("PTE ROQUE SAENZ PEÑA", "General Levalle"),
+    ("GRAL ROCA", "Nicolás Bruzzone"),
+]
 
 
 def normalize(s) -> str:
@@ -178,6 +197,11 @@ async def main() -> None:
     ap.add_argument(
         "--list-unresolved", action="store_true",
         help="lista ambiguos + sin-match y termina, sin conectar a la DB",
+    )
+    ap.add_argument(
+        "--fix-duplicados", action="store_true",
+        help="borra las filas de FILAS_DUPLICADAS_A_BORRAR (correr una sola vez, "
+             "después de que el resto del script ya haya actualizado la fila correcta)",
     )
     args = ap.parse_args()
 
@@ -302,12 +326,25 @@ async def main() -> None:
             else:
                 sin_cambio += 1
 
+        borrados = 0
+        if args.fix_duplicados:
+            for depto, localidad in FILAS_DUPLICADAS_A_BORRAR:
+                fila = existentes.get((depto, localidad))
+                if fila is None:
+                    print(f"  [FIX] {depto} / {localidad}: no existe (¿ya se había borrado?), no hago nada")
+                    continue
+                print(f"  [DELETE] {depto} / {localidad}: habitantes={fila.habitantes}")
+                if not args.dry_run:
+                    await db.delete(fila)
+                borrados += 1
+
         if not args.dry_run:
             await db.commit()
 
         print(
             f"\n{'(dry-run) ' if args.dry_run else ''}"
             f"insertados={insertados} actualizados={actualizados} sin_cambio={sin_cambio}"
+            + (f" borrados={borrados}" if args.fix_duplicados else "")
         )
 
     if db_cm is not None:
