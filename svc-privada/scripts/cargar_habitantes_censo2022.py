@@ -11,12 +11,30 @@ completo, el texto antes del primer paréntesis, el contenido del paréntesis
 " - " — cubre alias como "VICUÑA MACKENNA (Est. Torres)" o
 "ELENA - MARIA ELENA".
 
-Los casos ambiguos (mismo nombre de gobierno local matcheando localidades de
-2+ departamentos distintos — el censo no da forma de desambiguar) y los sin
-match (no aparecen en `priv_geo_localidades` bajo ningún alias reconocido)
-quedan AFUERA de esta carga a propósito (decisión del usuario, 2026-09-16).
-Usar `--list-unresolved` para ver el detalle completo y resolverlos a mano
-después vía `PUT /api/v1/privada/localidades-info`.
+El matching automático dejaba 37 filas sin resolver (10 ambiguas + 27 sin
+match); las 37 se resolvieron a mano con el usuario el 2026-09-16/17 y viven
+en `OVERRIDES_AMBIGUOS`/`OVERRIDES_ALIAS`/`OVERRIDES_NUEVAS` más abajo:
+- `OVERRIDES_AMBIGUOS`: mismo nombre en 2 departamentos — se desambigua por
+  `(nombre, población)`, confirmado por el usuario caso por caso.
+- `OVERRIDES_ALIAS`: el censo usa un nombre distinto pero la localidad YA
+  existe en `priv_geo_localidades` bajo otro alias que el matching
+  automático no reconoció (ej. "Santa Catalina Holmberg" censo →
+  "SANTA CATALINA (EST. HOLMBERG)" geo) — se usa la grafía del geo, no la
+  del censo, para no crear una fila con localidad duplicada.
+- `OVERRIDES_NUEVAS`: 13 localidades reales que NO existen en
+  `priv_geo_localidades` bajo ningún nombre — departamento confirmado vía
+  fuentes oficiales (Wikipedia/municipio/INDEC, ver conversación del
+  2026-09-17). Por decisión del usuario, **no** se agregan al padrón
+  geográfico (`geo_localidades.json`/`viv_geo_localidades`/
+  `priv_geo_localidades`) — sólo quedan en `priv_localidades_info` con el
+  nombre tal cual el censo. Esto implica que NO van a aparecer en el
+  informe-localidades de vivienda ni en `resumen_territorial`, porque esos
+  módulos arrancan del padrón geo, no de `priv_localidades_info`.
+
+Si después del match automático + los overrides sigue quedando algo sin
+resolver, usar `--list-unresolved` para verlo (no debería haber nada: las 37
+filas listadas arriba cubren el 100% de lo que el censo 2022 no matcheaba
+solo).
 
 RE-1: re-ejecutable. Sobreescribe `habitantes` con el valor del censo para
 todo match no ambiguo, exista o no la fila todavía (decisión del usuario: el
@@ -53,6 +71,60 @@ CENSO_PATH = (
     Path(__file__).resolve().parents[3] / "docs" / "data" / "c2022_cordoba_gobierno_local_c1 (5).xlsx"
 )
 ACTOR = "censo2022_script"
+
+# Ambiguos: mismo nombre de gobierno local en 2 departamentos — desambiguado
+# por (nombre normalizado, población), confirmado por el usuario 2026-09-16.
+OVERRIDES_AMBIGUOS: dict[tuple[str, int], tuple[str, str]] = {
+    ("los chanaritos", 603): ("CRUZ DEL EJE", "Los Chañaritos"),
+    ("los chanaritos", 264): ("RÍO SEGUNDO", "LOS CHAÑARITOS"),
+    ("villa sarmiento", 421): ("GRAL ROCA", "VILLA SARMIENTO"),
+    ("villa sarmiento", 4736): ("SAN ALBERTO", "VILLA SARMIENTO"),
+    ("agua de oro", 3242): ("COLÓN", "AGUA DE ORO"),
+    ("la puerta", 2788): ("RÍO PRIMERO", "LA PUERTA"),
+    ("san jose", 2803): ("SAN JAVIER", "SAN JOSE"),
+    ("san pedro", 4469): ("SAN ALBERTO", "SAN PEDRO"),
+    ("villa gutierrez", 344): ("ISCHILÍN", "VILLA GUTIERREZ"),
+    ("punta del agua", 237): ("TERCERO ARRIBA", "PUNTA DEL AGUA"),
+}
+
+# El censo usa un nombre distinto pero la localidad YA existe en
+# priv_geo_localidades bajo otro alias — se usa la grafía del geo.
+OVERRIDES_ALIAS: dict[str, tuple[str, str]] = {
+    "corral de bustos ifflinger": ("MARCOS JUAREZ", "CORRAL DE BUSTOS"),
+    "villa de maria": ("RIO SECO", "VILLA DE MARIA DE RIO SECO"),
+    "santa catalina holmberg": ("RÍO CUARTO", "SANTA CATALINA (EST. HOLMBERG)"),
+    "miramar de ansenuza": ("SAN JUSTO", "MIRAMAR"),
+    "dalmacio velez": ("TERCERO ARRIBA", "DALMACIO VELEZ SARSFIELD"),
+    "huanchilla": ("JUÁREZ CELMAN", "HUANCHILLAS"),
+    "villa rio icho cruz": ("PUNILLA", "ICHO CRUZ"),
+    "san javier y yacanto": ("SAN JAVIER", "SAN JAVIER"),
+    "la carolina el potosi": ("RÍO CUARTO", "LA CAROLINA (El PotosI)"),
+    "las penas sud": ("RÍO CUARTO", "LAS PEÑAS SUR"),
+    "villa candelaria norte": ("RIO SECO", "VILLA CANDELARIA"),
+    "pacheco de melo": ("JUÁREZ CELMAN", "ESTACION PACHECO DE MELO"),
+    "canada del sauce": ("CALAMUCHITA", "VILLA CAÑADA DEL SAUCE"),
+    "saturnino maria laspiur": ("SAN JUSTO", "SATURNINO M. LASPIUR"),
+}
+
+# Localidades reales ausentes de priv_geo_localidades. No se agregan al
+# padrón geográfico (decisión del usuario, 2026-09-17) — sólo quedan en
+# priv_localidades_info, con el nombre tal cual el censo. Departamento
+# confirmado vía fuente oficial (Wikipedia/municipio/INDEC).
+OVERRIDES_NUEVAS: dict[str, tuple[str, str]] = {
+    "montecristo": ("RÍO PRIMERO", "Montecristo"),
+    "brinkmann": ("SAN JUSTO", "Brinkmann"),
+    "james craik": ("TERCERO ARRIBA", "James Craik"),
+    "general levalle": ("PTE ROQUE SAENZ PEÑA", "General Levalle"),
+    "santiago temple": ("RÍO SEGUNDO", "Santiago Temple"),
+    "bouwer": ("SANTA MARÍA", "Bouwer"),
+    "estacion general paz": ("COLÓN", "Estación General Paz"),
+    "lucio victorio mansilla": ("TULUMBA", "Lucio Victorio Mansilla"),
+    "capitan general bernardo o'higgins": ("MARCOS JUAREZ", "Capitán General Bernardo O'Higgins"),
+    "kilometro 658": ("RÍO PRIMERO", "Kilómetro 658"),
+    "nicolas bruzzone": ("GRAL ROCA", "Nicolás Bruzzone"),
+    "parque calmayo": ("CALAMUCHITA", "Parque Calmayo"),
+    "colonia barge": ("MARCOS JUAREZ", "Colonia Barge"),
+}
 
 
 def normalize(s) -> str:
@@ -134,7 +206,17 @@ async def main() -> None:
 
         matches, ambiguos, sin_match = [], [], []
         for fila in censo:
-            hits = geo_index.get(normalize(fila["nombre"]))
+            nn = normalize(fila["nombre"])
+            override = (
+                OVERRIDES_AMBIGUOS.get((nn, fila["poblacion"]))
+                or OVERRIDES_ALIAS.get(nn)
+                or OVERRIDES_NUEVAS.get(nn)
+            )
+            if override:
+                depto, localidad = override
+                matches.append({"departamento": depto, "localidad": localidad, "poblacion": fila["poblacion"]})
+                continue
+            hits = geo_index.get(nn)
             if not hits:
                 sin_match.append(fila["nombre"])
                 continue
