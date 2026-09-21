@@ -1,0 +1,43 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: db_gralgob
+      POSTGRES_USER: user_gralgob
+      POSTGRES_PASSWORD: devpassword
+    ports:
+      - "5435:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user_gralgob -d db_gralgob"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8004:8004"
+    environment:
+      DATABASE_URL: "postgresql+asyncpg://user_gralgob:devpassword@db:5432/db_gralgob"
+      PORT: "8004"
+      GCP_PROJECT_ID: "gestorcooperativo"
+      SERVICE_NAME: "svc-gralgob"
+      ENVIRONMENT: "development"
+      # GOOGLE_SHEET_ATP_ID: completar en .env local (no commitear) — ver README.md
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./app:/app/app    # hot-reload en desarrollo
+      # ADC local: para que el contenedor pueda leer el Sheet en vivo, montar el
+      # archivo que deja `gcloud auth application-default login` en el host
+      # (ver README.md) — no se define acá porque la ruta depende del SO del host.
+
+volumes:
+  postgres_data:
