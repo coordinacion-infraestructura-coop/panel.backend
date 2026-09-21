@@ -11,8 +11,9 @@ import re
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.config import settings
 from app.gas_pit.models import (
@@ -21,7 +22,13 @@ from app.gas_pit.models import (
     GasPitObraLocalidad,
     GasPitSyncLog,
 )
-from app.gas_pit.schemas import SyncErrorDetail, SyncResultResponse, SyncStatusResponse
+from app.gas_pit.schemas import (
+    AccionTerritorioResponse,
+    ObraGasResponse,
+    SyncErrorDetail,
+    SyncResultResponse,
+    SyncStatusResponse,
+)
 from app.integrations import google_sheets
 
 SUB_TIPO_GAS = "E- OBRAS DE GAS"
@@ -221,6 +228,8 @@ async def _upsert_accion(db: AsyncSession, sheet_row_number: int, r: dict[str, A
     accion.fecha = _parse_date(r.get("Fecha"))
     accion.departamento = _clean_str(r.get("Departamento"))
     accion.localidad = _clean_str(r.get("Localidad"))
+    accion.ministerio = _clean_str(r.get("Ministerio"))
+    accion.area = _clean_str(r.get("Área"))
     accion.id_accion = _clean_str(r.get("ID_ACCION"))
     accion.accion = _clean_str(r.get("Acción"))
     accion.detalle_accion = _clean_str(r.get("Detalle de la acción"))
@@ -365,3 +374,68 @@ async def get_last_sync_status(db: AsyncSession) -> SyncStatusResponse | None:
     if not log:
         return None
     return SyncStatusResponse.model_validate(log)
+
+
+# ── Lectura (para el panel preliminar de solo lectura, spec §12) ───────────────
+
+def _obra_to_response(obra: GasPitObra) -> ObraGasResponse:
+    return ObraGasResponse(
+        id=obra.id,
+        spip=obra.spip,
+        expediente=obra.expediente,
+        division=obra.division,
+        nombre_obra=obra.nombre_obra,
+        tipo_obra=obra.tipo_obra,
+        sub_tipo_obra=obra.sub_tipo_obra,
+        contratista=obra.contratista,
+        estado_obra=obra.estado_obra,
+        estado_resumen=obra.estado_resumen,
+        departamento=obra.departamento,
+        localidades=[l.localidad for l in obra.localidades],
+        avance=float(obra.avance) if obra.avance is not None else None,
+        repla_inicial=obra.repla_inicial,
+        fecha_lic=obra.fecha_lic,
+        vencimiento=obra.vencimiento,
+        plazo_vigente_dias=obra.plazo_vigente_dias,
+        plazo_original=obra.plazo_original,
+        contrato_base=float(obra.contrato_base) if obra.contrato_base is not None else None,
+        ampliacion=float(obra.ampliacion) if obra.ampliacion is not None else None,
+        enmienda=float(obra.enmienda) if obra.enmienda is not None else None,
+        importe_obra_actualizado=(
+            float(obra.importe_obra_actualizado) if obra.importe_obra_actualizado is not None else None
+        ),
+        importe_dolar=float(obra.importe_dolar) if obra.importe_dolar is not None else None,
+        prioridad=obra.prioridad,
+        categoria=obra.categoria,
+        region=obra.region,
+        autorizada_2025=obra.autorizada_2025,
+        pit=obra.pit,
+        last_synced_at=obra.last_synced_at,
+    )
+
+
+async def listar_obras(db: AsyncSession, limit: int, offset: int) -> tuple[list[ObraGasResponse], int]:
+    total = (await db.execute(select(func.count()).select_from(GasPitObra))).scalar_one()
+    result = await db.execute(
+        select(GasPitObra)
+        .options(selectinload(GasPitObra.localidades))
+        .order_by(GasPitObra.nombre_obra)
+        .limit(limit)
+        .offset(offset)
+    )
+    obras = result.scalars().all()
+    return [_obra_to_response(o) for o in obras], total
+
+
+async def listar_acciones_territorio(
+    db: AsyncSession, limit: int, offset: int
+) -> tuple[list[AccionTerritorioResponse], int]:
+    total = (await db.execute(select(func.count()).select_from(GasPitAccionTerritorio))).scalar_one()
+    result = await db.execute(
+        select(GasPitAccionTerritorio)
+        .order_by(GasPitAccionTerritorio.fecha.desc().nulls_last(), GasPitAccionTerritorio.sheet_row_number)
+        .limit(limit)
+        .offset(offset)
+    )
+    acciones = result.scalars().all()
+    return [AccionTerritorioResponse.model_validate(a) for a in acciones], total

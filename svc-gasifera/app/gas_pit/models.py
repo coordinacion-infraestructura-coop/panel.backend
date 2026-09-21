@@ -100,6 +100,8 @@ class GasPitAccionTerritorio(Base):
     fecha: Mapped[date | None] = mapped_column(Date)
     departamento: Mapped[str | None] = mapped_column(String(100))
     localidad: Mapped[str | None] = mapped_column(String(150))
+    ministerio: Mapped[str | None] = mapped_column(String(150))
+    area: Mapped[str | None] = mapped_column(String(150))
     id_accion: Mapped[str | None] = mapped_column(String(50))
     accion: Mapped[str | None] = mapped_column(String(200))
     detalle_accion: Mapped[str | None] = mapped_column(Text)

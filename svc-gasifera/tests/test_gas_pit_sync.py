@@ -162,6 +162,8 @@ async def test_sync_inserta_accion_territorio_y_calcula_usd(db_session: AsyncSes
     assert accion.estado == "Cumplido"
     assert accion.monto_inversion_solicitado == 1000000
     assert float(accion.monto_inversion_usd) == pytest.approx(1000000 * 1460.0)
+    assert accion.ministerio == "Cooperativas y mutuales"
+    assert accion.area == "Secretaría Gas"
     assert accion.alerta_localidad == "OK"
 
 

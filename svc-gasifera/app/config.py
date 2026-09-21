@@ -19,5 +19,16 @@ class Settings(BaseSettings):
     # "monto actualizado ", acoplada por posición de fila).
     tipo_cambio_usd: float = 1460.0
 
+    # Panel preliminar de solo lectura (spec-sync-gasifera-pit.md §12) — auth
+    # ADR-015, mismo criterio que svc-privada: validación de JWT de Firebase +
+    # lookup de portal_usuarios vía endpoint interno IAM-only de svc-vivienda
+    # (svc-gasifera NO se conecta a db_vivienda).
+    google_jwks_uri: str = (
+        "https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com"
+    )
+    google_issuer: str = "https://securetoken.google.com/gestorcooperativo"
+    # Vacío -> el lookup degrada a rol "invitado" (dev / gateway sin wiring de IAM).
+    svc_vivienda_internal_url: str = ""
+
 
 settings = Settings()
