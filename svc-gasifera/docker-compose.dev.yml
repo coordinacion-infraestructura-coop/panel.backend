@@ -1,0 +1,43 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: db_gasifera
+      POSTGRES_USER: user_gasifera
+      POSTGRES_PASSWORD: devpassword
+    ports:
+      - "5434:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user_gasifera -d db_gasifera"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8003:8003"
+    environment:
+      DATABASE_URL: "postgresql+asyncpg://user_gasifera:devpassword@db:5432/db_gasifera"
+      PORT: "8003"
+      GCP_PROJECT_ID: "gestorcooperativo"
+      SERVICE_NAME: "svc-gasifera"
+      ENVIRONMENT: "development"
+      # GOOGLE_SHEET_GAS_PIT_ID: completar en .env local (no commitear) — ver README.md
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./app:/app/app    # hot-reload en desarrollo
+      # ADC local: para que el contenedor pueda leer el Sheet en vivo, montar el
+      # archivo que deja `gcloud auth application-default login` en el host
+      # (ver README.md) — no se define acá porque la ruta depende del SO del host.
+
+volumes:
+  postgres_data:
