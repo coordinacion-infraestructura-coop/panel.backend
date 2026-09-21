@@ -9,11 +9,16 @@ import re
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.atp.models import AtpCompromiso, AtpCronogramaPago, AtpSyncLog
-from app.atp.schemas import SyncErrorDetail, SyncResultResponse, SyncStatusResponse
+from app.atp.schemas import (
+    CompromisoResponse,
+    SyncErrorDetail,
+    SyncResultResponse,
+    SyncStatusResponse,
+)
 from app.config import settings
 from app.integrations import google_sheets
 
@@ -238,3 +243,50 @@ async def get_last_sync_status(db: AsyncSession) -> SyncStatusResponse | None:
     if not log:
         return None
     return SyncStatusResponse.model_validate(log)
+
+
+# ── Lectura (para el panel preliminar de solo lectura, spec §12) ───────────────
+
+async def listar_compromisos(
+    db: AsyncSession, limit: int, offset: int
+) -> tuple[list[CompromisoResponse], int]:
+    total = (await db.execute(select(func.count()).select_from(AtpCompromiso))).scalar_one()
+    result = await db.execute(
+        select(AtpCompromiso)
+        .order_by(AtpCompromiso.departamento, AtpCompromiso.localidad)
+        .limit(limit)
+        .offset(offset)
+    )
+    compromisos = result.scalars().all()
+
+    # Suma del cronograma por compromiso, en una sola query aparte (no un
+    # eager-load fila por fila) — evita traer hasta 34+ filas por compromiso
+    # solo para un total.
+    pagado_por_id: dict[str, float] = {}
+    ids = [c.id for c in compromisos]
+    if ids:
+        rows = await db.execute(
+            select(AtpCronogramaPago.compromiso_id, func.sum(AtpCronogramaPago.monto))
+            .where(AtpCronogramaPago.compromiso_id.in_(ids))
+            .group_by(AtpCronogramaPago.compromiso_id)
+        )
+        pagado_por_id = {cid: float(suma) for cid, suma in rows.all()}
+
+    items = [
+        CompromisoResponse(
+            id=c.id,
+            departamento=c.departamento,
+            localidad=c.localidad,
+            ministerio_destino=c.ministerio_destino,
+            fecha_anuncio=c.fecha_anuncio,
+            nro_expediente=c.nro_expediente,
+            derivado=c.derivado,
+            monto=float(c.monto) if c.monto is not None else None,
+            destino=c.destino,
+            saldo_atp=float(c.saldo_atp) if c.saldo_atp is not None else None,
+            total_pagado=pagado_por_id.get(c.id),
+            last_synced_at=c.last_synced_at,
+        )
+        for c in compromisos
+    ]
+    return items, total

@@ -21,5 +21,16 @@ class Settings(BaseSettings):
     google_sheet_atp_range_bd: str = "BD!A5:EZ5000"
     google_sheet_atp_header_row: int = 5
 
+    # Panel preliminar de solo lectura (spec-sync-atp-compromiso-gobernador.md
+    # §12) — auth ADR-015, mismo criterio que svc-privada/svc-gasifera:
+    # validación de JWT de Firebase + lookup de portal_usuarios vía endpoint
+    # interno IAM-only de svc-vivienda (svc-gralgob NO se conecta a db_vivienda).
+    google_jwks_uri: str = (
+        "https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com"
+    )
+    google_issuer: str = "https://securetoken.google.com/gestorcooperativo"
+    # Vacío -> el lookup degrada a rol "invitado" (dev / gateway sin wiring de IAM).
+    svc_vivienda_internal_url: str = ""
+
 
 settings = Settings()
