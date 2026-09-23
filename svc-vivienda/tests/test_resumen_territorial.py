@@ -357,6 +357,98 @@ async def test_lineas_de_privada_entran_en_el_snapshot_y_respetan_visibilidad(
     assert [p.area for p in priv_ag.programas] == ["privada"]
 
 
+def _gasifera_linea(dep: str, loc: str, por_estado: dict) -> dict:
+    meta = aggregations.resumen_gasifera_estado(por_estado)
+    return {
+        "departamento": dep,
+        "nombre_localidad": loc,
+        "programa": {
+            "area": "gasifera", "programa": "acciones_territorio",
+            "programa_label": aggregations.PROGRAMA_LABEL["acciones_territorio"],
+            "entidad_id": None, "detalle": aggregations.detalle_gasifera(por_estado),
+            "estado_general_id": None, "estado_general_label": meta["label"],
+            "estado_general_bg": meta["bg"], "estado_general_text_color": meta["text_color"],
+            "subestados": None, "checklist_total": 0, "checklist_faltan": 0,
+            "checklist_iniciado": False, "checklist_faltantes": [],
+            "ultima_comunicacion": {"fecha": "2026-08-20", "texto": None, "area": "gasifera", "autor": None},
+            "monto": None, "expediente": None,
+        },
+    }
+
+
+@pytest.mark.asyncio
+async def test_lineas_de_gasifera_entran_en_el_snapshot_y_respetan_visibilidad(
+    client: AsyncClient, datos_vivienda: dict
+):
+    gasifera = [_gasifera_linea("Juárez Celman", "Alta Gracia", {"CUMPLIDO": 1, "EN CURSO": 2})]
+    with patch(
+        "app.resumen_territorial.service.fetch_gasifera_lineas", new=AsyncMock(return_value=gasifera)
+    ):
+        resp = await client.post(f"{BASE}/actualizar")
+    assert resp.status_code == 200
+    assert "gasifera" in resp.json()["payload"]["generado_para_areas"]
+
+    full = ResumenTerritorialPayload.model_validate((await client.get(BASE)).json()["payload"])
+    admin_ag = next(loc for loc in full.localidades if loc.localidad == "Alta Gracia")
+    assert "gasifera" in [p.area for p in admin_ag.programas]
+    gas_line = next(p for p in admin_ag.programas if p.area == "gasifera")
+    assert gas_line.programa_label == "Obras de Gas — Sec. Gasífera"
+
+    op_view = filtrar_por_visibilidad(full, rol="Operador", secretarias=["vivienda"])
+    op_ag = next(loc for loc in op_view.localidades if loc.localidad == "Alta Gracia")
+    assert all(p.area != "gasifera" for p in op_ag.programas)
+
+    gas_view = filtrar_por_visibilidad(full, rol="Consulta", secretarias=["gasifera"])
+    gas_ag = next(loc for loc in gas_view.localidades if loc.localidad == "Alta Gracia")
+    assert [p.area for p in gas_ag.programas] == ["gasifera"]
+
+
+@pytest.mark.asyncio
+async def test_fetch_gasifera_lineas_desactivado_por_defecto():
+    """Por defecto `gasifera_fetch_enabled` es False → [] sin tocar la red."""
+    from app.resumen_territorial import service as svc
+
+    assert await svc.fetch_gasifera_lineas() == []
+
+
+@pytest.mark.asyncio
+async def test_fetch_gasifera_lineas_es_tolerante_a_fallos():
+    """Con el flag encendido: nunca lanza — ante cualquier error de red/auth
+    devuelve []. Se apunta a un host inexistente para forzar el fallo."""
+    from app.resumen_territorial import service as svc
+
+    with patch.object(svc.settings, "gasifera_fetch_enabled", True), patch.object(
+        svc.settings, "svc_gasifera_internal_url", "http://127.0.0.1:1"
+    ):
+        resultado = await svc.fetch_gasifera_lineas()
+    assert resultado == []
+
+
+def test_map_gasifera_payload_arma_linea_correctamente():
+    from app.resumen_territorial.service import _map_gasifera_payload
+
+    data = [{
+        "departamento": "JUÁREZ CELMAN", "localidad": "HUANCHILLA",
+        "total_acciones": 3, "cumplidas": 1, "en_curso": 2,
+        "monto_solicitado_sum": 1000.0, "monto_usd_sum": 1460000.0,
+        "fecha_max": "2026-03-05",
+    }]
+    lineas = _map_gasifera_payload(data)
+    assert len(lineas) == 1
+    linea = lineas[0]
+    assert linea["nombre_localidad"] == "HUANCHILLA"
+    assert linea["programa"]["area"] == "gasifera"
+    assert linea["programa"]["monto"] == pytest.approx(1460000.0)
+    assert linea["programa"]["ultima_comunicacion"]["fecha"] == "2026-03-05"
+
+
+def test_map_gasifera_payload_ignora_filas_sin_localidad():
+    from app.resumen_territorial.service import _map_gasifera_payload
+
+    assert _map_gasifera_payload([{"departamento": "X"}]) == []
+    assert _map_gasifera_payload("no es una lista") == []
+
+
 @pytest.mark.asyncio
 async def test_fetch_privada_lineas_desactivado_por_defecto():
     """Por defecto `privada_fetch_enabled` es False → devuelve [] sin tocar la red

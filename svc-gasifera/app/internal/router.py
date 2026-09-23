@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.gas_pit import rollup as gas_pit_rollup
 from app.gas_pit import sync as gas_pit_sync
 from app.gas_pit.schemas import SyncResultResponse, SyncStatusResponse
 
@@ -38,3 +39,11 @@ async def sync_gasifera_pit(
 @router.get("/sync/gasifera-pit/estado", response_model=SyncStatusResponse | None)
 async def estado_sync_gasifera_pit(db: AsyncSession = Depends(get_db)):
     return await gas_pit_sync.get_last_sync_status(db)
+
+
+@router.get("/gasifera/rollup-territorial")
+async def rollup_territorial(db: AsyncSession = Depends(get_db)):
+    """Consumido por resumen_territorial de svc-vivienda (ADR-017, mismo patrón
+    que ADR-016 usó para svc-privada). Sólo la SA de svc-vivienda tiene
+    roles/run.invoker sobre este servicio para este flujo."""
+    return await gas_pit_rollup.rollup_territorial(db)

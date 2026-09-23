@@ -25,10 +25,13 @@ PROGRAMA_LABEL: dict[str, str] = {
     "cordoba_hogar": "Córdoba Hogar",
     "mi_lugar": "Mi Lugar",
     "gestiones": "Gestiones — Sec. Privada",
+    "acciones_territorio": "Obras de Gas — Sec. Gasífera",
 }
 
-_AREA_ORDER = {"vivienda": 0, "privada": 1}
-_PROGRAMA_ORDER = {"cordon_cuneta": 0, "cordoba_hogar": 1, "mi_lugar": 2, "gestiones": 3}
+_AREA_ORDER = {"vivienda": 0, "privada": 1, "gasifera": 2}
+_PROGRAMA_ORDER = {
+    "cordon_cuneta": 0, "cordoba_hogar": 1, "mi_lugar": 2, "gestiones": 3, "acciones_territorio": 4,
+}
 
 SIN_ESTADO = {"label": "Sin estado", "bg": "#e5e7eb", "text_color": "#374151"}
 
@@ -73,6 +76,48 @@ def detalle_privada(por_estado: dict[str, int]) -> str:
         partes.append(f"{cerradas} finalizada{'s' if cerradas != 1 else ''}")
     sufijo = f" · {', '.join(partes)}" if partes else ""
     return f"{_plural_gestiones(total)}{sufijo}"
+
+
+# ── Gasífera: acciones territoriales de gas (svc-gasifera, ADR-017) ──────────
+# Mismo criterio que Privada arriba: el badge se deriva de un conteo simple
+# cumplida/en curso, no hay catálogo de estados con colores propios.
+_GASIFERA_ESTADOS_CERRADOS = frozenset({"CUMPLIDO"})
+_GASIFERA_META_EN_CURSO = {"label": "En curso", "bg": "#fdf0d5", "text_color": "#b45309"}
+_GASIFERA_META_CERRADAS = {"label": "Cumplidas", "bg": "#dcf5e3", "text_color": "#15803d"}
+_GASIFERA_META_MIXTO = {"label": "Mixto", "bg": "#fdf0d5", "text_color": "#b45309"}
+
+
+def resumen_gasifera_estado(por_estado: dict[str, int]) -> dict[str, str]:
+    """Deriva un badge (label + colores) para la línea roll-up de Gasífera de
+    una localidad, a partir del conteo de acciones cumplidas/en curso."""
+    total = sum(por_estado.values())
+    cerradas = sum(v for k, v in por_estado.items() if str(k).upper() in _GASIFERA_ESTADOS_CERRADOS)
+    activas = total - cerradas
+    if total == 0:
+        return {**SIN_ESTADO}
+    if activas == 0:
+        return dict(_GASIFERA_META_CERRADAS)
+    if cerradas == 0:
+        return dict(_GASIFERA_META_EN_CURSO)
+    return dict(_GASIFERA_META_MIXTO)
+
+
+def _plural_acciones(n: int) -> str:
+    return f"{n} acción" if n == 1 else f"{n} acciones"
+
+
+def detalle_gasifera(por_estado: dict[str, int]) -> str:
+    """Texto corto tipo '5 acciones · 3 en curso, 2 cumplidas'."""
+    total = sum(por_estado.values())
+    cerradas = sum(v for k, v in por_estado.items() if str(k).upper() in _GASIFERA_ESTADOS_CERRADOS)
+    activas = total - cerradas
+    partes = []
+    if activas:
+        partes.append(f"{activas} en curso")
+    if cerradas:
+        partes.append(f"{cerradas} cumplida{'s' if cerradas != 1 else ''}")
+    sufijo = f" · {', '.join(partes)}" if partes else ""
+    return f"{_plural_acciones(total)}{sufijo}"
 
 
 # ── Checklist ────────────────────────────────────────────────────────────────

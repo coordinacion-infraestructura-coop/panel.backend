@@ -172,6 +172,11 @@ async def compute_resumen_territorial(db: AsyncSession) -> ResumenTerritorialPay
         lineas.extend(lineas_privada)
         generado_para.append("privada")
 
+    lineas_gasifera = await fetch_gasifera_lineas()
+    if lineas_gasifera:
+        lineas.extend(lineas_gasifera)
+        generado_para.append("gasifera")
+
     localidades = [
         ResumenLocalidad(**loc) for loc in aggregations.agrupar_por_localidad(lineas, geo)
     ]
@@ -338,6 +343,102 @@ def _map_privada_payload(data) -> list[dict]:
             "privada_conteos": {"por_estado": por_estado, "total": int(total or 0)},
         }
         lineas.append({"departamento": dep, "nombre_localidad": loc, "programa": prog})
+    return lineas
+
+
+# ── Cliente del endpoint interno de svc-gasifera (ADR-017) ──────────────────
+
+async def fetch_gasifera_lineas() -> list[dict]:
+    """Trae las acciones territoriales de gas, agregadas por localidad, del
+    endpoint interno IAM-only de svc-gasifera. Tolerante: cualquier fallo →
+    `[]` (el snapshot se guarda igual con lo que sí llegó) — mismo criterio
+    que `fetch_privada_lineas` (ADR-016). Spec: ADR-017."""
+    if not settings.gasifera_fetch_enabled or not settings.svc_gasifera_internal_url:
+        return []
+
+    base = settings.svc_gasifera_internal_url.rstrip("/")
+    url = base + settings.gasifera_rollup_internal_path
+    audience = base
+    try:
+        token = _mint_id_token(audience)
+        if not token:
+            logger.warning(
+                "resumen_territorial: se llama a Gasífera SIN ID token (mint falló, audience=%s)",
+                audience,
+            )
+        headers = {"Authorization": f"Bearer {token}"} if token else {}
+        async with httpx.AsyncClient(timeout=20) as client:
+            resp = await client.get(url, headers=headers)
+
+        if resp.status_code != 200:
+            logger.warning(
+                "resumen_territorial: Gasífera respondió %s. url=%s aud=%s token_minteado=%s "
+                "body[:1000]=%s",
+                resp.status_code, url, audience, bool(token), (resp.text or "")[:1000],
+            )
+            return []
+
+        lineas = _map_gasifera_payload(resp.json())
+        logger.info("resumen_territorial: Gasífera devolvió %d líneas por localidad", len(lineas))
+        return lineas
+    except Exception as exc:  # noqa: BLE001 — tolerante por diseño
+        logger.warning("resumen_territorial: fetch de Gasífera falló (%s): %r", url, exc)
+        return []
+
+
+def _map_gasifera_payload(data) -> list[dict]:
+    """A diferencia de `_map_privada_payload` (contrato externo no versionado
+    en este repo), acá el contrato lo controlamos nosotros mismos
+    (`gas_pit_rollup.rollup_territorial`) — mapeo directo, sin heurísticas."""
+    if not isinstance(data, list):
+        return []
+
+    lineas: list[dict] = []
+    for r in data:
+        if not isinstance(r, dict):
+            continue
+        loc = r.get("localidad")
+        if not loc:
+            continue
+        por_estado = {}
+        if r.get("cumplidas"):
+            por_estado["CUMPLIDO"] = r["cumplidas"]
+        if r.get("en_curso"):
+            por_estado["EN CURSO"] = r["en_curso"]
+        meta = (
+            aggregations.resumen_gasifera_estado(por_estado)
+            if por_estado
+            else dict(aggregations.SIN_ESTADO)
+        )
+        detalle = (
+            aggregations.detalle_gasifera(por_estado)
+            if por_estado
+            else None
+        )
+        monto = r.get("monto_usd_sum")
+        prog = {
+            "area": "gasifera",
+            "programa": "acciones_territorio",
+            "programa_label": aggregations.PROGRAMA_LABEL["acciones_territorio"],
+            "entidad_id": None,
+            "detalle": detalle,
+            "estado_general_id": None,
+            "estado_general_label": meta["label"],
+            "estado_general_bg": meta["bg"],
+            "estado_general_text_color": meta["text_color"],
+            "subestados": None,
+            "checklist_total": 0,
+            "checklist_faltan": 0,
+            "checklist_iniciado": False,
+            "checklist_faltantes": [],
+            "ultima_comunicacion": (
+                {"fecha": r["fecha_max"], "texto": None, "area": "gasifera", "autor": None}
+                if r.get("fecha_max") else None
+            ),
+            "monto": float(monto) if monto is not None else None,
+            "expediente": None,
+        }
+        lineas.append({"departamento": r.get("departamento"), "nombre_localidad": loc, "programa": prog})
     return lineas
 
 

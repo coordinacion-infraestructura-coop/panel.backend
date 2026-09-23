@@ -42,5 +42,13 @@ class Settings(BaseSettings):
     # flag/URL, sólo agrega el path del endpoint IAM-only de habitantes.
     privada_localidades_internal_path: str = "/internal/privada/localidades-habitantes"
 
+    # Resumen Territorial — federación server-side de svc-gasifera (ADR-017,
+    # mismo patrón que ADR-016 hizo para Privada). Requiere que la SA
+    # `svc-vivienda@` tenga `roles/run.invoker` sobre svc-gasifera (dirección
+    # inversa al grant de ADR-015, gasifera→vivienda, que ya existe).
+    gasifera_fetch_enabled: bool = False
+    svc_gasifera_internal_url: str = ""
+    gasifera_rollup_internal_path: str = "/internal/gasifera/rollup-territorial"
+
 
 settings = Settings()
