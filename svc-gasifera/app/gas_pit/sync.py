@@ -236,8 +236,12 @@ async def _upsert_accion(db: AsyncSession, sheet_row_number: int, r: dict[str, A
     accion.estado = _clean_str(r.get("Estado")) or "Pendiente"
     accion.monto_inversion_solicitado = monto_solicitado
     accion.comentarios = _clean_str(r.get("Comentarios"))
+    # monto_inversion_solicitado está en ARS (confirmado contra importe_obra_actualizado
+    # de gas_pit_obras, mismo orden de magnitud) — para USD se DIVIDE por el tipo de
+    # cambio (ARS por USD), no se multiplica. Bug real de Fase 0 corregido 2026-09-23,
+    # ver spec-sync-gasifera-pit.md changelog.
     accion.monto_inversion_usd = (
-        round(monto_solicitado * settings.tipo_cambio_usd, 2) if monto_solicitado is not None else None
+        round(monto_solicitado / settings.tipo_cambio_usd, 2) if monto_solicitado is not None else None
     )
     accion.alerta_localidad = _clean_str(r.get("ALERTA_LOCALIDAD"))
     accion.sheet_row_number = sheet_row_number
