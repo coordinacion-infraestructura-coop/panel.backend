@@ -13,6 +13,7 @@ Ver spec: docs/files/spec-sync-atp-compromiso-gobernador.md
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.atp import rollup as atp_rollup
 from app.atp import sync as atp_sync
 from app.atp.schemas import SyncResultResponse, SyncStatusResponse
 from app.database import get_db
@@ -38,3 +39,11 @@ async def sync_atp_compromiso_gobernador(
 @router.get("/sync/atp-compromiso-gobernador/estado", response_model=SyncStatusResponse | None)
 async def estado_sync_atp_compromiso_gobernador(db: AsyncSession = Depends(get_db)):
     return await atp_sync.get_last_sync_status(db)
+
+
+@router.get("/atp/rollup-territorial")
+async def rollup_territorial(db: AsyncSession = Depends(get_db)):
+    """Consumido por resumen_territorial de svc-vivienda (mismo patrón que
+    ADR-016 usó para svc-privada y ADR-021 para svc-gasifera). Sólo la SA de
+    svc-vivienda tiene roles/run.invoker sobre este servicio para este flujo."""
+    return await atp_rollup.rollup_territorial(db)

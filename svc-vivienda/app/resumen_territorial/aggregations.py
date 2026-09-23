@@ -26,11 +26,13 @@ PROGRAMA_LABEL: dict[str, str] = {
     "mi_lugar": "Mi Lugar",
     "gestiones": "Gestiones — Sec. Privada",
     "acciones_territorio": "Obras de Gas — Sec. Gasífera",
+    "atp": "ATP — Sec. Gral. de Gobierno",
 }
 
-_AREA_ORDER = {"vivienda": 0, "privada": 1, "gasifera": 2}
+_AREA_ORDER = {"vivienda": 0, "privada": 1, "gasifera": 2, "gralgob": 3}
 _PROGRAMA_ORDER = {
-    "cordon_cuneta": 0, "cordoba_hogar": 1, "mi_lugar": 2, "gestiones": 3, "acciones_territorio": 4,
+    "cordon_cuneta": 0, "cordoba_hogar": 1, "mi_lugar": 2, "gestiones": 3,
+    "acciones_territorio": 4, "atp": 5,
 }
 
 SIN_ESTADO = {"label": "Sin estado", "bg": "#e5e7eb", "text_color": "#374151"}
@@ -118,6 +120,35 @@ def detalle_gasifera(por_estado: dict[str, int]) -> str:
         partes.append(f"{cerradas} cumplida{'s' if cerradas != 1 else ''}")
     sufijo = f" · {', '.join(partes)}" if partes else ""
     return f"{_plural_acciones(total)}{sufijo}"
+
+
+# ── ATP: compromisos del Aporte del Tesoro Provincial (svc-gralgob) ──────────
+# A diferencia de Privada/Gasífera (badge derivado de un conteo por estado),
+# ATP no tiene "estados" — el badge se deriva de cuánto del monto anunciado ya
+# fue entregado (cronograma de pagos), mismo espíritu (activo/mixto/cerrado).
+_ATP_META_PENDIENTE = {"label": "Pendiente", "bg": "#fee2e2", "text_color": "#b91c1c"}
+_ATP_META_PARCIAL = {"label": "Parcial", "bg": "#fdf0d5", "text_color": "#b45309"}
+_ATP_META_PAGADO = {"label": "Pagado", "bg": "#dcf5e3", "text_color": "#15803d"}
+
+
+def resumen_atp_estado(monto_total: float | None, entregado: float) -> dict[str, str]:
+    """Deriva un badge (label + colores) para la línea roll-up de ATP de una
+    localidad, a partir del monto total anunciado vs. lo ya entregado."""
+    if not monto_total or monto_total <= 0:
+        return {**SIN_ESTADO}
+    if entregado <= 0:
+        return dict(_ATP_META_PENDIENTE)
+    if entregado >= monto_total:
+        return dict(_ATP_META_PAGADO)
+    return dict(_ATP_META_PARCIAL)
+
+
+def detalle_atp(total_compromisos: int, derivados: int) -> str:
+    """Texto corto tipo '3 compromisos · 1 derivado'."""
+    partes = [f"{total_compromisos} compromiso{'s' if total_compromisos != 1 else ''}"]
+    if derivados:
+        partes.append(f"{derivados} derivado{'s' if derivados != 1 else ''}")
+    return " · ".join(partes)
 
 
 # ── Checklist ────────────────────────────────────────────────────────────────

@@ -50,5 +50,14 @@ class Settings(BaseSettings):
     svc_gasifera_internal_url: str = ""
     gasifera_rollup_internal_path: str = "/internal/gasifera/rollup-territorial"
 
+    # Resumen Territorial — federación server-side de svc-gralgob / ATP
+    # (mismo patrón que ADR-016 hizo para Privada y ADR-021 para Gasífera).
+    # Requiere que la SA `svc-vivienda@` tenga `roles/run.invoker` sobre
+    # svc-gralgob (dirección inversa al grant de ADR-015, gralgob->vivienda,
+    # que ya existe).
+    atp_fetch_enabled: bool = False
+    svc_gralgob_internal_url: str = ""
+    atp_rollup_internal_path: str = "/internal/atp/rollup-territorial"
+
 
 settings = Settings()

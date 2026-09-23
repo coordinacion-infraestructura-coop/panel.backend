@@ -42,6 +42,13 @@ substitutions:
   # services update` con --update-env-vars. Inofensivo para otros _SERVICE.
   _GASIFERA_FETCH_ENABLED: "true"
   _SVC_GASIFERA_INTERNAL_URL: "https://svc-gasifera-iwni7vc2qq-rj.a.run.app"
+  # Específico de svc-vivienda (federación server-side de ATP/svc-gralgob en
+  # resumen_territorial, mismo patrón que ADR-016/ADR-021).
+  # Defaults encendidos para que cada redeploy de CI conserve la config.
+  # Rollback: --substitutions=...,_ATP_FETCH_ENABLED=false o `gcloud run
+  # services update` con --update-env-vars. Inofensivo para otros _SERVICE.
+  _ATP_FETCH_ENABLED: "true"
+  _SVC_GRALGOB_INTERNAL_URL: "https://svc-gralgob-iwni7vc2qq-rj.a.run.app"
 
 steps:
   # ---------------------------------------------------------------------------
@@ -90,7 +97,7 @@ steps:
       - "--no-allow-unauthenticated"
       - "--service-account=${_SERVICE}@${_PROJECT}.iam.gserviceaccount.com"
       - "--set-secrets=DATABASE_URL=${_SERVICE}-db-url:latest"
-      - "--set-env-vars=GCP_PROJECT_ID=${_PROJECT},SERVICE_NAME=${_SERVICE},ENVIRONMENT=production,GOOGLE_SHEET_CC_ID=${_GOOGLE_SHEET_CC_ID},SVC_VIVIENDA_INTERNAL_URL=${_SVC_VIVIENDA_INTERNAL_URL},PRIVADA_FETCH_ENABLED=${_PRIVADA_FETCH_ENABLED},SVC_PRIVADA_INTERNAL_URL=${_SVC_PRIVADA_INTERNAL_URL},PRIVADA_SYNC_GESTIONES_ENABLED=${_PRIVADA_SYNC_GESTIONES_ENABLED},GOOGLE_SHEET_GAS_PIT_ID=${_GOOGLE_SHEET_GAS_PIT_ID},GASIFERA_FETCH_ENABLED=${_GASIFERA_FETCH_ENABLED},SVC_GASIFERA_INTERNAL_URL=${_SVC_GASIFERA_INTERNAL_URL}"
+      - "--set-env-vars=GCP_PROJECT_ID=${_PROJECT},SERVICE_NAME=${_SERVICE},ENVIRONMENT=production,GOOGLE_SHEET_CC_ID=${_GOOGLE_SHEET_CC_ID},SVC_VIVIENDA_INTERNAL_URL=${_SVC_VIVIENDA_INTERNAL_URL},PRIVADA_FETCH_ENABLED=${_PRIVADA_FETCH_ENABLED},SVC_PRIVADA_INTERNAL_URL=${_SVC_PRIVADA_INTERNAL_URL},PRIVADA_SYNC_GESTIONES_ENABLED=${_PRIVADA_SYNC_GESTIONES_ENABLED},GOOGLE_SHEET_GAS_PIT_ID=${_GOOGLE_SHEET_GAS_PIT_ID},GASIFERA_FETCH_ENABLED=${_GASIFERA_FETCH_ENABLED},SVC_GASIFERA_INTERNAL_URL=${_SVC_GASIFERA_INTERNAL_URL},ATP_FETCH_ENABLED=${_ATP_FETCH_ENABLED},SVC_GRALGOB_INTERNAL_URL=${_SVC_GRALGOB_INTERNAL_URL}"
       - "--memory=512Mi"
       - "--cpu=1"
       - "--min-instances=0"

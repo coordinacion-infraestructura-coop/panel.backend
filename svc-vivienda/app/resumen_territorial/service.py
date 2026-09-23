@@ -177,6 +177,11 @@ async def compute_resumen_territorial(db: AsyncSession) -> ResumenTerritorialPay
         lineas.extend(lineas_gasifera)
         generado_para.append("gasifera")
 
+    lineas_atp = await fetch_atp_lineas()
+    if lineas_atp:
+        lineas.extend(lineas_atp)
+        generado_para.append("gralgob")
+
     localidades = [
         ResumenLocalidad(**loc) for loc in aggregations.agrupar_por_localidad(lineas, geo)
     ]
@@ -436,6 +441,90 @@ def _map_gasifera_payload(data) -> list[dict]:
                 if r.get("fecha_max") else None
             ),
             "monto": float(monto) if monto is not None else None,
+            "expediente": None,
+        }
+        lineas.append({"departamento": r.get("departamento"), "nombre_localidad": loc, "programa": prog})
+    return lineas
+
+
+# ── Cliente del endpoint interno de svc-gralgob / ATP ────────────────────────
+
+async def fetch_atp_lineas() -> list[dict]:
+    """Trae los compromisos ATP, agregados por localidad, del endpoint interno
+    IAM-only de svc-gralgob. Tolerante: cualquier fallo → `[]` (el snapshot se
+    guarda igual con lo que sí llegó) — mismo criterio que `fetch_privada_lineas`
+    (ADR-016) y `fetch_gasifera_lineas` (ADR-021)."""
+    if not settings.atp_fetch_enabled or not settings.svc_gralgob_internal_url:
+        return []
+
+    base = settings.svc_gralgob_internal_url.rstrip("/")
+    url = base + settings.atp_rollup_internal_path
+    audience = base
+    try:
+        token = _mint_id_token(audience)
+        if not token:
+            logger.warning(
+                "resumen_territorial: se llama a ATP/gralgob SIN ID token (mint falló, audience=%s)",
+                audience,
+            )
+        headers = {"Authorization": f"Bearer {token}"} if token else {}
+        async with httpx.AsyncClient(timeout=20) as client:
+            resp = await client.get(url, headers=headers)
+
+        if resp.status_code != 200:
+            logger.warning(
+                "resumen_territorial: ATP/gralgob respondió %s. url=%s aud=%s token_minteado=%s "
+                "body[:1000]=%s",
+                resp.status_code, url, audience, bool(token), (resp.text or "")[:1000],
+            )
+            return []
+
+        lineas = _map_atp_payload(resp.json())
+        logger.info("resumen_territorial: ATP/gralgob devolvió %d líneas por localidad", len(lineas))
+        return lineas
+    except Exception as exc:  # noqa: BLE001 — tolerante por diseño
+        logger.warning("resumen_territorial: fetch de ATP/gralgob falló (%s): %r", url, exc)
+        return []
+
+
+def _map_atp_payload(data) -> list[dict]:
+    """Contrato controlado por nosotros mismos (`atp.rollup.rollup_territorial`
+    en svc-gralgob) — mapeo directo, sin heurísticas, mismo criterio que
+    `_map_gasifera_payload`."""
+    if not isinstance(data, list):
+        return []
+
+    lineas: list[dict] = []
+    for r in data:
+        if not isinstance(r, dict):
+            continue
+        loc = r.get("localidad")
+        if not loc:
+            continue
+        monto_total = r.get("monto_total_sum")
+        entregado = r.get("entregado_sum") or 0.0
+        meta = aggregations.resumen_atp_estado(monto_total, entregado)
+        detalle = aggregations.detalle_atp(r.get("total_compromisos", 0), r.get("derivados", 0))
+        prog = {
+            "area": "gralgob",
+            "programa": "atp",
+            "programa_label": aggregations.PROGRAMA_LABEL["atp"],
+            "entidad_id": None,
+            "detalle": detalle,
+            "estado_general_id": None,
+            "estado_general_label": meta["label"],
+            "estado_general_bg": meta["bg"],
+            "estado_general_text_color": meta["text_color"],
+            "subestados": None,
+            "checklist_total": 0,
+            "checklist_faltan": 0,
+            "checklist_iniciado": False,
+            "checklist_faltantes": [],
+            "ultima_comunicacion": (
+                {"fecha": r["fecha_max"], "texto": None, "area": "gralgob", "autor": None}
+                if r.get("fecha_max") else None
+            ),
+            "monto": float(monto_total) if monto_total is not None else None,
             "expediente": None,
         }
         lineas.append({"departamento": r.get("departamento"), "nombre_localidad": loc, "programa": prog})
