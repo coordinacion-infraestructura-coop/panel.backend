@@ -35,6 +35,13 @@ substitutions:
   # default con el ID real para que cada redeploy de CI conserve la config.
   # Inofensivo para otros _SERVICE (env var no leída por ellos).
   _GOOGLE_SHEET_GAS_PIT_ID: "11kAlP1mCPmF-Fws7lkMDnXfhoRXieq0SpKH_CQ0BRnc"
+  # Específico de svc-vivienda (ADR-021: federación server-side de Gasífera en
+  # resumen_territorial, mismo patrón que ADR-016/_PRIVADA_FETCH_ENABLED).
+  # Defaults encendidos para que cada redeploy de CI conserve la config.
+  # Rollback: --substitutions=...,_GASIFERA_FETCH_ENABLED=false o `gcloud run
+  # services update` con --update-env-vars. Inofensivo para otros _SERVICE.
+  _GASIFERA_FETCH_ENABLED: "true"
+  _SVC_GASIFERA_INTERNAL_URL: "https://svc-gasifera-iwni7vc2qq-rj.a.run.app"
 
 steps:
   # ---------------------------------------------------------------------------
@@ -83,7 +90,7 @@ steps:
       - "--no-allow-unauthenticated"
       - "--service-account=${_SERVICE}@${_PROJECT}.iam.gserviceaccount.com"
       - "--set-secrets=DATABASE_URL=${_SERVICE}-db-url:latest"
-      - "--set-env-vars=GCP_PROJECT_ID=${_PROJECT},SERVICE_NAME=${_SERVICE},ENVIRONMENT=production,GOOGLE_SHEET_CC_ID=${_GOOGLE_SHEET_CC_ID},SVC_VIVIENDA_INTERNAL_URL=${_SVC_VIVIENDA_INTERNAL_URL},PRIVADA_FETCH_ENABLED=${_PRIVADA_FETCH_ENABLED},SVC_PRIVADA_INTERNAL_URL=${_SVC_PRIVADA_INTERNAL_URL},PRIVADA_SYNC_GESTIONES_ENABLED=${_PRIVADA_SYNC_GESTIONES_ENABLED},GOOGLE_SHEET_GAS_PIT_ID=${_GOOGLE_SHEET_GAS_PIT_ID}"
+      - "--set-env-vars=GCP_PROJECT_ID=${_PROJECT},SERVICE_NAME=${_SERVICE},ENVIRONMENT=production,GOOGLE_SHEET_CC_ID=${_GOOGLE_SHEET_CC_ID},SVC_VIVIENDA_INTERNAL_URL=${_SVC_VIVIENDA_INTERNAL_URL},PRIVADA_FETCH_ENABLED=${_PRIVADA_FETCH_ENABLED},SVC_PRIVADA_INTERNAL_URL=${_SVC_PRIVADA_INTERNAL_URL},PRIVADA_SYNC_GESTIONES_ENABLED=${_PRIVADA_SYNC_GESTIONES_ENABLED},GOOGLE_SHEET_GAS_PIT_ID=${_GOOGLE_SHEET_GAS_PIT_ID},GASIFERA_FETCH_ENABLED=${_GASIFERA_FETCH_ENABLED},SVC_GASIFERA_INTERNAL_URL=${_SVC_GASIFERA_INTERNAL_URL}"
       - "--memory=512Mi"
       - "--cpu=1"
       - "--min-instances=0"
