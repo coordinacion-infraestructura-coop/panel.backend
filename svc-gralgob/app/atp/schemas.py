@@ -28,6 +28,11 @@ class CompromisosListResponse(BaseModel):
     total: int
 
 
+class CronogramaPagoResponse(BaseModel):
+    periodo: date
+    monto: float
+
+
 class SyncErrorDetail(BaseModel):
     fila: int
     motivo: str

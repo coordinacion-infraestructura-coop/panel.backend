@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.atp.models import AtpCompromiso, AtpCronogramaPago, AtpSyncLog
 from app.atp.schemas import (
     CompromisoResponse,
+    CronogramaPagoResponse,
     SyncErrorDetail,
     SyncResultResponse,
     SyncStatusResponse,
@@ -290,3 +291,23 @@ async def listar_compromisos(
         for c in compromisos
     ]
     return items, total
+
+
+async def obtener_cronograma(db: AsyncSession, compromiso_id: str) -> list[CronogramaPagoResponse] | None:
+    """None si el compromiso no existe (el router lo traduce a 404); lista
+    vacía si existe pero no tiene cronograma cargado."""
+    existe = (
+        await db.execute(select(AtpCompromiso.id).where(AtpCompromiso.id == compromiso_id))
+    ).scalar_one_or_none()
+    if existe is None:
+        return None
+
+    result = await db.execute(
+        select(AtpCronogramaPago)
+        .where(AtpCronogramaPago.compromiso_id == compromiso_id)
+        .order_by(AtpCronogramaPago.periodo)
+    )
+    return [
+        CronogramaPagoResponse(periodo=r.periodo, monto=float(r.monto))
+        for r in result.scalars().all()
+    ]

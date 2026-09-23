@@ -67,6 +67,39 @@ async def test_listar_compromisos_sin_cronograma_total_pagado_null(client: Async
     assert r.json()["items"][0]["total_pagado"] is None
 
 
+# ── GET /compromisos/{id}/cronograma ────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_cronograma_devuelve_pagos_ordenados_por_periodo(client: AsyncClient, compromiso):
+    r = await client.get(f"/api/v1/gralgob/compromisos/{compromiso.id}/cronograma")
+    assert r.status_code == 200
+    data = r.json()
+    assert len(data) == 2
+    assert data[0]["periodo"] == "2026-04-01"
+    assert data[0]["monto"] == -30000000
+    assert data[1]["periodo"] == "2026-05-01"
+
+
+@pytest.mark.asyncio
+async def test_cronograma_vacio_si_compromiso_no_tiene_pagos(client: AsyncClient, db_session: AsyncSession):
+    db_session.add(AtpCompromiso(
+        id="compromiso-sin-cronograma", sheet_row_number=8, localidad="Villa Y",
+        derivado=False, last_synced_at=datetime.now(timezone.utc),
+    ))
+    await db_session.flush()
+
+    r = await client.get("/api/v1/gralgob/compromisos/compromiso-sin-cronograma/cronograma")
+    assert r.status_code == 200
+    assert r.json() == []
+
+
+@pytest.mark.asyncio
+async def test_cronograma_404_si_compromiso_no_existe(client: AsyncClient):
+    r = await client.get("/api/v1/gralgob/compromisos/no-existe/cronograma")
+    assert r.status_code == 404
+    assert r.json()["detail"]["code"] == "COMPROMISO_NO_ENCONTRADO"
+
+
 # ── GET /sync-estado ─────────────────────────────────────────────────────────
 
 @pytest.mark.asyncio

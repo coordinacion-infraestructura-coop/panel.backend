@@ -7,11 +7,11 @@ Solo lectura: sin POST/PATCH/DELETE, sin lógica de negocio nueva — cada
 respuesta refleja 1:1 lo que ya está en atp_compromisos/atp_cronograma_pagos
 (salvo `total_pagado`, un `SUM` simple, no una regla de negocio nueva).
 """
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.atp import sync as atp_sync
-from app.atp.schemas import CompromisosListResponse, SyncStatusResponse
+from app.atp.schemas import CompromisosListResponse, CronogramaPagoResponse, SyncStatusResponse
 from app.auth import ROLES_LECTURA, AuthUser, require_gralgob
 from app.database import get_db
 
@@ -29,6 +29,21 @@ async def listar_compromisos(
 ):
     items, total = await atp_sync.listar_compromisos(db, limit=limit, offset=offset)
     return CompromisosListResponse(items=items, total=total)
+
+
+@router.get("/compromisos/{compromiso_id}/cronograma", response_model=list[CronogramaPagoResponse])
+async def cronograma_compromiso(
+    compromiso_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: AuthUser = _LECT,
+):
+    cronograma = await atp_sync.obtener_cronograma(db, compromiso_id)
+    if cronograma is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "COMPROMISO_NO_ENCONTRADO", "message": "Compromiso no encontrado"},
+        )
+    return cronograma
 
 
 @router.get("/sync-estado", response_model=SyncStatusResponse | None)
