@@ -29,7 +29,7 @@ from app.gas_pit.schemas import (
     SyncResultResponse,
     SyncStatusResponse,
 )
-from app.integrations import google_sheets
+from app.integrations import google_sheets, notificaciones_vivienda
 
 SUB_TIPO_GAS = "E- OBRAS DE GAS"
 
@@ -298,6 +298,7 @@ async def sync_from_sheet(db: AsyncSession, triggered_by: str = "manual") -> Syn
     filas_insertadas = 0
     filas_actualizadas = 0
     errores: list[dict[str, Any]] = []
+    nuevas_acciones: list[tuple[str | None, str | None, str | None]] = []
 
     # ── MATRIZ (NO TOMAR), filtrada a obras de gas ──
     if matriz_rows:
@@ -333,6 +334,7 @@ async def sync_from_sheet(db: AsyncSession, triggered_by: str = "manual") -> Syn
             sheet_row_number = offset + 2
             r = _row_dict(headers, row)
             localidad = _clean_str(r.get("Localidad"))
+            departamento = _clean_str(r.get("Departamento"))
             accion = _clean_str(r.get("Acción"))
             if not localidad and not accion:
                 continue  # fila en blanco
@@ -343,6 +345,8 @@ async def sync_from_sheet(db: AsyncSession, triggered_by: str = "manual") -> Syn
                     is_new = await _upsert_accion(db, sheet_row_number, r)
                 filas_insertadas += is_new
                 filas_actualizadas += not is_new
+                if is_new:
+                    nuevas_acciones.append((localidad, departamento, accion))
             except Exception as exc:
                 errores.append({
                     "fila": sheet_row_number, "hoja": "ACCIONES TERRITORIO",
@@ -362,6 +366,14 @@ async def sync_from_sheet(db: AsyncSession, triggered_by: str = "manual") -> Syn
     )
     db.add(log)
     await db.flush()
+
+    # Fuera del SAVEPOINT por fila y después del log — no atar la llamada HTTP a
+    # svc-vivienda a la transacción de cada fila (ADR-023). Sólo ACCIONES
+    # TERRITORIO tiene el campo "acción" pedido — MATRIZ/obras no genera alerta.
+    for loc, dep, accion_nueva in nuevas_acciones:
+        await notificaciones_vivienda.notificar_accion_nueva(
+            localidad=loc, departamento=dep, accion=accion_nueva
+        )
 
     return SyncResultResponse(
         filas_leidas=filas_leidas,

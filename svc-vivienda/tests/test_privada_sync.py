@@ -115,6 +115,7 @@ async def test_linked_new_crea_vinculo(db_session, _privada_sync_on):
     assert notif.destino_tipo == "secretaria" and notif.destino_valor == "privada"
     assert notif.nivel == "info" and notif.origen == "privada_sync"
     assert "Nueva gestión" in notif.titulo
+    assert "AMBOY" in notif.mensaje and "CALAMUCHITA" in notif.mensaje
 
 
 @pytest.mark.asyncio
@@ -132,6 +133,7 @@ async def test_linked_existing_con_diff_genera_notificacion(db_session, _privada
     assert notif.destino_tipo == "secretaria" and notif.destino_valor == "privada"
     assert notif.nivel == "info" and notif.origen == "privada_sync"
     assert "categoria_id" in notif.mensaje
+    assert "AMBOY" in notif.mensaje and "CALAMUCHITA" in notif.mensaje
 
 
 @pytest.mark.asyncio
@@ -162,6 +164,7 @@ async def test_pending_review_notifica_y_no_marca_linked(db_session, _privada_sy
     notif = (await db_session.execute(select(Notificacion))).scalar_one()
     assert notif.nivel == "advertencia"
     assert "revisión manual" in notif.mensaje
+    assert "AMBOY" in notif.mensaje and "CALAMUCHITA" in notif.mensaje
 
 
 @pytest.mark.asyncio

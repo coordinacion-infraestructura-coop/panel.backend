@@ -49,6 +49,13 @@ substitutions:
   # services update` con --update-env-vars. Inofensivo para otros _SERVICE.
   _ATP_FETCH_ENABLED: "true"
   _SVC_GRALGOB_INTERNAL_URL: "https://svc-gralgob-iwni7vc2qq-rj.a.run.app"
+  # Específico de svc-gralgob/svc-gasifera (ADR-023: notificación a svc-vivienda
+  # cuando el sync detecta una fila NUEVA). Misma env var en ambos servicios
+  # (SVC_VIVIENDA_INTERNAL_URL, ya seteada arriba para ADR-015, sirve también de
+  # target). Defaults encendidos, mismo criterio que el resto de estos flags.
+  # Rollback: --substitutions=...,_NOTIFICAR_FILA_NUEVA_ENABLED=false o `gcloud
+  # run services update` con --update-env-vars. Inofensivo para otros _SERVICE.
+  _NOTIFICAR_FILA_NUEVA_ENABLED: "true"
 
 steps:
   # ---------------------------------------------------------------------------
@@ -97,7 +104,7 @@ steps:
       - "--no-allow-unauthenticated"
       - "--service-account=${_SERVICE}@${_PROJECT}.iam.gserviceaccount.com"
       - "--set-secrets=DATABASE_URL=${_SERVICE}-db-url:latest"
-      - "--set-env-vars=GCP_PROJECT_ID=${_PROJECT},SERVICE_NAME=${_SERVICE},ENVIRONMENT=production,GOOGLE_SHEET_CC_ID=${_GOOGLE_SHEET_CC_ID},SVC_VIVIENDA_INTERNAL_URL=${_SVC_VIVIENDA_INTERNAL_URL},PRIVADA_FETCH_ENABLED=${_PRIVADA_FETCH_ENABLED},SVC_PRIVADA_INTERNAL_URL=${_SVC_PRIVADA_INTERNAL_URL},PRIVADA_SYNC_GESTIONES_ENABLED=${_PRIVADA_SYNC_GESTIONES_ENABLED},GOOGLE_SHEET_GAS_PIT_ID=${_GOOGLE_SHEET_GAS_PIT_ID},GASIFERA_FETCH_ENABLED=${_GASIFERA_FETCH_ENABLED},SVC_GASIFERA_INTERNAL_URL=${_SVC_GASIFERA_INTERNAL_URL},ATP_FETCH_ENABLED=${_ATP_FETCH_ENABLED},SVC_GRALGOB_INTERNAL_URL=${_SVC_GRALGOB_INTERNAL_URL}"
+      - "--set-env-vars=GCP_PROJECT_ID=${_PROJECT},SERVICE_NAME=${_SERVICE},ENVIRONMENT=production,GOOGLE_SHEET_CC_ID=${_GOOGLE_SHEET_CC_ID},SVC_VIVIENDA_INTERNAL_URL=${_SVC_VIVIENDA_INTERNAL_URL},PRIVADA_FETCH_ENABLED=${_PRIVADA_FETCH_ENABLED},SVC_PRIVADA_INTERNAL_URL=${_SVC_PRIVADA_INTERNAL_URL},PRIVADA_SYNC_GESTIONES_ENABLED=${_PRIVADA_SYNC_GESTIONES_ENABLED},GOOGLE_SHEET_GAS_PIT_ID=${_GOOGLE_SHEET_GAS_PIT_ID},GASIFERA_FETCH_ENABLED=${_GASIFERA_FETCH_ENABLED},SVC_GASIFERA_INTERNAL_URL=${_SVC_GASIFERA_INTERNAL_URL},ATP_FETCH_ENABLED=${_ATP_FETCH_ENABLED},SVC_GRALGOB_INTERNAL_URL=${_SVC_GRALGOB_INTERNAL_URL},NOTIFICAR_FILA_NUEVA_ENABLED=${_NOTIFICAR_FILA_NUEVA_ENABLED}"
       - "--memory=512Mi"
       - "--cpu=1"
       - "--min-instances=0"

@@ -30,5 +30,11 @@ class Settings(BaseSettings):
     # Vacío -> el lookup degrada a rol "invitado" (dev / gateway sin wiring de IAM).
     svc_vivienda_internal_url: str = ""
 
+    # Notificación al panel de svc-vivienda (ADR-019/ADR-023) cuando el sync detecta
+    # una acción territorial NUEVA. Flag independiente (mismo criterio que
+    # privada_sync_gestiones_enabled/ADR-020) para poder activar/desactivar sin tocar
+    # svc_vivienda_internal_url (que ya se usa para el auth lookup, ADR-015).
+    notificar_fila_nueva_enabled: bool = False
+
 
 settings = Settings()

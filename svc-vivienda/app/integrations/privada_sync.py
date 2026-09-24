@@ -63,13 +63,14 @@ def _ok_valor(ok_gob: str | None) -> str:
 
 
 async def _notificar_creacion(
-    db: AsyncSession, *, caso_tipo: str, caso_id: str, gestion_id: str | None
+    db: AsyncSession, *, caso_tipo: str, caso_id: str, localidad: str, departamento: str,
+    gestion_id: str | None,
 ) -> None:
     await notificaciones_service.crear(db, _SYNC_ACTOR, {
         "titulo": "Nueva gestión creada en Privada",
         "mensaje": (
-            f"Se creó automáticamente una gestión en Privada a partir del caso "
-            f"{caso_tipo.upper()} ({caso_id})."
+            f"La localidad {localidad}, {departamento} generó una gestión nueva en Privada "
+            f"(caso {caso_tipo.upper()} {caso_id})."
         ),
         "nivel": "info",
         "origen": "privada_sync",
@@ -79,14 +80,14 @@ async def _notificar_creacion(
 
 
 async def _notificar_correccion(
-    db: AsyncSession, *, caso_tipo: str, caso_id: str, diff: dict
+    db: AsyncSession, *, caso_tipo: str, caso_id: str, localidad: str, departamento: str, diff: dict
 ) -> None:
     campos = ", ".join(diff.keys())
     await notificaciones_service.crear(db, _SYNC_ACTOR, {
         "titulo": "Gestión de Privada actualizada por sincronización",
         "mensaje": (
-            f"La sincronización automática desde el caso {caso_tipo.upper()} ({caso_id}) "
-            f"actualizó estos campos de la gestión vinculada: {campos}."
+            f"La localidad {localidad}, {departamento} tuvo su gestión de Privada actualizada "
+            f"por sincronización (caso {caso_tipo.upper()} {caso_id}): {campos}."
         ),
         "nivel": "info",
         "origen": "privada_sync",
@@ -96,13 +97,15 @@ async def _notificar_correccion(
 
 
 async def _notificar_pendiente_revision(
-    db: AsyncSession, *, caso_tipo: str, caso_id: str, motivo: str | None
+    db: AsyncSession, *, caso_tipo: str, caso_id: str, localidad: str, departamento: str,
+    motivo: str | None,
 ) -> None:
     await notificaciones_service.crear(db, _SYNC_ACTOR, {
         "titulo": "Caso pendiente de vincular con Privada",
         "mensaje": (
-            f"El caso {caso_tipo.upper()} ({caso_id}) no se pudo vincular automáticamente "
-            f"a una gestión de Privada ({motivo or 'match ambiguo'}). Requiere revisión manual."
+            f"La localidad {localidad}, {departamento} (caso {caso_tipo.upper()} {caso_id}) "
+            f"no se pudo vincular automáticamente a una gestión de Privada "
+            f"({motivo or 'match ambiguo'}). Requiere revisión manual."
         ),
         "nivel": "advertencia",
         "origen": "privada_sync",
@@ -209,8 +212,17 @@ async def sync_gestion_privada(
     # corregidos en una gestión ya vinculada, o caso que queda pendiente de revisión
     # manual. Nunca por un ERROR transitorio (sería ruido).
     if resultado == "LINKED_NEW":
-        await _notificar_creacion(db, caso_tipo=caso_tipo, caso_id=caso_id, gestion_id=gestion_id)
+        await _notificar_creacion(
+            db, caso_tipo=caso_tipo, caso_id=caso_id, localidad=localidad, departamento=departamento,
+            gestion_id=gestion_id,
+        )
     elif resultado == "LINKED_EXISTING" and diff:
-        await _notificar_correccion(db, caso_tipo=caso_tipo, caso_id=caso_id, diff=diff)
+        await _notificar_correccion(
+            db, caso_tipo=caso_tipo, caso_id=caso_id, localidad=localidad, departamento=departamento,
+            diff=diff,
+        )
     elif resultado == "PENDING_REVIEW":
-        await _notificar_pendiente_revision(db, caso_tipo=caso_tipo, caso_id=caso_id, motivo=motivo)
+        await _notificar_pendiente_revision(
+            db, caso_tipo=caso_tipo, caso_id=caso_id, localidad=localidad, departamento=departamento,
+            motivo=motivo,
+        )

@@ -21,7 +21,7 @@ from app.atp.schemas import (
     SyncStatusResponse,
 )
 from app.config import settings
-from app.integrations import google_sheets
+from app.integrations import google_sheets, notificaciones_vivienda
 
 _MESES = {
     "enero": 1, "febrero": 2, "marzo": 3, "abril": 4, "mayo": 5, "junio": 6,
@@ -189,6 +189,7 @@ async def sync_from_sheet(db: AsyncSession, triggered_by: str = "manual") -> Syn
     filas_insertadas = 0
     filas_actualizadas = 0
     errores: list[dict[str, Any]] = []
+    nuevos: list[tuple[str | None, str | None, date | None]] = []
 
     if rows:
         headers = [(_clean_str(h) or "") for h in rows[0]]
@@ -209,6 +210,8 @@ async def sync_from_sheet(db: AsyncSession, triggered_by: str = "manual") -> Syn
                     is_new = await _upsert_compromiso(db, sheet_row_number, r)
                 filas_insertadas += is_new
                 filas_actualizadas += not is_new
+                if is_new:
+                    nuevos.append((localidad, departamento, _parse_date(r.get("Fecha de anuncio"))))
             except Exception as exc:  # una fila con error no debe frenar el resto del batch
                 errores.append({
                     "fila": sheet_row_number,
@@ -228,6 +231,13 @@ async def sync_from_sheet(db: AsyncSession, triggered_by: str = "manual") -> Syn
     )
     db.add(log)
     await db.flush()
+
+    # Fuera del SAVEPOINT por fila y después del log — no atar la llamada HTTP a
+    # svc-vivienda a la transacción de cada fila (ADR-023).
+    for loc, dep, fecha in nuevos:
+        await notificaciones_vivienda.notificar_visita_gobernador(
+            localidad=loc, departamento=dep, fecha_anuncio=fecha
+        )
 
     return SyncResultResponse(
         filas_leidas=filas_leidas,
