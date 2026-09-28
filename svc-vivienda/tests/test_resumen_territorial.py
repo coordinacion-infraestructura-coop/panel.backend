@@ -75,7 +75,10 @@ def test_ultima_comunicacion_elige_la_mas_reciente_por_fecha_y_created_at():
 
 
 def test_agrupar_por_localidad_une_por_nombre_normalizado_y_usa_grafia_del_geo():
-    geo = [{"departamento": "Santa María", "localidad": "Alta Gracia"}]
+    # id_geo siempre está en la realidad (es la PK de viv_geo_localidades) —
+    # sin él, ninguna línea sin id_geo propio (ej. Privada) puede resolverse
+    # por texto contra el padrón (ver docstring de agrupar_por_localidad).
+    geo = [{"departamento": "Santa María", "localidad": "Alta Gracia", "id_geo": "999"}]
     lineas = [
         {"departamento": "SANTA MARIA", "nombre_localidad": "ALTA GRACIA",
          "programa": {"area": "vivienda", "programa": "cordon_cuneta", "programa_label": "Cordón Cuneta y Adoquinado"}},
@@ -145,6 +148,24 @@ def test_agrupar_por_localidad_matchea_alias_del_padron_sin_id_geo():
     grupos = aggregations.agrupar_por_localidad(lineas, geo)
     assert len(grupos) == 1
     assert grupos[0]["localidad"] == "CHARRAS (Villa Colón)"
+
+
+def test_agrupar_por_localidad_privada_sin_id_geo_se_une_con_linea_resuelta():
+    """Bug real encontrado 2026-09-28: una línea sin id_geo propio (Privada,
+    que no participa de ADR-024) con texto IDÉNTICO a una línea ya resuelta
+    (Vivienda/Gasífera/ATP) no se unificaba — cada una usaba un namespace de
+    clave distinto (geo:<id> vs texto). Debe resolver contra el padrón y
+    terminar en el mismo grupo."""
+    geo = [{"departamento": "SAN JUSTO", "localidad": "ALICIA", "id_geo": "265"}]
+    lineas = [
+        {"departamento": "SAN JUSTO", "nombre_localidad": "ALICIA", "id_geo": "265",
+         "programa": {"area": "vivienda", "programa": "cordon_cuneta", "programa_label": "Cordón Cuneta y Adoquinado"}},
+        {"departamento": "SAN JUSTO", "nombre_localidad": "ALICIA",
+         "programa": {"area": "privada", "programa": "privada", "programa_label": "Privada"}},
+    ]
+    grupos = aggregations.agrupar_por_localidad(lineas, geo)
+    assert len(grupos) == 1
+    assert sorted(p["programa"] for p in grupos[0]["programas"]) == ["cordon_cuneta", "privada"]
 
 
 def test_agrupar_por_localidad_departamento_abreviado_matchea():

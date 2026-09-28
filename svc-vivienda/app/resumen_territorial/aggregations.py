@@ -220,33 +220,37 @@ def agrupar_por_localidad(
     vuelve `ResumenPrograma`. La clave de agrupación prioriza `id_geo` cuando
     la línea lo trae resuelto (Vivienda/Gasífera/ATP, ver ADR-024) — dos
     líneas con el mismo `id_geo` se agrupan aunque su texto crudo difiera.
-    Para líneas sin `id_geo` resuelto (Privada, o legado no backfillado) cae a
-    `(normalize_departamento(departamento), candidato)` probando cada variante
-    de `candidatos_localidad(nombre)` **contra ambos lados** — el nombre de la
-    línea de entrada y el nombre del padrón (una localidad del padrón con
-    alias entre paréntesis, ej. "CHARRAS (Villa Colón)", matchea aunque la
-    fuente sólo escriba "CHARRAS") — mismo criterio que
-    `informes/aggregations.py:puntos_mapa`. El departamento se compara con
-    `normalize_departamento` (colapsa abreviaturas tipo "General"/"Gral") en
-    vez de `normalize_name` a secas. El nombre de display prioriza la grafía
-    del padrón `viv_geo_localidades`.
+
+    Para líneas sin `id_geo` propio (Privada, que no participa de ADR-024, o
+    legado no backfillado) se intenta resolver contra el padrón por texto
+    — `(normalize_departamento(departamento), candidato)` probando cada
+    variante de `candidatos_localidad(nombre)` contra ambos lados — y, si
+    matchea, se usa el `id_geo` de ESE resultado como clave (mismo namespace
+    que las líneas ya resueltas). Esto es crítico: sin esto, una línea de
+    Privada con texto idéntico a una de Vivienda para la misma localidad real
+    (ej. "ALICIA" en depto "SAN JUSTO") NO se unificaba, porque una usaba
+    clave `geo:<id>` y la otra una clave de texto aparte — bug encontrado con
+    datos reales 2026-09-28. Sólo cuando el texto tampoco matchea nada del
+    padrón se cae a una clave puramente textual (`txt:...`), como antes.
+    El nombre de display siempre prioriza la grafía del padrón
+    `viv_geo_localidades` cuando hay un id_geo de por medio.
     """
     geo_por_id: dict[str, tuple[str | None, str]] = {}
-    geo_full: dict[tuple[str, str], tuple[str | None, str]] = {}
+    geo_full: dict[tuple[str, str], tuple[str, str | None, str]] = {}
     geo_depto: dict[str, str] = {}
     for g in geo_localidades:
         dep = g.get("departamento")
         loc = g.get("localidad")
+        g_id = g.get("id_geo")
         if not loc:
             continue
         dk = normalize_departamento(dep)
         for lk in candidatos_localidad(loc):
-            geo_full.setdefault((dk, lk), (dep, loc))
+            geo_full.setdefault((dk, lk), (g_id, dep, loc))
         if dep:
             geo_depto.setdefault(dk, dep)
-        id_geo = g.get("id_geo")
-        if id_geo:
-            geo_por_id.setdefault(id_geo, (dep, loc))
+        if g_id:
+            geo_por_id.setdefault(g_id, (dep, loc))
 
     grupos: dict[str, dict[str, Any]] = {}
     for linea in lineas:
@@ -254,21 +258,24 @@ def agrupar_por_localidad(
         loc_raw = linea["nombre_localidad"]
         id_geo = linea.get("id_geo")
 
+        if not id_geo:
+            # Sin id_geo propio: intentar resolver contra el padrón por texto
+            # antes de resignarse a una clave textual (ver docstring).
+            dk = normalize_departamento(dep_raw)
+            for candidato in candidatos_localidad(loc_raw):
+                match = geo_full.get((dk, candidato))
+                if match:
+                    id_geo = match[0]
+                    break
+
         if id_geo:
             key = f"geo:{id_geo}"
             dep_disp, loc_disp = geo_por_id.get(id_geo, (dep_raw, loc_raw))
         else:
             dk = normalize_departamento(dep_raw)
-            lk = dep_disp = loc_disp = None
-            for candidato in candidatos_localidad(loc_raw):
-                if (dk, candidato) in geo_full:
-                    lk = candidato
-                    dep_disp, loc_disp = geo_full[(dk, candidato)]
-                    break
-            if lk is None:
-                lk = normalize_name(loc_raw)
-                dep_disp = geo_depto.get(dk) or (dep_raw or None)
-                loc_disp = loc_raw
+            lk = normalize_name(loc_raw)
+            dep_disp = geo_depto.get(dk) or (dep_raw or None)
+            loc_disp = loc_raw
             key = f"txt:{dk}|{lk}"
 
         if key not in grupos:
