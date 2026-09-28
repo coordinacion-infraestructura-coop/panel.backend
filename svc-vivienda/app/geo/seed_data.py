@@ -38,3 +38,23 @@ ALIAS_MANUAL_SEED: list[dict] = [
     }
     for texto_original, id_geo, motivo, origen in _ALIAS_RAW
 ]
+
+# Encontrados al investigar el reporte de "General Baldissera apareciendo dos
+# veces" en Checklist Técnico (2026-09-28) — ver migración 0031. Typos reales
+# de una palabra/letra, no accent-only.
+_ALIAS_RAW_20260928: list[tuple[str, str | None, str, str]] = [
+    ("GENERAL BALDISERA", "109", "una sola 's' en Córdoba Hogar (padrón: GENERAL BALDISSERA)", "cordoba_hogar"),
+    ("LUXARDO", "291", "Córdoba Hogar omite 'Plaza' (padrón: PLAZA LUXARDO)", "cordoba_hogar"),
+]
+
+ALIAS_MANUAL_SEED_20260928: list[dict] = [
+    {
+        "texto_normalizado": normalize_name(texto_original),
+        "texto_original": texto_original,
+        "id_geo": id_geo,
+        "motivo": motivo,
+        "origen": origen,
+        "created_by": "migracion-spec-normalizacion-localidades",
+    }
+    for texto_original, id_geo, motivo, origen in _ALIAS_RAW_20260928
+]

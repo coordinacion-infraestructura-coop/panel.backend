@@ -134,6 +134,30 @@ def test_agrupar_por_localidad_sin_id_geo_cae_a_candidatos_localidad():
     assert grupos[0]["departamento"] == "Punilla"
 
 
+def test_agrupar_por_localidad_matchea_alias_del_padron_sin_id_geo():
+    """Línea sin id_geo cuyo nombre no trae alias, pero el padrón sí lo trae
+    entre paréntesis — debe matchear igual (bug real 2026-09-28)."""
+    geo = [{"departamento": "Juárez Celman", "localidad": "CHARRAS (Villa Colón)", "id_geo": "88"}]
+    lineas = [
+        {"departamento": "Juárez Celman", "nombre_localidad": "CHARRAS",
+         "programa": {"area": "vivienda", "programa": "cordon_cuneta", "programa_label": "Cordón Cuneta y Adoquinado"}},
+    ]
+    grupos = aggregations.agrupar_por_localidad(lineas, geo)
+    assert len(grupos) == 1
+    assert grupos[0]["localidad"] == "CHARRAS (Villa Colón)"
+
+
+def test_agrupar_por_localidad_departamento_abreviado_matchea():
+    geo = [{"departamento": "Gral Roca", "localidad": "Alguna Localidad", "id_geo": "1"}]
+    lineas = [
+        {"departamento": "General Roca", "nombre_localidad": "Alguna Localidad",
+         "programa": {"area": "vivienda", "programa": "cordoba_hogar", "programa_label": "Córdoba Hogar"}},
+    ]
+    grupos = aggregations.agrupar_por_localidad(lineas, geo)
+    assert len(grupos) == 1
+    assert grupos[0]["departamento"] == "Gral Roca"
+
+
 def test_resumen_privada_estado_y_detalle():
     assert aggregations.resumen_privada_estado({"FINALIZADA": 2, "ARCHIVADO": 1})["label"] == "Finalizadas"
     assert aggregations.resumen_privada_estado({"INGRESADO": 3})["label"] == "En curso"

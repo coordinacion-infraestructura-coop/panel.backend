@@ -11,7 +11,7 @@ from __future__ import annotations
 from typing import Any, Iterable
 
 from app.checklist_tecnico import catalog
-from app.geo.matching import candidatos_localidad, normalize_name
+from app.geo.matching import candidatos_localidad, normalize_departamento, normalize_name
 
 # ── Constantes de programa ────────────────────────────────────────────────────
 
@@ -221,10 +221,15 @@ def agrupar_por_localidad(
     la línea lo trae resuelto (Vivienda/Gasífera/ATP, ver ADR-024) — dos
     líneas con el mismo `id_geo` se agrupan aunque su texto crudo difiera.
     Para líneas sin `id_geo` resuelto (Privada, o legado no backfillado) cae a
-    `(normalize_name(departamento), candidato)` probando cada variante de
-    `candidatos_localidad(nombre)` contra el padrón — mismo criterio que
-    `informes/aggregations.py:puntos_mapa`. El nombre de display prioriza la
-    grafía del padrón `viv_geo_localidades`.
+    `(normalize_departamento(departamento), candidato)` probando cada variante
+    de `candidatos_localidad(nombre)` **contra ambos lados** — el nombre de la
+    línea de entrada y el nombre del padrón (una localidad del padrón con
+    alias entre paréntesis, ej. "CHARRAS (Villa Colón)", matchea aunque la
+    fuente sólo escriba "CHARRAS") — mismo criterio que
+    `informes/aggregations.py:puntos_mapa`. El departamento se compara con
+    `normalize_departamento` (colapsa abreviaturas tipo "General"/"Gral") en
+    vez de `normalize_name` a secas. El nombre de display prioriza la grafía
+    del padrón `viv_geo_localidades`.
     """
     geo_por_id: dict[str, tuple[str | None, str]] = {}
     geo_full: dict[tuple[str, str], tuple[str | None, str]] = {}
@@ -234,8 +239,9 @@ def agrupar_por_localidad(
         loc = g.get("localidad")
         if not loc:
             continue
-        dk, lk = normalize_name(dep), normalize_name(loc)
-        geo_full.setdefault((dk, lk), (dep, loc))
+        dk = normalize_departamento(dep)
+        for lk in candidatos_localidad(loc):
+            geo_full.setdefault((dk, lk), (dep, loc))
         if dep:
             geo_depto.setdefault(dk, dep)
         id_geo = g.get("id_geo")
@@ -252,7 +258,7 @@ def agrupar_por_localidad(
             key = f"geo:{id_geo}"
             dep_disp, loc_disp = geo_por_id.get(id_geo, (dep_raw, loc_raw))
         else:
-            dk = normalize_name(dep_raw)
+            dk = normalize_departamento(dep_raw)
             lk = dep_disp = loc_disp = None
             for candidato in candidatos_localidad(loc_raw):
                 if (dk, candidato) in geo_full:

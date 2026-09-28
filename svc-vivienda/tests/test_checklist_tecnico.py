@@ -4,6 +4,7 @@ import uuid
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.checklist_tecnico.models import (
@@ -486,6 +487,24 @@ async def test_listar_entidades_omite_borradas(
 @pytest.mark.asyncio
 async def test_listar_entidades_invitado_403(client_invitado: AsyncClient):
     assert (await client_invitado.get(f"{BASE}/entidades")).status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_listar_entidades_expone_id_geo_resuelto(
+    client_tecnico_dgv: AsyncClient, db_session: AsyncSession, municipio_cc: str
+):
+    """ADR-024: el frontend agrupa por id_geo cuando está disponible — el
+    selector debe exponerlo."""
+    municipio = (await db_session.execute(
+        select(MunicipioCordonCuneta).where(MunicipioCordonCuneta.id == municipio_cc)
+    )).scalar_one()
+    municipio.localidad_id = "109"
+    await db_session.flush()
+
+    r = await client_tecnico_dgv.get(f"{BASE}/entidades")
+    assert r.status_code == 200
+    entidad = next(e for e in r.json() if e["id"] == municipio_cc)
+    assert entidad["id_geo"] == "109"
 
 
 # ── Observaciones (pedidos) vía checklist — TecnicoDGV no puede pegarle a /{programa}/{id}/pedidos ──

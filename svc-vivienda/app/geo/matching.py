@@ -16,6 +16,18 @@ def normalize_name(s: str | None) -> str:
     return strip_accents(s).strip().lower()
 
 
+def normalize_departamento(s: str | None) -> str:
+    """Normaliza departamento para comparar: además de acentos/mayúsculas,
+    colapsa abreviaturas frecuentes ("General"->"Gral", "Presidente"->"Pte")
+    — mismo criterio ya confirmado contra datos reales en
+    spec-sync-atp-compromiso-gobernador.md §12.8 (27 casos). No se usa para
+    localidad — ahí "General" puede ser parte real del nombre propio."""
+    n = normalize_name(s)
+    n = re.sub(r"\bgeneral\b", "gral", n)
+    n = re.sub(r"\bpresidente\b", "pte", n)
+    return n
+
+
 def candidatos_localidad(nombre: str | None) -> set[str]:
     """Nombres normalizados candidatos para un nombre de localidad que puede
     traer un alias entre paréntesis o separado por guion — ej.

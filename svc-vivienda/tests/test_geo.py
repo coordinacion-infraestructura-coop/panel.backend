@@ -85,6 +85,39 @@ async def test_resolver_uno_manual_con_id_geo_completa_grafia_oficial(db_session
 
 
 @pytest.mark.asyncio
+async def test_resolver_uno_matchea_alias_del_padron_sin_alias_en_la_fuente(db_session: AsyncSession):
+    """El padrón puede traer su propio alias entre paréntesis (ej. "CHARRAS
+    (Villa Colón)") — una fuente que sólo escribe "CHARRAS" debe matchear
+    igual (bug real encontrado 2026-09-28, ver migración 0031)."""
+    from app.geo.models import GeoLocalidad
+    db_session.add(GeoLocalidad(
+        id_geo="88", departamento="Juárez Celman", localidad="CHARRAS (Villa Colón)", activo=True,
+    ))
+    await db_session.flush()
+    r = await geo_service.resolver_uno(db_session, "Juárez Celman", "CHARRAS")
+    assert r.id_geo == "88"
+    # "exacto" porque el texto de entrada no necesitó su propia expansión de
+    # alias (ver docstring de _cargar_padron) — el alias estaba del lado del
+    # padrón, no del lado de la fuente.
+    assert r.match_tipo == "exacto"
+
+
+@pytest.mark.asyncio
+async def test_resolver_uno_desambigua_con_departamento_abreviado(db_session: AsyncSession):
+    """normalize_departamento colapsa "General"->"Gral" para la desambiguación
+    por departamento — el Sheet suele traer el nombre completo, el padrón la
+    forma abreviada."""
+    from app.geo.models import GeoLocalidad
+    db_session.add_all([
+        GeoLocalidad(id_geo="1", departamento="Gral Roca", localidad="Homónima", activo=True),
+        GeoLocalidad(id_geo="2", departamento="Río Cuarto", localidad="Homónima", activo=True),
+    ])
+    await db_session.flush()
+    r = await geo_service.resolver_uno(db_session, "General Roca", "Homónima")
+    assert r.id_geo == "1"
+
+
+@pytest.mark.asyncio
 async def test_resolver_uno_sin_match(db_session: AsyncSession, geo_seed):
     r = await geo_service.resolver_uno(db_session, "Capital", "Localidad Inexistente")
     assert r.id_geo is None

@@ -322,7 +322,9 @@ async def listar_entidades(db: AsyncSession) -> list[EntidadListItem]:
         .order_by(MunicipioCordonCuneta.municipio)
     )
     for m in cc.scalars().all():
-        out.append(EntidadListItem(programa="cc", id=m.id, nombre=m.municipio, departamento=m.departamento))
+        out.append(EntidadListItem(
+            programa="cc", id=m.id, nombre=m.municipio, departamento=m.departamento, id_geo=m.localidad_id,
+        ))
 
     ch = await db.execute(
         select(LocalidadCordobaHogar)
@@ -330,7 +332,9 @@ async def listar_entidades(db: AsyncSession) -> list[EntidadListItem]:
         .order_by(LocalidadCordobaHogar.localidad)
     )
     for loc in ch.scalars().all():
-        out.append(EntidadListItem(programa="ch", id=loc.id, nombre=loc.localidad, departamento=loc.departamento))
+        out.append(EntidadListItem(
+            programa="ch", id=loc.id, nombre=loc.localidad, departamento=loc.departamento, id_geo=loc.localidad_id,
+        ))
 
     ml = await db.execute(
         select(ProyectoML)
@@ -344,6 +348,7 @@ async def listar_entidades(db: AsyncSession) -> list[EntidadListItem]:
                 id=p.id,
                 nombre=p.nombre or p.localidad_nombre,
                 departamento=p.departamento,
+                id_geo=p.localidad_id,
             )
         )
 

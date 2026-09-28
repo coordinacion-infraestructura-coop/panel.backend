@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.geo.matching import candidatos_localidad, normalize_name
+from app.geo.matching import candidatos_localidad, normalize_departamento, normalize_name
 from app.geo.models import GeoAliasManual, GeoLocalidad
 
 
@@ -29,13 +29,20 @@ class LocalidadResuelta:
 
 
 async def _cargar_padron(db: AsyncSession) -> tuple[dict[str, list[GeoLocalidad]], dict[str, GeoLocalidad]]:
+    """Indexa el padrón no sólo por su nombre normalizado exacto, sino por
+    todos los candidatos de `candidatos_localidad()` (alias entre paréntesis
+    o separados por guion en el propio nombre del padrón, ej. "CHARRAS (Villa
+    Colón)") — así una fuente que sólo escribe "CHARRAS" también matchea.
+    Antes esto sólo se expandía del lado del nombre de entrada, nunca del
+    lado del padrón (bug encontrado con datos reales, 2026-09-28)."""
     rows = (await db.execute(select(GeoLocalidad))).scalars().all()
     por_nombre: dict[str, list[GeoLocalidad]] = {}
     por_id: dict[str, GeoLocalidad] = {}
     for g in rows:
         por_id[g.id_geo] = g
         if g.activo:
-            por_nombre.setdefault(normalize_name(g.localidad), []).append(g)
+            for key in candidatos_localidad(g.localidad):
+                por_nombre.setdefault(key, []).append(g)
     return por_nombre, por_id
 
 
@@ -51,8 +58,8 @@ def _elegir(candidatos: list[GeoLocalidad], departamento_in: str | None) -> GeoL
     if len(candidatos) == 1:
         return candidatos[0]
     if departamento_in:
-        dep_norm = normalize_name(departamento_in)
-        exactos = [g for g in candidatos if normalize_name(g.departamento) == dep_norm]
+        dep_norm = normalize_departamento(departamento_in)
+        exactos = [g for g in candidatos if normalize_departamento(g.departamento) == dep_norm]
         if len(exactos) == 1:
             return exactos[0]
     return None

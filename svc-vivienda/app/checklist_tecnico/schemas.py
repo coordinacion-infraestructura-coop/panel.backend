@@ -118,6 +118,9 @@ class EntidadListItem(BaseModel):
     id: str
     nombre: str
     departamento: str | None
+    # Resuelto contra viv_geo_localidades (ADR-024) — permite al frontend agrupar
+    # la misma localidad real entre CC/CH/ML aunque el texto crudo difiera.
+    id_geo: str | None = None
 
 
 class ChecklistPedidoCreate(BaseModel):
