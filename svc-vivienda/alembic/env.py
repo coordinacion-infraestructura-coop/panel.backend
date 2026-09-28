@@ -38,7 +38,7 @@ from app.cordoba_hogar.models import (
     LocalidadCordobaHogar,
     PedidoCordobaHogar,
 )
-from app.geo.models import GeoLocalidad
+from app.geo.models import GeoAliasManual, GeoLocalidad
 from app.informes.models import InformeSnapshot
 from app.resumen_territorial.models import ResumenTerritorialSnapshot
 from app.mi_lugar.models import (

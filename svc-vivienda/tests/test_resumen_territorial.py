@@ -101,6 +101,39 @@ def test_agrupar_por_localidad_dos_proyectos_ml_en_una_localidad_son_dos_lineas(
     assert sorted(p["detalle"] for p in grupos[0]["programas"]) == ["Loteo Norte", "Loteo Sur"]
 
 
+def test_agrupar_por_localidad_prioriza_id_geo_sobre_texto_crudo():
+    """ADR-024: dos líneas con el mismo id_geo se agrupan aunque el texto
+    crudo difiera en tildes/mayúsculas — sin depender de que el matching de
+    texto sea exhaustivo."""
+    geo = [{"departamento": "Río Cuarto", "localidad": "Paso del Durazno", "id_geo": "443"}]
+    lineas = [
+        {"departamento": "Juárez Celman", "nombre_localidad": "Paso Del Durazno", "id_geo": "443",
+         "programa": {"area": "vivienda", "programa": "cordon_cuneta", "programa_label": "Cordón Cuneta y Adoquinado"}},
+        {"departamento": "RIO CUARTO", "nombre_localidad": "PASO DEL DURAZNO", "id_geo": "443",
+         "programa": {"area": "gasifera", "programa": "gas_pit", "programa_label": "PIT Gas"}},
+    ]
+    grupos = aggregations.agrupar_por_localidad(lineas, geo)
+    assert len(grupos) == 1
+    assert grupos[0]["localidad"] == "Paso del Durazno"
+    assert grupos[0]["departamento"] == "Río Cuarto"
+    assert [p["programa"] for p in grupos[0]["programas"]] == ["cordon_cuneta", "gas_pit"]
+
+
+def test_agrupar_por_localidad_sin_id_geo_cae_a_candidatos_localidad():
+    """Línea sin `id_geo` (ej. Privada) sigue matcheando contra el padrón vía
+    alias entre paréntesis/guion (`candidatos_localidad`), no sólo el nombre
+    exacto — a diferencia del comportamiento previo a ADR-024."""
+    geo = [{"departamento": "Punilla", "localidad": "Icho Cruz", "id_geo": "158"}]
+    lineas = [
+        {"departamento": "Punilla", "nombre_localidad": "Villa Río Icho Cruz - Icho Cruz",
+         "programa": {"area": "privada", "programa": "privada", "programa_label": "Privada"}},
+    ]
+    grupos = aggregations.agrupar_por_localidad(lineas, geo)
+    assert len(grupos) == 1
+    assert grupos[0]["localidad"] == "Icho Cruz"
+    assert grupos[0]["departamento"] == "Punilla"
+
+
 def test_resumen_privada_estado_y_detalle():
     assert aggregations.resumen_privada_estado({"FINALIZADA": 2, "ARCHIVADO": 1})["label"] == "Finalizadas"
     assert aggregations.resumen_privada_estado({"INGRESADO": 3})["label"] == "En curso"

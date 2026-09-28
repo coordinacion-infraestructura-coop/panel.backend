@@ -32,6 +32,7 @@ from app.cordon_cuneta.schemas import (
     PresupuestoUpdate,
 )
 from app.cordon_cuneta.seed_data import ESTADOS_SEED, MUNICIPIOS_SEED
+from app.geo import service as geo_service
 from app.geo.models import GeoLocalidad
 
 
@@ -190,6 +191,11 @@ async def actualizar_municipio(
     if fecha_cambio is not None:
         municipio.updated_at = datetime.combine(fecha_cambio, dtime(12, 0, 0), tzinfo=timezone.utc)
 
+    if "municipio" in updates or "departamento" in updates:
+        resuelto = await geo_service.resolver_uno(db, municipio.departamento, municipio.municipio)
+        municipio.localidad_id = resuelto.id_geo
+        municipio.localidad_match_tipo = resuelto.match_tipo
+
     await db.flush()
 
     for entry in historial:
@@ -208,16 +214,35 @@ async def actualizar_municipio(
     return MunicipioResponse.model_validate(municipio)
 
 
-async def crear_municipio(
-    db: AsyncSession, data: MunicipioCreate, actor: AuthUser
-) -> MunicipioResponse:
+async def _buscar_duplicado_cc(
+    db: AsyncSession, municipio_raw: str, departamento_raw: str | None, id_geo: str | None
+) -> MunicipioCordonCuneta | None:
     existing = (await db.execute(
         select(MunicipioCordonCuneta).where(
-            func.lower(MunicipioCordonCuneta.municipio) == data.municipio.strip().lower(),
-            func.lower(MunicipioCordonCuneta.departamento) == (data.departamento or '').strip().lower(),
+            func.lower(MunicipioCordonCuneta.municipio) == municipio_raw.strip().lower(),
+            func.lower(MunicipioCordonCuneta.departamento) == (departamento_raw or '').strip().lower(),
             MunicipioCordonCuneta.deleted_at.is_(None),
         )
     )).scalar_one_or_none()
+    if existing is not None or not id_geo:
+        return existing
+    # No matcheó por texto (mayúsc/minúsc) pero sí resolvió a la misma localidad
+    # oficial que un registro activo existente (ej. variante con/sin tilde) —
+    # ver ADR-024/spec-normalizacion-localidades.md §4.7.
+    return (await db.execute(
+        select(MunicipioCordonCuneta).where(
+            MunicipioCordonCuneta.localidad_id == id_geo,
+            MunicipioCordonCuneta.deleted_at.is_(None),
+        )
+    )).scalar_one_or_none()
+
+
+async def crear_municipio(
+    db: AsyncSession, data: MunicipioCreate, actor: AuthUser
+) -> MunicipioResponse:
+    resuelto = await geo_service.resolver_uno(db, data.departamento, data.municipio)
+
+    existing = await _buscar_duplicado_cc(db, data.municipio, data.departamento, resuelto.id_geo)
     if existing:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -236,6 +261,8 @@ async def crear_municipio(
         orden=max_orden + 1,
         municipio=data.municipio,
         departamento=data.departamento,
+        localidad_id=resuelto.id_geo,
+        localidad_match_tipo=resuelto.match_tipo,
         expediente=data.expediente,
         monto=data.monto,
         ok_gob=data.ok_gob,
@@ -252,13 +279,7 @@ async def crear_municipio(
         # a tiempo, pero la constraint única de DB sí lo bloqueó. Traducimos a
         # el mismo 409 legible en vez de dejar subir un 500 genérico.
         await db.rollback()
-        existing = (await db.execute(
-            select(MunicipioCordonCuneta).where(
-                func.lower(MunicipioCordonCuneta.municipio) == data.municipio.strip().lower(),
-                func.lower(MunicipioCordonCuneta.departamento) == (data.departamento or '').strip().lower(),
-                MunicipioCordonCuneta.deleted_at.is_(None),
-            )
-        )).scalar_one_or_none()
+        existing = await _buscar_duplicado_cc(db, data.municipio, data.departamento, resuelto.id_geo)
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={

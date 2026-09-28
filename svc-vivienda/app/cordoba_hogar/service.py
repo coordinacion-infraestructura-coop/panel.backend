@@ -32,6 +32,7 @@ from app.cordoba_hogar.schemas import (
     PresupuestoUpdate,
 )
 from app.cordoba_hogar.seed_data import ESTADOS_SEED, LOCALIDADES_SEED
+from app.geo import service as geo_service
 from app.geo.models import GeoLocalidad
 
 
@@ -193,6 +194,11 @@ async def actualizar_localidad(
     if fecha_cambio is not None:
         localidad.updated_at = datetime.combine(fecha_cambio, dtime(12, 0, 0), tzinfo=timezone.utc)
 
+    if "localidad" in updates or "departamento" in updates:
+        resuelto = await geo_service.resolver_uno(db, localidad.departamento, localidad.localidad)
+        localidad.localidad_id = resuelto.id_geo
+        localidad.localidad_match_tipo = resuelto.match_tipo
+
     await db.flush()
 
     for entry in historial:
@@ -211,16 +217,35 @@ async def actualizar_localidad(
     return LocalidadResponse.model_validate(localidad)
 
 
-async def crear_localidad(
-    db: AsyncSession, data: LocalidadCreate, actor: AuthUser
-) -> LocalidadResponse:
+async def _buscar_duplicado_ch(
+    db: AsyncSession, localidad_raw: str, departamento_raw: str | None, id_geo: str | None
+) -> LocalidadCordobaHogar | None:
     existing = (await db.execute(
         select(LocalidadCordobaHogar).where(
-            func.lower(LocalidadCordobaHogar.localidad) == data.localidad.strip().lower(),
-            func.lower(LocalidadCordobaHogar.departamento) == (data.departamento or '').strip().lower(),
+            func.lower(LocalidadCordobaHogar.localidad) == localidad_raw.strip().lower(),
+            func.lower(LocalidadCordobaHogar.departamento) == (departamento_raw or '').strip().lower(),
             LocalidadCordobaHogar.deleted_at.is_(None),
         )
     )).scalar_one_or_none()
+    if existing is not None or not id_geo:
+        return existing
+    # No matcheó por texto (mayúsc/minúsc) pero sí resolvió a la misma localidad
+    # oficial que un registro activo existente (ej. variante con/sin tilde) —
+    # ver ADR-024/spec-normalizacion-localidades.md §4.7.
+    return (await db.execute(
+        select(LocalidadCordobaHogar).where(
+            LocalidadCordobaHogar.localidad_id == id_geo,
+            LocalidadCordobaHogar.deleted_at.is_(None),
+        )
+    )).scalar_one_or_none()
+
+
+async def crear_localidad(
+    db: AsyncSession, data: LocalidadCreate, actor: AuthUser
+) -> LocalidadResponse:
+    resuelto = await geo_service.resolver_uno(db, data.departamento, data.localidad)
+
+    existing = await _buscar_duplicado_ch(db, data.localidad, data.departamento, resuelto.id_geo)
     if existing:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -239,6 +264,8 @@ async def crear_localidad(
         orden=max_orden + 1,
         localidad=data.localidad,
         departamento=data.departamento,
+        localidad_id=resuelto.id_geo,
+        localidad_match_tipo=resuelto.match_tipo,
         fecha_anuncio=data.fecha_anuncio,
         expediente=data.expediente,
         monto=data.monto,
@@ -257,13 +284,7 @@ async def crear_localidad(
         # a tiempo, pero la constraint única de DB sí lo bloqueó. Traducimos a
         # el mismo 409 legible en vez de dejar subir un 500 genérico.
         await db.rollback()
-        existing = (await db.execute(
-            select(LocalidadCordobaHogar).where(
-                func.lower(LocalidadCordobaHogar.localidad) == data.localidad.strip().lower(),
-                func.lower(LocalidadCordobaHogar.departamento) == (data.departamento or '').strip().lower(),
-                LocalidadCordobaHogar.deleted_at.is_(None),
-            )
-        )).scalar_one_or_none()
+        existing = await _buscar_duplicado_ch(db, data.localidad, data.departamento, resuelto.id_geo)
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={

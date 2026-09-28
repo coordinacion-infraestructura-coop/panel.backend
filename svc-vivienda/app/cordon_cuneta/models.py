@@ -27,6 +27,11 @@ class MunicipioCordonCuneta(Base):
     orden: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     municipio: Mapped[str] = mapped_column(String(150), nullable=False)
     departamento: Mapped[str | None] = mapped_column(String(100))
+    # Resuelto automáticamente contra viv_geo_localidades al crear/editar (ADR-024,
+    # spec-normalizacion-localidades.md §4.9) — en paralelo al texto libre, nunca
+    # bloquea el alta si no hay match.
+    localidad_id: Mapped[str | None] = mapped_column(String(20), ForeignKey("viv_geo_localidades.id_geo"))
+    localidad_match_tipo: Mapped[str | None] = mapped_column(String(20))
     expediente: Mapped[str | None] = mapped_column(String(60))
     monto: Mapped[float | None] = mapped_column(Numeric(18, 2))
     ok_gob: Mapped[str] = mapped_column(String(20), nullable=False, default="SI")

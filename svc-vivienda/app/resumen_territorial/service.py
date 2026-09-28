@@ -38,7 +38,7 @@ _VER_TODO = ("Admin", "Autoridad")
 async def _geo_rows(db: AsyncSession) -> list[dict]:
     result = await db.execute(select(GeoLocalidad))
     return [
-        {"departamento": g.departamento, "localidad": g.localidad}
+        {"departamento": g.departamento, "localidad": g.localidad, "id_geo": g.id_geo}
         for g in result.scalars().all()
     ]
 
@@ -152,7 +152,12 @@ async def compute_resumen_territorial(db: AsyncSession) -> ResumenTerritorialPay
             "monto": float(entidad.monto) if entidad.monto is not None else None,
             "expediente": entidad.expediente,
         }
-        return {"departamento": entidad.departamento, "nombre_localidad": nombre, "programa": prog}
+        return {
+            "departamento": entidad.departamento,
+            "nombre_localidad": nombre,
+            "id_geo": entidad.localidad_id,
+            "programa": prog,
+        }
 
     lineas: list[dict] = []
     for m in cc_rows:
@@ -443,7 +448,10 @@ def _map_gasifera_payload(data) -> list[dict]:
             "monto": float(monto) if monto is not None else None,
             "expediente": None,
         }
-        lineas.append({"departamento": r.get("departamento"), "nombre_localidad": loc, "programa": prog})
+        lineas.append({
+            "departamento": r.get("departamento"), "nombre_localidad": loc,
+            "id_geo": r.get("id_geo"), "programa": prog,
+        })
     return lineas
 
 
@@ -527,7 +535,10 @@ def _map_atp_payload(data) -> list[dict]:
             "monto": float(monto_total) if monto_total is not None else None,
             "expediente": None,
         }
-        lineas.append({"departamento": r.get("departamento"), "nombre_localidad": loc, "programa": prog})
+        lineas.append({
+            "departamento": r.get("departamento"), "nombre_localidad": loc,
+            "id_geo": r.get("id_geo"), "programa": prog,
+        })
     return lineas
 
 

@@ -352,3 +352,37 @@ async def test_crear_localidad_duplicada_devuelve_409(client: AsyncClient):
     assert r.status_code == 409
     assert r.json()["detail"]["code"] == "LOCALIDAD_DUPLICADA"
     assert "existing_id" in r.json()["detail"]
+
+
+# ── Resolución de localidad_id (ADR-024) ─────────────────────────────────────
+
+@pytest_asyncio.fixture
+async def geo_san_jose(db_session: AsyncSession):
+    from app.geo.models import GeoLocalidad
+    db_session.add(GeoLocalidad(id_geo="777", departamento="Tulumba", localidad="San José", activo=True))
+    await db_session.flush()
+
+
+@pytest.mark.asyncio
+async def test_crear_localidad_resuelve_localidad_id(client: AsyncClient, geo_san_jose):
+    r = await client.post(BASE, json={"localidad": "San José", "departamento": "Tulumba"})
+    assert r.status_code == 201
+    data = r.json()
+    assert data["localidad_id"] == "777"
+    assert data["localidad_match_tipo"] == "exacto"
+
+
+@pytest.mark.asyncio
+async def test_crear_localidad_duplicada_por_tilde_devuelve_409(client: AsyncClient, geo_san_jose):
+    r1 = await client.post(BASE, json={"localidad": "San José", "departamento": "Tulumba"})
+    assert r1.status_code == 201
+    r2 = await client.post(BASE, json={"localidad": "San Jose", "departamento": "Tulumba"})
+    assert r2.status_code == 409
+    assert r2.json()["detail"]["code"] == "LOCALIDAD_DUPLICADA"
+
+
+@pytest.mark.asyncio
+async def test_actualizar_localidad_recalcula_localidad_id(client: AsyncClient, localidad_id: str, geo_san_jose):
+    r = await client.patch(f"{BASE}/{localidad_id}", json={"localidad": "San José", "departamento": "Tulumba"})
+    assert r.status_code == 200
+    assert r.json()["localidad_id"] == "777"

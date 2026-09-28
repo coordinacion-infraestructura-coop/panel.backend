@@ -21,7 +21,7 @@ from app.atp.schemas import (
     SyncStatusResponse,
 )
 from app.config import settings
-from app.integrations import google_sheets, notificaciones_vivienda
+from app.integrations import geo_resolver, google_sheets, notificaciones_vivienda
 
 _MESES = {
     "enero": 1, "febrero": 2, "marzo": 3, "abril": 4, "mayo": 5, "junio": 6,
@@ -110,7 +110,9 @@ def _row_dict(headers: list[str], row: list[Any]) -> dict[str, Any]:
 
 # ── Upsert: atp_compromisos (+ cronograma) ────────────────────────────────────
 
-async def _upsert_compromiso(db: AsyncSession, sheet_row_number: int, r: dict[str, Any]) -> bool:
+async def _upsert_compromiso(
+    db: AsyncSession, sheet_row_number: int, r: dict[str, Any]
+) -> tuple[bool, AtpCompromiso]:
     existing = (
         await db.execute(select(AtpCompromiso).where(AtpCompromiso.sheet_row_number == sheet_row_number))
     ).scalar_one_or_none()
@@ -147,7 +149,7 @@ async def _upsert_compromiso(db: AsyncSession, sheet_row_number: int, r: dict[st
         db.add(AtpCronogramaPago(compromiso_id=compromiso.id, periodo=periodo, monto=monto_mes))
     await db.flush()
 
-    return is_new
+    return is_new, compromiso
 
 
 class SheetReadError(Exception):
@@ -190,6 +192,9 @@ async def sync_from_sheet(db: AsyncSession, triggered_by: str = "manual") -> Syn
     filas_actualizadas = 0
     errores: list[dict[str, Any]] = []
     nuevos: list[tuple[str | None, str | None, date | None]] = []
+    # (fila, departamento, localidad) — resuelto en batch al final de la
+    # corrida (ADR-024, §4.5), nunca fila por fila.
+    pendientes_geo: list[tuple[AtpCompromiso, str | None, str | None]] = []
 
     if rows:
         headers = [(_clean_str(h) or "") for h in rows[0]]
@@ -207,16 +212,29 @@ async def sync_from_sheet(db: AsyncSession, triggered_by: str = "manual") -> Syn
                 # SAVEPOINT por fila — ver spec §4 / lección de
                 # spec-sync-cc-checklist-tecnico.md §13.5.
                 async with db.begin_nested():
-                    is_new = await _upsert_compromiso(db, sheet_row_number, r)
+                    is_new, compromiso = await _upsert_compromiso(db, sheet_row_number, r)
                 filas_insertadas += is_new
                 filas_actualizadas += not is_new
                 if is_new:
                     nuevos.append((localidad, departamento, _parse_date(r.get("Fecha de anuncio"))))
+                pendientes_geo.append((compromiso, departamento, localidad))
             except Exception as exc:  # una fila con error no debe frenar el resto del batch
                 errores.append({
                     "fila": sheet_row_number,
                     "motivo": f"'{localidad or departamento}': error al procesar la fila ({exc})",
                 })
+
+    # Resolución de localidades en batch — una sola llamada a svc-vivienda para
+    # toda la corrida (ADR-024), no una por fila. Best-effort: si falla, las
+    # filas quedan con id_geo/match_tipo = None sin abortar el sync.
+    if pendientes_geo:
+        resultados_geo = await geo_resolver.resolver_localidades(
+            [(dep, loc) for _, dep, loc in pendientes_geo]
+        )
+        for (row_obj, _, _), (id_geo, match_tipo) in zip(pendientes_geo, resultados_geo):
+            row_obj.id_geo = id_geo
+            row_obj.match_tipo = match_tipo
+        await db.flush()
 
     finished_at = datetime.now(timezone.utc)
     log = AtpSyncLog(

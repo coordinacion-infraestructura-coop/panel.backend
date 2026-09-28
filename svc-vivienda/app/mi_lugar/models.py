@@ -29,6 +29,10 @@ class ProyectoML(Base):
     tipo: Mapped[str] = mapped_column(String(10))  # 'exp'|'muni'|'prov' — sin CHECK constraint
     nombre: Mapped[str] = mapped_column(String(200))
     localidad_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("viv_geo_localidades.id_geo"))
+    # Poblado por backfill (spec-normalizacion-localidades.md §4.9, ADR-024) para las
+    # filas resueltas después del hecho — el alta/edición de ML no lo setea todavía
+    # (fuera de alcance de esa spec, ver §2 excluido).
+    localidad_match_tipo: Mapped[str | None] = mapped_column(String(20))
     localidad_nombre: Mapped[str] = mapped_column(String(150))
     departamento: Mapped[str | None] = mapped_column(String(100))
     expediente: Mapped[str | None] = mapped_column(String(80))

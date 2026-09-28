@@ -88,6 +88,10 @@ class GasPitObraLocalidad(Base):
         String(36), ForeignKey("gas_pit_obras.id", ondelete="CASCADE"), nullable=False
     )
     localidad: Mapped[str] = mapped_column(String(150), nullable=False)
+    # Resuelto en sync-time contra el padrón de svc-vivienda (ADR-024,
+    # spec-normalizacion-localidades.md §4.5) — texto, no FK real (cross-DB).
+    id_geo: Mapped[str | None] = mapped_column(String(20))
+    match_tipo: Mapped[str | None] = mapped_column(String(20))
 
 
 class GasPitAccionTerritorio(Base):
@@ -113,6 +117,10 @@ class GasPitAccionTerritorio(Base):
     # antipatrón detectado en el análisis, ver spec §5.3).
     monto_inversion_usd: Mapped[float | None] = mapped_column(Numeric(18, 2))
     alerta_localidad: Mapped[str | None] = mapped_column(String(200))
+    # Resuelto en sync-time contra el padrón de svc-vivienda (ADR-024,
+    # spec-normalizacion-localidades.md §4.5) — texto, no FK real (cross-DB).
+    id_geo: Mapped[str | None] = mapped_column(String(20))
+    match_tipo: Mapped[str | None] = mapped_column(String(20))
     # Única clave natural razonable en esta hoja (no hay combinación de columnas de
     # negocio que garantice unicidad) — sensible a reordenamiento manual de filas en
     # el Sheet, riesgo aceptado y documentado en el spec (§6).

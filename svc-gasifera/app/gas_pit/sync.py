@@ -29,7 +29,7 @@ from app.gas_pit.schemas import (
     SyncResultResponse,
     SyncStatusResponse,
 )
-from app.integrations import google_sheets, notificaciones_vivienda
+from app.integrations import geo_resolver, google_sheets, notificaciones_vivienda
 
 SUB_TIPO_GAS = "E- OBRAS DE GAS"
 
@@ -146,7 +146,9 @@ def _row_dict(headers: list[str], row: list[Any]) -> dict[str, Any]:
 
 # ── Upsert: gas_pit_obras (+ localidades) ──────────────────────────────────────
 
-async def _upsert_obra(db: AsyncSession, sheet_row_number: int, r: dict[str, Any]) -> bool:
+async def _upsert_obra(
+    db: AsyncSession, sheet_row_number: int, r: dict[str, Any]
+) -> tuple[bool, list[GasPitObraLocalidad]]:
     nombre_obra = _clean_str(r.get("NOMBRE DE OBRA"))
     departamento = _clean_str(r.get("DEPARTAMENTO"))
     nombre_norm = nombre_obra.strip().lower()
@@ -201,17 +203,22 @@ async def _upsert_obra(db: AsyncSession, sheet_row_number: int, r: dict[str, Any
 
     await db.execute(delete(GasPitObraLocalidad).where(GasPitObraLocalidad.obra_id == obra.id))
     localidad_raw = _clean_str(r.get("LOCALIDAD")) or ""
+    localidades_creadas: list[GasPitObraLocalidad] = []
     for localidad in _split_localidades(localidad_raw):
         if localidad:
-            db.add(GasPitObraLocalidad(obra_id=obra.id, localidad=localidad))
+            loc_obj = GasPitObraLocalidad(obra_id=obra.id, localidad=localidad)
+            db.add(loc_obj)
+            localidades_creadas.append(loc_obj)
     await db.flush()
 
-    return is_new
+    return is_new, localidades_creadas
 
 
 # ── Upsert: gas_pit_acciones_territorio ────────────────────────────────────────
 
-async def _upsert_accion(db: AsyncSession, sheet_row_number: int, r: dict[str, Any]) -> bool:
+async def _upsert_accion(
+    db: AsyncSession, sheet_row_number: int, r: dict[str, Any]
+) -> tuple[bool, GasPitAccionTerritorio]:
     existing = (
         await db.execute(
             select(GasPitAccionTerritorio).where(
@@ -251,7 +258,7 @@ async def _upsert_accion(db: AsyncSession, sheet_row_number: int, r: dict[str, A
         db.add(accion)
     await db.flush()
 
-    return is_new
+    return is_new, accion
 
 
 class SheetReadError(Exception):
@@ -299,6 +306,9 @@ async def sync_from_sheet(db: AsyncSession, triggered_by: str = "manual") -> Syn
     filas_actualizadas = 0
     errores: list[dict[str, Any]] = []
     nuevas_acciones: list[tuple[str | None, str | None, str | None]] = []
+    # (fila con id_geo/match_tipo, departamento, localidad) — resuelto en batch
+    # al final de la corrida (ADR-024, §4.5), nunca fila por fila.
+    pendientes_geo: list[tuple[Any, str | None, str | None]] = []
 
     # ── MATRIZ (NO TOMAR), filtrada a obras de gas ──
     if matriz_rows:
@@ -318,9 +328,12 @@ async def sync_from_sheet(db: AsyncSession, triggered_by: str = "manual") -> Syn
                 # SAVEPOINT por fila — ver spec §7 / lección de
                 # spec-sync-cc-checklist-tecnico.md §13.5.
                 async with db.begin_nested():
-                    is_new = await _upsert_obra(db, sheet_row_number, r)
+                    is_new, localidades_creadas = await _upsert_obra(db, sheet_row_number, r)
                 filas_insertadas += is_new
                 filas_actualizadas += not is_new
+                departamento_obra = _clean_str(r.get("DEPARTAMENTO"))
+                for loc_obj in localidades_creadas:
+                    pendientes_geo.append((loc_obj, departamento_obra, loc_obj.localidad))
             except Exception as exc:  # una fila con error no debe frenar el resto del batch
                 errores.append({
                     "fila": sheet_row_number, "hoja": "MATRIZ (NO TOMAR)",
@@ -342,16 +355,29 @@ async def sync_from_sheet(db: AsyncSession, triggered_by: str = "manual") -> Syn
             filas_leidas += 1
             try:
                 async with db.begin_nested():
-                    is_new = await _upsert_accion(db, sheet_row_number, r)
+                    is_new, accion_obj = await _upsert_accion(db, sheet_row_number, r)
                 filas_insertadas += is_new
                 filas_actualizadas += not is_new
                 if is_new:
                     nuevas_acciones.append((localidad, departamento, accion))
+                pendientes_geo.append((accion_obj, departamento, localidad))
             except Exception as exc:
                 errores.append({
                     "fila": sheet_row_number, "hoja": "ACCIONES TERRITORIO",
                     "motivo": f"'{localidad or accion}': error al procesar la fila ({exc})",
                 })
+
+    # Resolución de localidades en batch — una sola llamada a svc-vivienda para
+    # toda la corrida (ADR-024), no una por fila. Best-effort: si falla, las
+    # filas quedan con id_geo/match_tipo = None sin abortar el sync.
+    if pendientes_geo:
+        resultados_geo = await geo_resolver.resolver_localidades(
+            [(dep, loc) for _, dep, loc in pendientes_geo]
+        )
+        for (row_obj, _, _), (id_geo, match_tipo) in zip(pendientes_geo, resultados_geo):
+            row_obj.id_geo = id_geo
+            row_obj.match_tipo = match_tipo
+        await db.flush()
 
     finished_at = datetime.now(timezone.utc)
     log = GasPitSyncLog(

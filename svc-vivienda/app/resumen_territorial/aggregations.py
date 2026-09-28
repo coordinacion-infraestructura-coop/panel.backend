@@ -11,7 +11,7 @@ from __future__ import annotations
 from typing import Any, Iterable
 
 from app.checklist_tecnico import catalog
-from app.geo.matching import normalize_name
+from app.geo.matching import candidatos_localidad, normalize_name
 
 # ── Constantes de programa ────────────────────────────────────────────────────
 
@@ -216,12 +216,18 @@ def agrupar_por_localidad(
     """Agrupa líneas de programa por localidad.
 
     Cada `linea` es `{"departamento": str|None, "nombre_localidad": str,
-    "programa": {...}}` donde `programa` es el dict que se vuelve `ResumenPrograma`.
-    La clave de agrupación es `(normalize_name(departamento), normalize_name(nombre))`
-    (mismo criterio que `informes/aggregations.py:puntos_mapa`). El nombre de
-    display prioriza la grafía del padrón `viv_geo_localidades`.
+    "id_geo": str|None, "programa": {...}}` donde `programa` es el dict que se
+    vuelve `ResumenPrograma`. La clave de agrupación prioriza `id_geo` cuando
+    la línea lo trae resuelto (Vivienda/Gasífera/ATP, ver ADR-024) — dos
+    líneas con el mismo `id_geo` se agrupan aunque su texto crudo difiera.
+    Para líneas sin `id_geo` resuelto (Privada, o legado no backfillado) cae a
+    `(normalize_name(departamento), candidato)` probando cada variante de
+    `candidatos_localidad(nombre)` contra el padrón — mismo criterio que
+    `informes/aggregations.py:puntos_mapa`. El nombre de display prioriza la
+    grafía del padrón `viv_geo_localidades`.
     """
-    geo_full: dict[tuple[str, str], tuple[str, str]] = {}
+    geo_por_id: dict[str, tuple[str | None, str]] = {}
+    geo_full: dict[tuple[str, str], tuple[str | None, str]] = {}
     geo_depto: dict[str, str] = {}
     for g in geo_localidades:
         dep = g.get("departamento")
@@ -232,19 +238,34 @@ def agrupar_por_localidad(
         geo_full.setdefault((dk, lk), (dep, loc))
         if dep:
             geo_depto.setdefault(dk, dep)
+        id_geo = g.get("id_geo")
+        if id_geo:
+            geo_por_id.setdefault(id_geo, (dep, loc))
 
-    grupos: dict[tuple[str, str], dict[str, Any]] = {}
+    grupos: dict[str, dict[str, Any]] = {}
     for linea in lineas:
         dep_raw = linea.get("departamento")
         loc_raw = linea["nombre_localidad"]
-        dk, lk = normalize_name(dep_raw), normalize_name(loc_raw)
-        key = (dk, lk)
-        if key not in grupos:
-            dep_disp, loc_disp = geo_full.get(key, (None, None))
-            if loc_disp is None:
-                loc_disp = loc_raw
-            if dep_disp is None:
+        id_geo = linea.get("id_geo")
+
+        if id_geo:
+            key = f"geo:{id_geo}"
+            dep_disp, loc_disp = geo_por_id.get(id_geo, (dep_raw, loc_raw))
+        else:
+            dk = normalize_name(dep_raw)
+            lk = dep_disp = loc_disp = None
+            for candidato in candidatos_localidad(loc_raw):
+                if (dk, candidato) in geo_full:
+                    lk = candidato
+                    dep_disp, loc_disp = geo_full[(dk, candidato)]
+                    break
+            if lk is None:
+                lk = normalize_name(loc_raw)
                 dep_disp = geo_depto.get(dk) or (dep_raw or None)
+                loc_disp = loc_raw
+            key = f"txt:{dk}|{lk}"
+
+        if key not in grupos:
             grupos[key] = {
                 "localidad": loc_disp,
                 "departamento": dep_disp,

@@ -44,6 +44,8 @@ class LocalidadResponse(BaseModel):
     orden: int
     localidad: str
     departamento: str | None
+    localidad_id: str | None = None
+    localidad_match_tipo: str | None = None
     fecha_anuncio: date | None
     expediente: str | None
     monto: float | None

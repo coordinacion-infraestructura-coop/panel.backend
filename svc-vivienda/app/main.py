@@ -19,7 +19,8 @@ from app.resumen_territorial.router import router as resumen_territorial_router
 from app.notificaciones.router import router as notificaciones_router
 from app.portal.router import router as portal_router
 from app.internal.router import router as internal_router
-from app.geo.models import GeoLocalidad  # noqa: F401 — ensures table is registered with Base
+from app.geo.router import router as geo_router
+from app.geo.models import GeoAliasManual, GeoLocalidad  # noqa: F401 — ensures tables are registered with Base
 from app.cordon_cuneta.checklist_models import (  # noqa: F401 — ensures tables are registered with Base
     ChecklistItemCC,
     ChecklistTecnicoCC,
@@ -106,6 +107,7 @@ app.include_router(cordoba_hogar_router, prefix="/api/v1/vivienda", tags=["cordo
 app.include_router(mi_lugar_router, prefix="/api/v1/vivienda", tags=["mi-lugar"])
 app.include_router(checklist_tecnico_router, prefix="/api/v1/vivienda", tags=["checklist-tecnico"])
 app.include_router(informe_localidades_router, prefix="/api/v1/vivienda", tags=["informe-localidades"])
+app.include_router(geo_router, prefix="/api/v1/vivienda", tags=["geo"])
 # Transversal — prefijo /api/v1 (no /vivienda), mismo criterio que portal (ADR-007)
 app.include_router(resumen_territorial_router, prefix="/api/v1", tags=["resumen-territorial"])
 app.include_router(notificaciones_router, prefix="/api/v1", tags=["notificaciones"])

@@ -45,6 +45,11 @@ async def rollup_territorial(db: AsyncSession) -> list[dict]:
             select(
                 dep.label("departamento"),
                 loc.label("localidad"),
+                # Representante del id_geo resuelto para este grupo de texto (ADR-024) —
+                # no cambia la clave de GROUP BY acá; el merge entre variantes de grafía
+                # que comparten id_geo ocurre río abajo, en
+                # resumen_territorial.aggregations.agrupar_por_localidad.
+                func.max(AtpCompromiso.id_geo).label("id_geo"),
                 func.count().label("total_compromisos"),
                 func.count().filter(AtpCompromiso.derivado.is_(True)).label("derivados"),
                 func.sum(AtpCompromiso.monto).label("monto_total_sum"),
@@ -64,6 +69,7 @@ async def rollup_territorial(db: AsyncSession) -> list[dict]:
         {
             "departamento": r.departamento,
             "localidad": r.localidad,
+            "id_geo": r.id_geo,
             "total_compromisos": int(r.total_compromisos),
             "derivados": int(r.derivados),
             "monto_total_sum": _as_float(r.monto_total_sum),

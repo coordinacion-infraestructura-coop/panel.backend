@@ -38,5 +38,11 @@ class Settings(BaseSettings):
     # svc_vivienda_internal_url (que ya se usa para el auth lookup, ADR-015).
     notificar_fila_nueva_enabled: bool = False
 
+    # Resolución de localidades contra el padrón de svc-vivienda en sync-time
+    # (ADR-024, spec-normalizacion-localidades.md §4.5). Flag independiente,
+    # mismo criterio que notificar_fila_nueva_enabled — no depende de tocar
+    # svc_vivienda_internal_url (compartida con el auth lookup, ADR-015).
+    resolver_localidades_enabled: bool = False
+
 
 settings = Settings()

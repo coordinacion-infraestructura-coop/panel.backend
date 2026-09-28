@@ -15,6 +15,8 @@ from app.auth import AuthUser
 from app.cordon_cuneta import checklist_sync
 from app.cordon_cuneta.checklist_schemas import SyncResultResponse
 from app.database import get_db
+from app.geo import service as geo_service
+from app.geo.schemas import ResolverRequest, ResolverResponse
 from app.notificaciones import service as notificaciones_service
 from app.notificaciones.schemas import NotificacionIn
 from app.portal.repository import get_portal_user
@@ -73,6 +75,30 @@ async def crear_notificacion_interna(
     la UI todavía no existe (se define en un paso posterior)."""
     n = await notificaciones_service.crear(db, _SCHEDULER_ACTOR, payload.model_dump())
     return {"id": n.id}
+
+
+@router.post("/geo/resolver-localidades", response_model=ResolverResponse)
+async def resolver_localidades(payload: ResolverRequest, db: AsyncSession = Depends(get_db)):
+    """Resolución batch (departamento, localidad) → id_geo del padrón oficial,
+    para consumo cross-service (ADR-024). Lo llaman `svc-gasifera`/`svc-gralgob`
+    en sync-time con la SA correspondiente (`roles/run.invoker` ya otorgado por
+    ADR-015/ADR-023). Ver docs/files/spec-normalizacion-localidades.md §4.3."""
+    resultados = await geo_service.resolver_lote(
+        db, [(item.departamento, item.localidad) for item in payload.items]
+    )
+    return {
+        "resultados": [
+            {
+                "departamento_in": r.departamento_in,
+                "localidad_in": r.localidad_in,
+                "id_geo": r.id_geo,
+                "departamento_oficial": r.departamento_oficial,
+                "localidad_oficial": r.localidad_oficial,
+                "match_tipo": r.match_tipo,
+            }
+            for r in resultados
+        ]
+    }
 
 
 @router.post("/resumen-territorial/actualizar")

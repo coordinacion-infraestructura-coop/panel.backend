@@ -41,6 +41,8 @@ class MunicipioResponse(BaseModel):
     orden: int
     municipio: str
     departamento: str | None
+    localidad_id: str | None = None
+    localidad_match_tipo: str | None = None
     expediente: str | None
     monto: float | None
     ok_gob: str

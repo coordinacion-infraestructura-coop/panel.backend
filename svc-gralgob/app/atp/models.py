@@ -46,6 +46,10 @@ class AtpCompromiso(Base):
     # != "Gobierno" (el saldo de lo derivado no se trackea en esta hoja). Ver
     # spec §3.2.
     saldo_atp: Mapped[float | None] = mapped_column(Numeric(18, 2))
+    # Resuelto en sync-time contra el padrón de svc-vivienda (ADR-024,
+    # spec-normalizacion-localidades.md §4.5) — texto, no FK real (cross-DB).
+    id_geo: Mapped[str | None] = mapped_column(String(20))
+    match_tipo: Mapped[str | None] = mapped_column(String(20))
     last_synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False

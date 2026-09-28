@@ -15,6 +15,8 @@ class CompromisoResponse(BaseModel):
     monto: float | None
     destino: str | None
     saldo_atp: float | None
+    id_geo: str | None = None
+    match_tipo: str | None = None
     # Suma del cronograma de pago ya sincronizado (atp_cronograma_pagos), NO
     # el campo saldo_atp del Sheet (que la propia hoja fuerza a 0 cuando
     # ministerio_destino != "Gobierno" — ver spec §3.2). Mismo signo que

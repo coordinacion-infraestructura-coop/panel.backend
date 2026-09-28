@@ -124,3 +124,32 @@ async def test_sync_endpoint_no_esta_bajo_api_v1(db_session: AsyncSession):
         assert r_correct.status_code == 200
     finally:
         app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_resolver_localidades_interno_batch(db_session: AsyncSession):
+    """POST /internal/geo/resolver-localidades — lo consumen Gasífera/Gralgob en
+    sync-time (ADR-024). No requiere JWT (IAM-only)."""
+    from app.geo.models import GeoLocalidad
+
+    db_session.add(GeoLocalidad(id_geo="443", departamento="Río Cuarto", localidad="Paso del Durazno", activo=True))
+    await db_session.flush()
+
+    async def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+            r = await c.post("/internal/geo/resolver-localidades", json={"items": [
+                {"departamento": "Río Cuarto", "localidad": "Paso del Durazno"},
+                {"departamento": "Capital", "localidad": "No Existe"},
+            ]})
+        assert r.status_code == 200
+        resultados = r.json()["resultados"]
+        assert resultados[0]["id_geo"] == "443"
+        assert resultados[0]["match_tipo"] == "exacto"
+        assert resultados[1]["id_geo"] is None
+        assert resultados[1]["match_tipo"] == "sin_match"
+    finally:
+        app.dependency_overrides.clear()
