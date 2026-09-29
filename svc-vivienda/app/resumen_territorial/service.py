@@ -38,7 +38,10 @@ _VER_TODO = ("Admin", "Autoridad")
 async def _geo_rows(db: AsyncSession) -> list[dict]:
     result = await db.execute(select(GeoLocalidad))
     return [
-        {"departamento": g.departamento, "localidad": g.localidad, "id_geo": g.id_geo}
+        {
+            "departamento": g.departamento, "localidad": g.localidad,
+            "id_geo": g.id_geo, "activo": g.activo,
+        }
         for g in result.scalars().all()
     ]
 
@@ -206,6 +209,7 @@ async def compute_resumen_territorial(db: AsyncSession) -> ResumenTerritorialPay
         total_localidades=len(localidades),
         total_programas=sum(len(loc.programas) for loc in localidades),
         localidades=localidades,
+        total_localidades_por_departamento=aggregations.contar_localidades_por_departamento(geo),
     )
 
 
@@ -678,4 +682,8 @@ def filtrar_por_visibilidad(
         total_localidades=len(localidades),
         total_programas=sum(len(loc.programas) for loc in localidades),
         localidades=localidades,
+        # Metadata pública del padrón (denominador de cobertura), no un "programa"
+        # de ninguna secretaría — se preserva igual para todos los roles, mismo
+        # criterio que el enriquecimiento de datos-externos (población/transferencias).
+        total_localidades_por_departamento=payload.total_localidades_por_departamento,
     )

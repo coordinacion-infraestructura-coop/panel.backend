@@ -179,6 +179,20 @@ def test_agrupar_por_localidad_departamento_abreviado_matchea():
     assert grupos[0]["departamento"] == "Gral Roca"
 
 
+def test_contar_localidades_por_departamento_cuenta_solo_activas():
+    geo = [
+        {"departamento": "Colón", "localidad": "Jesús María", "id_geo": "1", "activo": True},
+        {"departamento": "Colón", "localidad": "Duplicada", "id_geo": "2", "activo": False},
+        {"departamento": "Punilla", "localidad": "Cosquín", "id_geo": "3", "activo": True},
+    ]
+    assert aggregations.contar_localidades_por_departamento(geo) == {"Colón": 1, "Punilla": 1}
+
+
+def test_contar_localidades_por_departamento_asume_activo_si_no_viene_el_campo():
+    geo = [{"departamento": "Colón", "localidad": "X", "id_geo": "1"}]
+    assert aggregations.contar_localidades_por_departamento(geo) == {"Colón": 1}
+
+
 def test_enriquecer_con_datos_externos_agrega_poblacion_y_transferencias():
     localidad = {"id_geo": "g1", "localidad": "Alta Gracia", "departamento": "Santa María", "programas": []}
     datos = {"g1": {
@@ -364,6 +378,10 @@ async def test_actualizar_calcula_snapshot_de_vivienda(client: AsyncClient, dato
     assert resp.status_code == 200
     payload = resp.json()["payload"]
     assert payload["generado_para_areas"] == ["vivienda"]
+    # Denominador de cobertura (Etapa 3) — viene del padrón geo, no de `localidades`.
+    assert payload["total_localidades_por_departamento"] == {
+        "Santa María": 1, "Calamuchita": 1,
+    }
 
     locs = {loc["localidad"]: loc for loc in payload["localidades"]}
     assert set(locs) == {"Alta Gracia", "Villa General Belgrano"}

@@ -299,6 +299,28 @@ def agrupar_por_localidad(
     return resultado
 
 
+# ── Padrón geográfico: denominador de cobertura por departamento ────────────
+
+def contar_localidades_por_departamento(geo_localidades: Iterable[dict[str, Any]]) -> dict[str, int]:
+    """Total de localidades ACTIVAS del padrón por departamento
+    (`viv_geo_localidades`, ADR-024) — denominador del % de cobertura del
+    tablero territorial (Etapa 3, spec-resumen-territorial-tablero-v2.md §4).
+    `ResumenTerritorialPayload.localidades` sólo trae localidades con al menos
+    un programa; sin este conteo no hay forma de saber contra cuántas
+    localidades reales se está cubriendo. No renormaliza el nombre del
+    departamento — usa la grafía tal cual está en el padrón, para calzar con
+    `ResumenLocalidad.departamento` cuando viene resuelto por id_geo."""
+    conteo: dict[str, int] = {}
+    for g in geo_localidades:
+        if not g.get("activo", True):
+            continue
+        dep = g.get("departamento")
+        if not dep:
+            continue
+        conteo[dep] = conteo.get(dep, 0) + 1
+    return conteo
+
+
 # ── Enriquecimiento con datos externos (Censo 2022 + transferencias, ADR-025) ─
 
 def enriquecer_con_datos_externos(

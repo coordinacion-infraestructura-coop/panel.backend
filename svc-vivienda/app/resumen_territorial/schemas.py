@@ -70,6 +70,13 @@ class ResumenTerritorialPayload(BaseModel):
     total_localidades: int
     total_programas: int
     localidades: list[ResumenLocalidad]
+    # Denominador de "cobertura %" por departamento (padrón viv_geo_localidades,
+    # ADR-024) — `localidades` de arriba sólo trae localidades con al menos un
+    # programa, así que esto es lo único que permite calcular qué % del
+    # departamento está cubierto. Clave = nombre de departamento tal como está
+    # en el padrón (misma grafía que `ResumenLocalidad.departamento` cuando hay
+    # id_geo resuelto).
+    total_localidades_por_departamento: dict[str, int] = Field(default_factory=dict)
 
 
 class ResumenSnapshotResponse(BaseModel):
