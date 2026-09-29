@@ -195,7 +195,7 @@ async def actualizar_localidad(
         localidad.updated_at = datetime.combine(fecha_cambio, dtime(12, 0, 0), tzinfo=timezone.utc)
 
     if "localidad" in updates or "departamento" in updates:
-        resuelto = await geo_service.resolver_uno(db, localidad.departamento, localidad.localidad)
+        resuelto = await geo_service.resolver_uno(db, localidad.departamento, localidad.localidad, origen="cordoba_hogar")
         localidad.localidad_id = resuelto.id_geo
         localidad.localidad_match_tipo = resuelto.match_tipo
 
@@ -243,7 +243,7 @@ async def _buscar_duplicado_ch(
 async def crear_localidad(
     db: AsyncSession, data: LocalidadCreate, actor: AuthUser
 ) -> LocalidadResponse:
-    resuelto = await geo_service.resolver_uno(db, data.departamento, data.localidad)
+    resuelto = await geo_service.resolver_uno(db, data.departamento, data.localidad, origen="cordoba_hogar")
 
     existing = await _buscar_duplicado_ch(db, data.localidad, data.departamento, resuelto.id_geo)
     if existing:

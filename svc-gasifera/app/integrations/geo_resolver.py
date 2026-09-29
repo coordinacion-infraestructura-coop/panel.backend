@@ -38,7 +38,10 @@ async def resolver_localidades(
 
     base = settings.svc_vivienda_internal_url.rstrip("/")
     url = f"{base}/internal/geo/resolver-localidades"
-    payload = {"items": [{"departamento": dep, "localidad": loc} for dep, loc in items]}
+    payload = {
+        "items": [{"departamento": dep, "localidad": loc} for dep, loc in items],
+        "origen": "gas_pit",
+    }
     try:
         token = _mint_id_token(base)
         headers = {"Authorization": f"Bearer {token}"} if token else {}

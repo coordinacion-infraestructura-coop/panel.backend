@@ -167,6 +167,52 @@ async def test_resolver_lote_resuelve_varios_en_una_carga(db_session: AsyncSessi
     assert [r.match_tipo for r in resultados] == ["exacto", "exacto", "sin_match"]
 
 
+# ── geo/service.py — notificación de localidades sin resolver (2026-09-29) ──
+
+@pytest.mark.asyncio
+async def test_resolver_lote_sin_match_crea_una_notificacion_batcheada(db_session: AsyncSession, geo_seed):
+    from sqlalchemy import select
+    from app.notificaciones.models import Notificacion
+
+    await geo_service.resolver_lote(
+        db_session,
+        [("Río Cuarto", "Paso del Durazno"), ("Capital", "Nada"), ("Capital", "Otra Inexistente")],
+        origen="gas_pit",
+    )
+    notifs = (await db_session.execute(select(Notificacion))).scalars().all()
+    assert len(notifs) == 1
+    n = notifs[0]
+    assert n.nivel == "advertencia"
+    assert n.destino_tipo == "rol"
+    assert n.destino_valor == "Admin"
+    assert n.origen == "geo_resolver"
+    assert "gas_pit" in n.titulo
+    assert "Nada" in n.mensaje and "Otra Inexistente" in n.mensaje
+
+
+@pytest.mark.asyncio
+async def test_resolver_lote_todo_resuelto_no_crea_notificacion(db_session: AsyncSession, geo_seed):
+    from sqlalchemy import select
+    from app.notificaciones.models import Notificacion
+
+    await geo_service.resolver_lote(
+        db_session, [("Río Cuarto", "Paso del Durazno")], origen="atp",
+    )
+    notifs = (await db_session.execute(select(Notificacion))).scalars().all()
+    assert notifs == []
+
+
+@pytest.mark.asyncio
+async def test_resolver_uno_sin_match_propaga_origen_a_la_notificacion(db_session: AsyncSession, geo_seed):
+    from sqlalchemy import select
+    from app.notificaciones.models import Notificacion
+
+    await geo_service.resolver_uno(db_session, "Capital", "Localidad Inexistente", origen="cordon_cuneta")
+    notifs = (await db_session.execute(select(Notificacion))).scalars().all()
+    assert len(notifs) == 1
+    assert "cordon_cuneta" in notifs[0].titulo
+
+
 # ── geo/service.py — detección de duplicados ─────────────────────────────────
 
 @pytest.mark.asyncio

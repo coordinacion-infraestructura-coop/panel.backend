@@ -153,3 +153,28 @@ async def test_resolver_localidades_interno_batch(db_session: AsyncSession):
         assert resultados[1]["match_tipo"] == "sin_match"
     finally:
         app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_resolver_localidades_interno_propaga_origen_a_la_notificacion(db_session: AsyncSession):
+    """El `origen` del payload (ej. "gas_pit") se propaga a la notificación de
+    localidades sin resolver (ADR-024, 2026-09-29)."""
+    from sqlalchemy import select
+    from app.notificaciones.models import Notificacion
+
+    async def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+            r = await c.post("/internal/geo/resolver-localidades", json={
+                "items": [{"departamento": "Capital", "localidad": "No Existe"}],
+                "origen": "gas_pit",
+            })
+        assert r.status_code == 200
+        notifs = (await db_session.execute(select(Notificacion))).scalars().all()
+        assert len(notifs) == 1
+        assert "gas_pit" in notifs[0].titulo
+    finally:
+        app.dependency_overrides.clear()

@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit import log_audit
 from app.auth import AuthUser
+from app.geo import service as geo_service
 from app.integrations.privada_sync import sync_gestion_privada
 from app.mi_lugar.models import (
     ConfigML,
@@ -192,10 +193,13 @@ async def obtener_proyecto_ml(db: AsyncSession, proyecto_id: str) -> ProyectoMLO
 async def crear_proyecto_ml(
     db: AsyncSession, data: ProyectoMLCreate, actor: AuthUser
 ) -> ProyectoMLOut:
+    resuelto = await geo_service.resolver_uno(db, data.departamento, data.localidad_nombre, origen="mi_lugar")
+
     proy = ProyectoML(
         tipo=data.tipo,
         nombre=data.nombre,
-        localidad_id=data.localidad_id,
+        localidad_id=resuelto.id_geo,
+        localidad_match_tipo=resuelto.match_tipo,
         localidad_nombre=data.localidad_nombre,
         departamento=data.departamento,
         expediente=data.expediente,
@@ -256,6 +260,9 @@ async def actualizar_proyecto_ml(
     updates = data.model_dump(exclude_unset=True)
     fecha_cambio = updates.pop("fecha_cambio", None)
     geo_puntos_data: list[GeoPuntoIn] | None = updates.pop("geo_puntos", None)
+    # localidad_id nunca se acepta del cliente — se resuelve siempre contra el
+    # padrón, mismo criterio que cordon_cuneta/cordoba_hogar.
+    updates.pop("localidad_id", None)
 
     historial = []
     for campo in ("ejuridico", "etecnico", "efinanciero"):
@@ -277,6 +284,11 @@ async def actualizar_proyecto_ml(
     updates["updated_by"] = actor.email
     for key, value in updates.items():
         setattr(proy, key, value)
+
+    if "localidad_nombre" in updates or "departamento" in updates:
+        resuelto = await geo_service.resolver_uno(db, proy.departamento, proy.localidad_nombre, origen="mi_lugar")
+        proy.localidad_id = resuelto.id_geo
+        proy.localidad_match_tipo = resuelto.match_tipo
 
     if fecha_cambio is not None:
         proy.updated_at = datetime.combine(fecha_cambio, dtime(12, 0, 0), tzinfo=timezone.utc)

@@ -69,6 +69,7 @@ class ProyectoMLOut(BaseModel):
     tipo: str
     nombre: str
     localidad_id: str | None
+    localidad_match_tipo: str | None = None
     localidad_nombre: str
     departamento: str | None
     expediente: str | None

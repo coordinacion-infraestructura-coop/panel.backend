@@ -9,13 +9,23 @@ Ver docs/files/spec-normalizacion-localidades.md §4.3/§4.9, ADR-024.
 """
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth import AuthUser
 from app.geo.matching import candidatos_localidad, normalize_departamento, normalize_name
 from app.geo.models import GeoAliasManual, GeoLocalidad
+from app.notificaciones import service as notificaciones_service
+
+logger = logging.getLogger(__name__)
+
+# Actor sintético para notificaciones disparadas por el propio resolver (no
+# hay JWT en este flujo — mismo patrón que `_SCHEDULER_ACTOR` en
+# app/internal/router.py).
+_RESOLVER_ACTOR = AuthUser(uid="geo-resolver", email="geo-resolver", role="system", secretarias=[])
 
 
 @dataclass(frozen=True)
@@ -102,19 +112,80 @@ def _resolver_uno(
     return LocalidadResuelta(departamento_in, localidad_in, None, None, None, "sin_match")
 
 
+async def _notificar_sin_match(
+    db: AsyncSession, origen: str | None, sin_match: list[tuple[str | None, str | None]]
+) -> None:
+    """Best-effort: una notificación batcheada al rol Admin por corrida de
+    `resolver_lote` con `match_tipo="sin_match"`. No deduplica entre corridas
+    — una localidad persistente sin resolver vuelve a notificar en cada sync
+    hasta que alguien agregue un alias; simplificación aceptada
+    explícitamente por el usuario (2026-09-29) a la espera de un futuro panel
+    de asignación manual (ver spec-normalizacion-localidades.md §4.10). Una
+    falla acá nunca debe interrumpir el flujo que llamó al resolver."""
+    origen_label = origen or "desconocido"
+    ejemplos = "; ".join(
+        f"{loc or '(vacío)'} ({dep or 'sin depto'})" for dep, loc in sin_match[:10]
+    )
+    if len(sin_match) > 10:
+        ejemplos += f"; +{len(sin_match) - 10} más"
+    try:
+        await notificaciones_service.crear(
+            db, _RESOLVER_ACTOR,
+            {
+                "titulo": f"{len(sin_match)} localidad(es) sin resolver — {origen_label}",
+                "mensaje": (
+                    f"El resolver de localidades (origen: {origen_label}) no pudo "
+                    f"matchear contra el padrón oficial: {ejemplos}"
+                ),
+                "nivel": "advertencia",
+                "origen": "geo_resolver",
+                "destino_tipo": "rol",
+                "destino_valor": "Admin",
+            },
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception(
+            "No se pudo crear la notificación de localidades sin resolver (origen=%s)",
+            origen_label,
+        )
+
+
 async def resolver_lote(
-    db: AsyncSession, items: list[tuple[str | None, str | None]]
+    db: AsyncSession,
+    items: list[tuple[str | None, str | None]],
+    origen: str | None = None,
 ) -> list[LocalidadResuelta]:
     """Resuelve `[(departamento, localidad), ...]` en batch — una sola carga
     del padrón + alias para todo el lote (pensado para cientos de filas por
-    corrida de sync, no una llamada por fila)."""
+    corrida de sync, no una llamada por fila). `origen` identifica quién
+    llama (ej. "cordon_cuneta", "gas_pit", "atp") — se usa sólo para logs y
+    la notificación de localidades sin resolver, nunca afecta el matching."""
     padron, por_id = await _cargar_padron(db)
     alias = await _cargar_alias(db)
-    return [_resolver_uno(dep, loc, padron, alias, por_id) for dep, loc in items]
+    resultados = [_resolver_uno(dep, loc, padron, alias, por_id) for dep, loc in items]
+
+    sin_match = [
+        (r.departamento_in, r.localidad_in)
+        for r in resultados
+        if r.match_tipo == "sin_match" and r.localidad_in
+    ]
+    if sin_match:
+        logger.warning(
+            "geo_resolver: %d localidad(es) sin resolver (origen=%s): %s",
+            len(sin_match), origen or "desconocido", sin_match,
+        )
+        await _notificar_sin_match(db, origen, sin_match)
+
+    return resultados
 
 
-async def resolver_uno(db: AsyncSession, departamento: str | None, localidad: str | None) -> LocalidadResuelta:
-    resultados = await resolver_lote(db, [(departamento, localidad)])
+async def resolver_uno(
+    db: AsyncSession,
+    departamento: str | None,
+    localidad: str | None,
+    origen: str | None = None,
+) -> LocalidadResuelta:
+    resultados = await resolver_lote(db, [(departamento, localidad)], origen=origen)
     return resultados[0]
 
 

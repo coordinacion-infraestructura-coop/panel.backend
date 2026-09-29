@@ -84,7 +84,8 @@ async def resolver_localidades(payload: ResolverRequest, db: AsyncSession = Depe
     en sync-time con la SA correspondiente (`roles/run.invoker` ya otorgado por
     ADR-015/ADR-023). Ver docs/files/spec-normalizacion-localidades.md §4.3."""
     resultados = await geo_service.resolver_lote(
-        db, [(item.departamento, item.localidad) for item in payload.items]
+        db, [(item.departamento, item.localidad) for item in payload.items],
+        origen=payload.origen,
     )
     return {
         "resultados": [

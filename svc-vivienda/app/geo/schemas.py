@@ -10,6 +10,7 @@ class ResolverItem(BaseModel):
 
 class ResolverRequest(BaseModel):
     items: list[ResolverItem]
+    origen: str | None = None
 
 
 class ResolverResultado(BaseModel):

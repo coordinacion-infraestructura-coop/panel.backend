@@ -192,7 +192,7 @@ async def actualizar_municipio(
         municipio.updated_at = datetime.combine(fecha_cambio, dtime(12, 0, 0), tzinfo=timezone.utc)
 
     if "municipio" in updates or "departamento" in updates:
-        resuelto = await geo_service.resolver_uno(db, municipio.departamento, municipio.municipio)
+        resuelto = await geo_service.resolver_uno(db, municipio.departamento, municipio.municipio, origen="cordon_cuneta")
         municipio.localidad_id = resuelto.id_geo
         municipio.localidad_match_tipo = resuelto.match_tipo
 
@@ -240,7 +240,7 @@ async def _buscar_duplicado_cc(
 async def crear_municipio(
     db: AsyncSession, data: MunicipioCreate, actor: AuthUser
 ) -> MunicipioResponse:
-    resuelto = await geo_service.resolver_uno(db, data.departamento, data.municipio)
+    resuelto = await geo_service.resolver_uno(db, data.departamento, data.municipio, origen="cordon_cuneta")
 
     existing = await _buscar_duplicado_cc(db, data.municipio, data.departamento, resuelto.id_geo)
     if existing:
