@@ -118,6 +118,26 @@ async def test_resolver_uno_desambigua_con_departamento_abreviado(db_session: As
 
 
 @pytest.mark.asyncio
+async def test_resolver_uno_alias_con_caracter_espurio_en_el_dato_de_origen(db_session: AsyncSession):
+    """Regresión: un carácter espurio (U+2018) insertado en el dato de
+    Privada para 'Chuña' rompía normalize_name — se resuelve igual vía
+    vinculación manual explícita (migración 0032)."""
+    db_session.add(GeoLocalidad(id_geo="553", departamento="Ischilín", localidad="Chuña", activo=True))
+    db_session.add(GeoAliasManual(
+        id=str(uuid.uuid4()),
+        texto_normalizado="chun‘a",
+        texto_original="CHUÑ‘A",
+        id_geo="553",
+        motivo="carácter espurio en el dato de origen",
+        origen="privada",
+    ))
+    await db_session.flush()
+    r = await geo_service.resolver_uno(db_session, "Ischilín", "CHUÑ‘A")
+    assert r.id_geo == "553"
+    assert r.match_tipo == "manual"
+
+
+@pytest.mark.asyncio
 async def test_resolver_uno_sin_match(db_session: AsyncSession, geo_seed):
     r = await geo_service.resolver_uno(db_session, "Capital", "Localidad Inexistente")
     assert r.id_geo is None

@@ -58,3 +58,31 @@ ALIAS_MANUAL_SEED_20260928: list[dict] = [
     }
     for texto_original, id_geo, motivo, origen in _ALIAS_RAW_20260928
 ]
+
+# Investigación de los ~30 casos residuales sin resolver tras el primer
+# backfill, pedida explícitamente por el usuario (2026-09-29) — ver migración
+# 0032. Encontrados con el resolver real de producción, no una heurística.
+# Nota: 7 pares adicionales resultaron ser duplicados dentro del propio
+# padrón (misma localidad con dos id_geo, coordenadas a metros/pocos km) —
+# esos NO se resuelven acá, quedan documentados para revisión manual del
+# padrón (fuera de alcance de esta spec).
+_ALIAS_RAW_20260929: list[tuple[str, str | None, str, str]] = [
+    ("EUFRACIO LOZA", "558", "typo c/s (padrón: Eufrasio Loza) — RIO SECO", "gas_pit"),
+    ("BRINKMANN", "269", "falta la 'c' (padrón: BRINCKMANN) — SAN JUSTO", "gas_pit"),
+    ("CAPILLA DEL SITON", "339", "padrón usa 'DE', no 'DEL' (CAPILLA DE SITON) — TOTORAL", "gas_pit"),
+    ("ESTACION GENERAL PAZ", "26", "confirmado por el usuario — estación de tren de GENERAL PAZ, COLÓN", "gas_pit"),
+    ("VILLA QUILINO", "82", "confirmado por el usuario — 'Villa' es parte del nombre común de QUILINO, ISCHILÍN", "privada"),
+    ("CHUÑ‘A", "553", "carácter espurio (U+2018) insertado en el dato de origen de Privada (padrón: Chuña) — ISCHILÍN", "privada"),
+]
+
+ALIAS_MANUAL_SEED_20260929: list[dict] = [
+    {
+        "texto_normalizado": normalize_name(texto_original),
+        "texto_original": texto_original,
+        "id_geo": id_geo,
+        "motivo": motivo,
+        "origen": origen,
+        "created_by": "migracion-spec-normalizacion-localidades",
+    }
+    for texto_original, id_geo, motivo, origen in _ALIAS_RAW_20260929
+]
