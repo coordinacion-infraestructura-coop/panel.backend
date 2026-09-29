@@ -20,5 +20,11 @@ class Settings(BaseSettings):
     # de svc-vivienda. Vacío -> el lookup degrada a rol "invitado" (dev / gateway sin wiring).
     svc_vivienda_internal_url: str = ""
 
+    # ADR-024 — resolución de (departamento, localidad) contra el padrón
+    # canónico de svc-vivienda (viv_geo_localidades), aplicada al rollup
+    # territorial (no persiste id_geo por gestión, sólo en el agregado que
+    # consume resumen_territorial). Mismo criterio que Gasífera/Gralgob.
+    resolver_localidades_enabled: bool = False
+
 
 settings = Settings()

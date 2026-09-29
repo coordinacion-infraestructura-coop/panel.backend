@@ -352,7 +352,10 @@ def _map_privada_payload(data) -> list[dict]:
             "expediente": None,
             "privada_conteos": {"por_estado": por_estado, "total": int(total or 0)},
         }
-        lineas.append({"departamento": dep, "nombre_localidad": loc, "programa": prog})
+        lineas.append({
+            "departamento": dep, "nombre_localidad": loc,
+            "id_geo": r.get("id_geo"), "programa": prog,
+        })
     return lineas
 
 

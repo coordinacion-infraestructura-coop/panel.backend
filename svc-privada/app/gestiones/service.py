@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app import audit
 from app.auth import AuthUser
 from app.common import as_float, dias_transcurridos, iso, norm, now_utc
+from app.integrations import geo_resolver
 from app.gestiones.models import ESTADOS, Gestion, GestionEvento
 from app.gestiones.schemas import CambioEstado, DetalleCorreccion, GestionCreate, GestionUpdate, LocalidadInfoUpsert
 from app.territorial.models import DepartamentoInfo, GeoLocalidad, LocalidadInfo
@@ -758,10 +759,21 @@ async def rollup_territorial(db: AsyncSession) -> list[dict]:
             .order_by(dep, loc)
         )
     ).all()
+
+    # Resolución en batch contra el padrón de svc-vivienda (ADR-024) — una sola
+    # llamada para todas las filas del rollup (típicamente unos cientos, no
+    # miles), no persiste id_geo por gestión, sólo enriquece este agregado.
+    # Best-effort: si falla, cada fila queda con id_geo=None y resumen_territorial
+    # sigue cayendo al matching por texto para ellas, como antes.
+    resueltos = await geo_resolver.resolver_localidades(
+        [(r.departamento, r.localidad) for r in rows]
+    )
+
     return [
         {
             "departamento": r.departamento,
             "localidad": r.localidad,
+            "id_geo": id_geo,
             "total_gestiones": int(r.total_gestiones),
             "abiertas": int(r.abiertas),
             "finalizadas": int(r.finalizadas),
@@ -769,7 +781,7 @@ async def rollup_territorial(db: AsyncSession) -> list[dict]:
             "costo_estimado_sum": as_float(r.costo_estimado_sum),
             "fecha_estado_max": iso(r.fecha_estado_max),
         }
-        for r in rows
+        for r, (id_geo, _match_tipo) in zip(rows, resueltos)
     ]
 
 

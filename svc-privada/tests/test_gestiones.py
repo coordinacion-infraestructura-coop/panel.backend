@@ -188,6 +188,35 @@ async def test_rollup_territorial(client, seed):
     assert rows[0]["departamento"] == "CALAMUCHITA"
     assert rows[0]["total_gestiones"] == 2
     assert rows[0]["finalizadas"] == 1
+    # Sin resolver_localidades_enabled (default False en tests) el rollup no
+    # llama a svc-vivienda — id_geo queda en None, no rompe el resto.
+    assert rows[0]["id_geo"] is None
+
+
+@pytest.mark.asyncio
+async def test_rollup_territorial_resuelve_id_geo_contra_padron_de_vivienda(client, seed):
+    """ADR-024: el rollup resuelve id_geo en batch contra el padrón de
+    svc-vivienda — así Privada matchea contra la misma base que
+    Vivienda/Gasífera/Gralgob en resumen_territorial."""
+    from unittest.mock import AsyncMock, patch
+
+    from app.config import settings
+
+    prev = settings.resolver_localidades_enabled
+    settings.resolver_localidades_enabled = True
+    try:
+        with patch(
+            "app.gestiones.service.geo_resolver.resolver_localidades",
+            new=AsyncMock(return_value=[("508", "exacto")]),
+        ) as mock_resolver:
+            r = await client.get("/api/v1/privada/gestiones/rollup-territorial")
+    finally:
+        settings.resolver_localidades_enabled = prev
+
+    assert r.status_code == 200
+    rows = r.json()
+    assert rows[0]["id_geo"] == "508"
+    mock_resolver.assert_awaited_once_with([("CALAMUCHITA", "AMBOY")])
 
 
 @pytest.mark.asyncio
