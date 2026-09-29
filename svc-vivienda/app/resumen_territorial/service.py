@@ -187,8 +187,19 @@ async def compute_resumen_territorial(db: AsyncSession) -> ResumenTerritorialPay
         lineas.extend(lineas_atp)
         generado_para.append("gralgob")
 
+    # Quinta fuente (ADR-025): no produce líneas de "programa" — es
+    # enriquecimiento (población/transferencias) que se mergea por id_geo
+    # sobre cada localidad ya agrupada, no un ítem más de `lineas`.
+    datos_externos_por_id_geo = {
+        row["id_geo"]: row for row in await fetch_datos_externos_lineas()
+    }
+    if datos_externos_por_id_geo:
+        generado_para.append("datos_externos")
+
+    grupos = aggregations.agrupar_por_localidad(lineas, geo)
     localidades = [
-        ResumenLocalidad(**loc) for loc in aggregations.agrupar_por_localidad(lineas, geo)
+        ResumenLocalidad(**aggregations.enriquecer_con_datos_externos(g, datos_externos_por_id_geo))
+        for g in grupos
     ]
     return ResumenTerritorialPayload(
         generado_para_areas=generado_para,
@@ -543,6 +554,54 @@ def _map_atp_payload(data) -> list[dict]:
             "id_geo": r.get("id_geo"), "programa": prog,
         })
     return lineas
+
+
+# ── Cliente del endpoint interno de svc-datos-externos (ADR-025) ────────────
+
+async def fetch_datos_externos_lineas() -> list[dict]:
+    """Trae población/viviendas (Censo 2022) y transferencias del último
+    período cargado, por `id_geo`, del endpoint interno IAM-only de
+    svc-datos-externos. Tolerante: cualquier fallo → `[]` (mismo criterio que
+    `fetch_gasifera_lineas`/`fetch_atp_lineas`, ADR-016/021/022).
+
+    A diferencia de esas 3 fuentes, esto NO produce líneas de "programa": es
+    enriquecimiento que se mergea directo sobre cada `ResumenLocalidad` por
+    `id_geo` (ver `aggregations.enriquecer_con_datos_externos`) — por eso el
+    resultado se indexa por `id_geo` en vez de sumarse a `lineas`."""
+    if not settings.datos_externos_fetch_enabled or not settings.svc_datos_externos_internal_url:
+        return []
+
+    base = settings.svc_datos_externos_internal_url.rstrip("/")
+    url = base + settings.datos_externos_rollup_internal_path
+    audience = base
+    try:
+        token = _mint_id_token(audience)
+        if not token:
+            logger.warning(
+                "resumen_territorial: se llama a datos-externos SIN ID token (mint falló, audience=%s)",
+                audience,
+            )
+        headers = {"Authorization": f"Bearer {token}"} if token else {}
+        async with httpx.AsyncClient(timeout=20) as client:
+            resp = await client.get(url, headers=headers)
+
+        if resp.status_code != 200:
+            logger.warning(
+                "resumen_territorial: datos-externos respondió %s. url=%s aud=%s token_minteado=%s "
+                "body[:1000]=%s",
+                resp.status_code, url, audience, bool(token), (resp.text or "")[:1000],
+            )
+            return []
+
+        data = resp.json()
+        if not isinstance(data, list):
+            return []
+        lineas = [r for r in data if isinstance(r, dict) and r.get("id_geo")]
+        logger.info("resumen_territorial: datos-externos devolvió %d localidades con id_geo", len(lineas))
+        return lineas
+    except Exception as exc:  # noqa: BLE001 — tolerante por diseño
+        logger.warning("resumen_territorial: fetch de datos-externos falló (%s): %r", url, exc)
+        return []
 
 
 # ── Snapshot ─────────────────────────────────────────────────────────────────

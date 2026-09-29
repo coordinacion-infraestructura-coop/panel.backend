@@ -280,6 +280,7 @@ def agrupar_por_localidad(
 
         if key not in grupos:
             grupos[key] = {
+                "id_geo": id_geo,
                 "localidad": loc_disp,
                 "departamento": dep_disp,
                 "programas": [],
@@ -295,4 +296,98 @@ def agrupar_por_localidad(
             g["localidad"].lower(),
         )
     )
+    return resultado
+
+
+# ── Enriquecimiento con datos externos (Censo 2022 + transferencias, ADR-025) ─
+
+def enriquecer_con_datos_externos(
+    localidad: dict[str, Any], datos_externos_por_id_geo: dict[str, dict[str, Any]]
+) -> dict[str, Any]:
+    """Agrega población/viviendas (Censo 2022) y transferencias (último
+    período cargado) a una localidad ya agrupada, por `id_geo` —
+    `svc-datos-externos` (ADR-025). Sin `id_geo` propio o sin match en la
+    fuente, la localidad queda con estos campos en `None` — no bloquea nada
+    aguas abajo, mismo criterio tolerante que el resto de las fuentes
+    federadas. Pura: recibe y devuelve dicts simples, no toca DB.
+
+    `transferencias_total` se deja siempre disponible junto al per cápita
+    (no sólo este último) porque en comunas chicas el componente fijo de la
+    fórmula de coparticipación dispara valores per cápita altos y engañosos
+    — el frontend debe poder mostrar ambos lado a lado (spec §4, Etapa 5).
+    """
+    id_geo = localidad.get("id_geo")
+    datos = datos_externos_por_id_geo.get(id_geo) if id_geo else None
+
+    poblacion = datos.get("poblacion_2022") if datos else None
+    transferencias_total = datos.get("transferencias_total") if datos else None
+
+    atp_monto = sum(
+        p["monto"]
+        for p in localidad["programas"]
+        if p.get("programa") == "atp" and p.get("monto") is not None
+    )
+
+    return {
+        **localidad,
+        "categoria": (datos or {}).get("categoria"),
+        "poblacion_2022": poblacion,
+        "viviendas_2022": (datos or {}).get("viviendas_2022"),
+        "transferencias_periodo": (datos or {}).get("transferencias_periodo"),
+        "transferencias_total": transferencias_total,
+        "transferencias_per_capita": (
+            round(transferencias_total / poblacion, 2)
+            if transferencias_total is not None and poblacion else None
+        ),
+        "atp_monto_per_capita": (
+            round(atp_monto / poblacion, 2) if atp_monto and poblacion else None
+        ),
+    }
+
+
+def focalizacion_atp_por_departamento(
+    localidades: Iterable[dict[str, Any]]
+) -> dict[str, float]:
+    """Índice de focalización ATP por departamento: (% de la inversión ATP
+    provincial que recibió el depto) / (% de la población provincial que
+    vive en el depto) — spec-resumen-territorial-tablero-v2.md §3. >1 implica
+    que el depto recibe más ATP del que le tocaría en proporción a su
+    población; <1, menos.
+
+    Recibe localidades YA enriquecidas (`enriquecer_con_datos_externos`, con
+    `poblacion_2022` seteado cuando hay match). Función pura, testeada, pero
+    todavía **no está expuesta en el payload de `GET /resumen-territorial`**
+    — no hay hoy una sección "por departamento" en el schema y agregarla sin
+    que la Etapa 3 (vista Provincia) haya fijado su forma de consumo sería
+    inventar API de más. Queda lista para que esa etapa la use, vía un nuevo
+    campo/endpoint que se decida en ese momento.
+    """
+    por_depto_atp: dict[str, float] = {}
+    por_depto_poblacion: dict[str, int] = {}
+    for loc in localidades:
+        dep = loc.get("departamento")
+        if not dep:
+            continue
+        atp = sum(
+            p["monto"]
+            for p in loc.get("programas", [])
+            if p.get("programa") == "atp" and p.get("monto") is not None
+        )
+        if atp:
+            por_depto_atp[dep] = por_depto_atp.get(dep, 0.0) + atp
+        poblacion = loc.get("poblacion_2022")
+        if poblacion:
+            por_depto_poblacion[dep] = por_depto_poblacion.get(dep, 0) + poblacion
+
+    total_atp = sum(por_depto_atp.values())
+    total_poblacion = sum(por_depto_poblacion.values())
+    if not total_atp or not total_poblacion:
+        return {}
+
+    resultado: dict[str, float] = {}
+    for dep, poblacion in por_depto_poblacion.items():
+        pct_atp = por_depto_atp.get(dep, 0.0) / total_atp
+        pct_poblacion = poblacion / total_poblacion
+        if pct_poblacion:
+            resultado[dep] = round(pct_atp / pct_poblacion, 3)
     return resultado

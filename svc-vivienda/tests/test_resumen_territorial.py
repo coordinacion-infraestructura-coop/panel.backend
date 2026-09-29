@@ -179,6 +179,61 @@ def test_agrupar_por_localidad_departamento_abreviado_matchea():
     assert grupos[0]["departamento"] == "Gral Roca"
 
 
+def test_enriquecer_con_datos_externos_agrega_poblacion_y_transferencias():
+    localidad = {"id_geo": "g1", "localidad": "Alta Gracia", "departamento": "Santa María", "programas": []}
+    datos = {"g1": {
+        "categoria": "MU", "poblacion_2022": 1000, "viviendas_2022": 400,
+        "transferencias_periodo": "2026-07-01", "transferencias_total": 500000.0,
+    }}
+    enriquecida = aggregations.enriquecer_con_datos_externos(localidad, datos)
+    assert enriquecida["categoria"] == "MU"
+    assert enriquecida["poblacion_2022"] == 1000
+    assert enriquecida["viviendas_2022"] == 400
+    assert enriquecida["transferencias_total"] == 500000.0
+    assert enriquecida["transferencias_per_capita"] == 500.0
+    # localidad original no se muta (función pura)
+    assert "poblacion_2022" not in localidad
+
+
+def test_enriquecer_con_datos_externos_sin_id_geo_o_sin_match_deja_todo_none():
+    sin_id_geo = {"id_geo": None, "localidad": "X", "departamento": "Y", "programas": []}
+    assert aggregations.enriquecer_con_datos_externos(sin_id_geo, {"g1": {"poblacion_2022": 1}})["poblacion_2022"] is None
+
+    sin_match = {"id_geo": "g2", "localidad": "X", "departamento": "Y", "programas": []}
+    assert aggregations.enriquecer_con_datos_externos(sin_match, {"g1": {"poblacion_2022": 1}})["poblacion_2022"] is None
+
+
+def test_enriquecer_con_datos_externos_calcula_atp_per_capita():
+    localidad = {
+        "id_geo": "g1", "localidad": "Alta Gracia", "departamento": "Santa María",
+        "programas": [
+            {"programa": "atp", "monto": 100000.0},
+            {"programa": "cordon_cuneta", "monto": 999.0},  # no es ATP, no debe sumarse
+        ],
+    }
+    datos = {"g1": {"poblacion_2022": 1000}}
+    enriquecida = aggregations.enriquecer_con_datos_externos(localidad, datos)
+    assert enriquecida["atp_monto_per_capita"] == 100.0
+
+
+def test_focalizacion_atp_por_departamento():
+    localidades = [
+        {"departamento": "A", "poblacion_2022": 8000, "programas": [{"programa": "atp", "monto": 100000.0}]},
+        {"departamento": "B", "poblacion_2022": 2000, "programas": [{"programa": "atp", "monto": 100000.0}]},
+    ]
+    resultado = aggregations.focalizacion_atp_por_departamento(localidades)
+    # A: 80% población, 50% ATP -> 0.625 | B: 20% población, 50% ATP -> 2.5
+    assert resultado["A"] == pytest.approx(0.625)
+    assert resultado["B"] == pytest.approx(2.5)
+
+
+def test_focalizacion_atp_por_departamento_sin_datos_devuelve_vacio():
+    assert aggregations.focalizacion_atp_por_departamento([]) == {}
+    assert aggregations.focalizacion_atp_por_departamento(
+        [{"departamento": "A", "poblacion_2022": None, "programas": []}]
+    ) == {}
+
+
 def test_resumen_privada_estado_y_detalle():
     assert aggregations.resumen_privada_estado({"FINALIZADA": 2, "ARCHIVADO": 1})["label"] == "Finalizadas"
     assert aggregations.resumen_privada_estado({"INGRESADO": 3})["label"] == "En curso"
@@ -689,3 +744,83 @@ def test_map_privada_payload_forma_rollup_interno_e5a():
     ResumenLocalidad(
         localidad="Jesús María", departamento="Colón", programas=[prog]
     )  # no debe levantar ValidationError
+
+
+# ── datos-externos (ADR-025) — no produce líneas de "programa", enriquece por id_geo ──
+
+@pytest.mark.asyncio
+async def test_lineas_de_datos_externos_enriquecen_localidad_por_id_geo(
+    client: AsyncClient, datos_vivienda: dict
+):
+    """"Alta Gracia" resuelve a id_geo="g1" por texto (la fixture no setea
+    `localidad_id` en el CC/CH) — la federación debe enriquecerla igual,
+    sin depender de qué línea trajo el id_geo resuelto."""
+    datos_externos = [{
+        "id_geo": "g1", "codigo_indec": "140001", "categoria": "MU",
+        "poblacion_2022": 51000, "viviendas_2022": 18000,
+        "transferencias_periodo": "2026-07-01", "transferencias_total": 5100000.0,
+        "transferencias_por_concepto": {"total": 5100000.0},
+    }]
+    with patch(
+        "app.resumen_territorial.service.fetch_datos_externos_lineas",
+        new=AsyncMock(return_value=datos_externos),
+    ):
+        resp = await client.post(f"{BASE}/actualizar")
+    assert resp.status_code == 200
+    assert "datos_externos" in resp.json()["payload"]["generado_para_areas"]
+
+    full = ResumenTerritorialPayload.model_validate((await client.get(BASE)).json()["payload"])
+    ag = next(loc for loc in full.localidades if loc.localidad == "Alta Gracia")
+    assert ag.poblacion_2022 == 51000
+    assert ag.viviendas_2022 == 18000
+    assert ag.transferencias_total == pytest.approx(5100000.0)
+    assert ag.transferencias_per_capita == pytest.approx(100.0)
+
+    # Villa General Belgrano no matcheó (no vino en datos_externos) -> None, no rompe nada
+    vgb = next(loc for loc in full.localidades if loc.localidad == "Villa General Belgrano")
+    assert vgb.poblacion_2022 is None
+
+    # La visibilidad filtra programas por área, pero no borra el enriquecimiento
+    # (es dato público, no un "programa" de ninguna secretaría).
+    op_view = filtrar_por_visibilidad(full, rol="Operador", secretarias=["vivienda"])
+    op_ag = next(loc for loc in op_view.localidades if loc.localidad == "Alta Gracia")
+    assert op_ag.poblacion_2022 == 51000
+
+
+@pytest.mark.asyncio
+async def test_fetch_datos_externos_lineas_desactivado_por_defecto():
+    """Por defecto `datos_externos_fetch_enabled` es False → [] sin tocar la red."""
+    from app.resumen_territorial import service as svc
+
+    assert await svc.fetch_datos_externos_lineas() == []
+
+
+@pytest.mark.asyncio
+async def test_fetch_datos_externos_lineas_es_tolerante_a_fallos():
+    """Con el flag encendido: nunca lanza — ante cualquier error de red/auth
+    devuelve []. Se apunta a un host inexistente para forzar el fallo."""
+    from app.resumen_territorial import service as svc
+
+    with patch.object(svc.settings, "datos_externos_fetch_enabled", True), patch.object(
+        svc.settings, "svc_datos_externos_internal_url", "http://127.0.0.1:1"
+    ):
+        resultado = await svc.fetch_datos_externos_lineas()
+    assert resultado == []
+
+
+@pytest.mark.asyncio
+async def test_fetch_datos_externos_lineas_ignora_filas_sin_id_geo():
+    from types import SimpleNamespace
+
+    from app.resumen_territorial import service as svc
+
+    mock_resp = SimpleNamespace(
+        status_code=200,
+        json=lambda: [{"id_geo": "g1", "poblacion_2022": 100}, {"poblacion_2022": 5}],
+        text="",
+    )
+    with patch.object(svc.settings, "datos_externos_fetch_enabled", True), patch.object(
+        svc.settings, "svc_datos_externos_internal_url", "https://svc-datos-externos.example"
+    ), patch("httpx.AsyncClient.get", new=AsyncMock(return_value=mock_resp)):
+        resultado = await svc.fetch_datos_externos_lineas()
+    assert resultado == [{"id_geo": "g1", "poblacion_2022": 100}]

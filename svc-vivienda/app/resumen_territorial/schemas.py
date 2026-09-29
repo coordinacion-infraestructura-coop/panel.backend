@@ -45,8 +45,18 @@ class ResumenPrograma(BaseModel):
 
 
 class ResumenLocalidad(BaseModel):
+    id_geo: str | None = None                      # ADR-024 — llave de join con svc-datos-externos
     localidad: str
     departamento: str | None = None
+    # Censo 2022 + transferencias automáticas (svc-datos-externos, ADR-025).
+    # Todos None si no hubo match de id_geo o la federación está apagada/caída.
+    categoria: str | None = None                   # "MU" | "CO"
+    poblacion_2022: int | None = None
+    viviendas_2022: int | None = None
+    transferencias_periodo: str | None = None       # período del último dato cargado, ej. "2026-07-01"
+    transferencias_total: float | None = None
+    transferencias_per_capita: float | None = None  # ver nota en aggregations.enriquecer_con_datos_externos
+    atp_monto_per_capita: float | None = None
     programas: list[ResumenPrograma]
 
 

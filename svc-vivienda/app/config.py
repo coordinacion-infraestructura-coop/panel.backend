@@ -59,5 +59,15 @@ class Settings(BaseSettings):
     svc_gralgob_internal_url: str = ""
     atp_rollup_internal_path: str = "/internal/atp/rollup-territorial"
 
+    # Resumen Territorial — federación server-side de svc-datos-externos
+    # (ADR-025, mismo patrón que ADR-016/021/022). A diferencia de las otras
+    # 3 fuentes, esta no produce líneas de "programa": es enriquecimiento
+    # (población/viviendas/transferencias) que se mergea por id_geo sobre
+    # cada localidad ya agrupada. Requiere que la SA `svc-vivienda@` tenga
+    # `roles/run.invoker` sobre svc-datos-externos.
+    datos_externos_fetch_enabled: bool = False
+    svc_datos_externos_internal_url: str = ""
+    datos_externos_rollup_internal_path: str = "/internal/datos-externos/rollup-territorial"
+
 
 settings = Settings()
