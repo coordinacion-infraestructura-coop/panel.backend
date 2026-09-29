@@ -313,6 +313,8 @@ async def listar_compromisos(
             monto=float(c.monto) if c.monto is not None else None,
             destino=c.destino,
             saldo_atp=float(c.saldo_atp) if c.saldo_atp is not None else None,
+            id_geo=c.id_geo,
+            match_tipo=c.match_tipo,
             total_pagado=pagado_por_id.get(c.id),
             last_synced_at=c.last_synced_at,
         )

@@ -48,6 +48,27 @@ async def test_listar_compromisos_devuelve_total_pagado_y_total(client: AsyncCli
 
 
 @pytest.mark.asyncio
+async def test_listar_compromisos_devuelve_id_geo_y_match_tipo(client: AsyncClient, db_session: AsyncSession):
+    """Regresión (2026-09-29): `listar_compromisos` construía `CompromisoResponse`
+    campo por campo y se olvidaba de `id_geo`/`match_tipo` — la API los devolvía
+    siempre en null aunque el sync los hubiera resuelto bien, así que el panel
+    mostraba TODOS los compromisos como "sin coincidencia en el padrón geo"."""
+    db_session.add(AtpCompromiso(
+        id="compromiso-resuelto", sheet_row_number=9, localidad="Embalse",
+        departamento="Calamuchita", derivado=False,
+        id_geo="777", match_tipo="exacto",
+        last_synced_at=datetime.now(timezone.utc),
+    ))
+    await db_session.flush()
+
+    r = await client.get("/api/v1/gralgob/compromisos")
+    assert r.status_code == 200
+    item = r.json()["items"][0]
+    assert item["id_geo"] == "777"
+    assert item["match_tipo"] == "exacto"
+
+
+@pytest.mark.asyncio
 async def test_listar_compromisos_vacio(client: AsyncClient):
     r = await client.get("/api/v1/gralgob/compromisos")
     assert r.status_code == 200
