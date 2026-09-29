@@ -1,0 +1,42 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: db_datos_externos
+      POSTGRES_USER: user_datos_externos
+      POSTGRES_PASSWORD: devpassword
+    ports:
+      - "5436:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user_datos_externos -d db_datos_externos"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8005:8005"
+    environment:
+      DATABASE_URL: "postgresql+asyncpg://user_datos_externos:devpassword@db:5432/db_datos_externos"
+      PORT: "8005"
+      GCP_PROJECT_ID: "gestorcooperativo"
+      SERVICE_NAME: "svc-datos-externos"
+      ENVIRONMENT: "development"
+      # SVC_VIVIENDA_INTERNAL_URL / RESOLVER_LOCALIDADES_ENABLED: completar en
+      # .env local para probar la resolución territorial contra un
+      # svc-vivienda local (ver README.md) — sin esto, resuelve todo a NULL.
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./app:/app/app    # hot-reload en desarrollo
+
+volumes:
+  postgres_data:
