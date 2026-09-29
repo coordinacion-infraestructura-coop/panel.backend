@@ -48,6 +48,8 @@ class ResumenLocalidad(BaseModel):
     id_geo: str | None = None                      # ADR-024 — llave de join con svc-datos-externos
     localidad: str
     departamento: str | None = None
+    lat_centro: float | None = None                 # centroide del padrón (viv_geo_localidades) — zoom del mapa
+    lon_centro: float | None = None
     # Censo 2022 + transferencias automáticas (svc-datos-externos, ADR-025).
     # Todos None si no hubo match de id_geo o la federación está apagada/caída.
     categoria: str | None = None                   # "MU" | "CO"

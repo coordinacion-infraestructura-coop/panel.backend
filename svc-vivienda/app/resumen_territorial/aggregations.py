@@ -235,7 +235,7 @@ def agrupar_por_localidad(
     El nombre de display siempre prioriza la grafía del padrón
     `viv_geo_localidades` cuando hay un id_geo de por medio.
     """
-    geo_por_id: dict[str, tuple[str | None, str]] = {}
+    geo_por_id: dict[str, tuple[str | None, str, float | None, float | None]] = {}
     geo_full: dict[tuple[str, str], tuple[str, str | None, str]] = {}
     geo_depto: dict[str, str] = {}
     for g in geo_localidades:
@@ -250,7 +250,7 @@ def agrupar_por_localidad(
         if dep:
             geo_depto.setdefault(dk, dep)
         if g_id:
-            geo_por_id.setdefault(g_id, (dep, loc))
+            geo_por_id.setdefault(g_id, (dep, loc, g.get("lat_centro"), g.get("lon_centro")))
 
     grupos: dict[str, dict[str, Any]] = {}
     for linea in lineas:
@@ -268,9 +268,13 @@ def agrupar_por_localidad(
                     id_geo = match[0]
                     break
 
+        lat_centro: float | None = None
+        lon_centro: float | None = None
         if id_geo:
             key = f"geo:{id_geo}"
-            dep_disp, loc_disp = geo_por_id.get(id_geo, (dep_raw, loc_raw))
+            dep_disp, loc_disp, lat_centro, lon_centro = geo_por_id.get(
+                id_geo, (dep_raw, loc_raw, None, None)
+            )
         else:
             dk = normalize_departamento(dep_raw)
             lk = normalize_name(loc_raw)
@@ -283,6 +287,8 @@ def agrupar_por_localidad(
                 "id_geo": id_geo,
                 "localidad": loc_disp,
                 "departamento": dep_disp,
+                "lat_centro": lat_centro,
+                "lon_centro": lon_centro,
                 "programas": [],
             }
         grupos[key]["programas"].append(linea["programa"])

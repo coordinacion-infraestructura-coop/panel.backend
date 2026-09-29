@@ -41,6 +41,8 @@ async def _geo_rows(db: AsyncSession) -> list[dict]:
         {
             "departamento": g.departamento, "localidad": g.localidad,
             "id_geo": g.id_geo, "activo": g.activo,
+            "lat_centro": float(g.lat_centro) if g.lat_centro is not None else None,
+            "lon_centro": float(g.lon_centro) if g.lon_centro is not None else None,
         }
         for g in result.scalars().all()
     ]

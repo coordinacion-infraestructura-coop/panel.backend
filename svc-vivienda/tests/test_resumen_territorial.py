@@ -122,6 +122,30 @@ def test_agrupar_por_localidad_prioriza_id_geo_sobre_texto_crudo():
     assert [p["programa"] for p in grupos[0]["programas"]] == ["cordon_cuneta", "gas_pit"]
 
 
+def test_agrupar_por_localidad_propaga_centroide_del_padron():
+    """lat_centro/lon_centro viajan en el grupo para poder hacer zoom del mapa
+    a la localidad (spec §4, feedback de QA visual de Etapa 3)."""
+    geo = [{"departamento": "Río Cuarto", "localidad": "Paso del Durazno", "id_geo": "443",
+            "lat_centro": -33.1, "lon_centro": -64.3}]
+    lineas = [
+        {"departamento": "Río Cuarto", "nombre_localidad": "Paso del Durazno", "id_geo": "443",
+         "programa": {"area": "vivienda", "programa": "cordon_cuneta", "programa_label": "Cordón Cuneta y Adoquinado"}},
+    ]
+    grupos = aggregations.agrupar_por_localidad(lineas, geo)
+    assert grupos[0]["lat_centro"] == -33.1
+    assert grupos[0]["lon_centro"] == -64.3
+
+
+def test_agrupar_por_localidad_sin_geo_centroide_es_none():
+    lineas = [
+        {"departamento": "X", "nombre_localidad": "Y", "id_geo": None,
+         "programa": {"area": "vivienda", "programa": "cordon_cuneta", "programa_label": "CC"}},
+    ]
+    grupos = aggregations.agrupar_por_localidad(lineas, [])
+    assert grupos[0]["lat_centro"] is None
+    assert grupos[0]["lon_centro"] is None
+
+
 def test_agrupar_por_localidad_sin_id_geo_cae_a_candidatos_localidad():
     """Línea sin `id_geo` (ej. Privada) sigue matcheando contra el padrón vía
     alias entre paréntesis/guion (`candidatos_localidad`), no sólo el nombre
