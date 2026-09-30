@@ -219,15 +219,18 @@ def test_contar_localidades_por_departamento_asume_activo_si_no_viene_el_campo()
 
 def test_enriquecer_con_datos_externos_agrega_poblacion_y_transferencias():
     localidad = {"id_geo": "g1", "localidad": "Alta Gracia", "departamento": "Santa María", "programas": []}
+    por_concepto = {"coparticipacion_ley_8663": 400000.0, "fasamu": 100000.0}
     datos = {"g1": {
         "categoria": "MU", "poblacion_2022": 1000, "viviendas_2022": 400,
         "transferencias_periodo": "2026-07-01", "transferencias_total": 500000.0,
+        "transferencias_por_concepto": por_concepto,
     }}
     enriquecida = aggregations.enriquecer_con_datos_externos(localidad, datos)
     assert enriquecida["categoria"] == "MU"
     assert enriquecida["poblacion_2022"] == 1000
     assert enriquecida["viviendas_2022"] == 400
     assert enriquecida["transferencias_total"] == 500000.0
+    assert enriquecida["transferencias_por_concepto"] == por_concepto
     assert enriquecida["transferencias_per_capita"] == 500.0
     # localidad original no se muta (función pura)
     assert "poblacion_2022" not in localidad

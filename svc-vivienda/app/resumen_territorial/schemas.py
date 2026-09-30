@@ -57,6 +57,7 @@ class ResumenLocalidad(BaseModel):
     viviendas_2022: int | None = None
     transferencias_periodo: str | None = None       # período del último dato cargado, ej. "2026-07-01"
     transferencias_total: float | None = None
+    transferencias_por_concepto: dict[str, float] | None = None  # coparticipacion_ley_8663 | fasamu | fofindes | fondo_compensacion | bono_consenso_fiscal | total
     transferencias_per_capita: float | None = None  # ver nota en aggregations.enriquecer_con_datos_externos
     atp_monto_per_capita: float | None = None
     programas: list[ResumenPrograma]

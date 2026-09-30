@@ -363,6 +363,7 @@ def enriquecer_con_datos_externos(
         "viviendas_2022": (datos or {}).get("viviendas_2022"),
         "transferencias_periodo": (datos or {}).get("transferencias_periodo"),
         "transferencias_total": transferencias_total,
+        "transferencias_por_concepto": (datos or {}).get("transferencias_por_concepto"),
         "transferencias_per_capita": (
             round(transferencias_total / poblacion, 2)
             if transferencias_total is not None and poblacion else None
