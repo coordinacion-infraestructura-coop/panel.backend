@@ -211,7 +211,9 @@ async def compute_resumen_territorial(db: AsyncSession) -> ResumenTerritorialPay
         total_localidades=len(localidades),
         total_programas=sum(len(loc.programas) for loc in localidades),
         localidades=localidades,
-        total_localidades_por_departamento=aggregations.contar_localidades_por_departamento(geo),
+        total_localidades_por_departamento=aggregations.contar_localidades_por_departamento(
+            geo, set(datos_externos_por_id_geo.keys())
+        ),
     )
 
 

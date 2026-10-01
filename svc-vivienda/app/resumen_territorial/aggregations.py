@@ -307,7 +307,10 @@ def agrupar_por_localidad(
 
 # ── Padrón geográfico: denominador de cobertura por departamento ────────────
 
-def contar_localidades_por_departamento(geo_localidades: Iterable[dict[str, Any]]) -> dict[str, int]:
+def contar_localidades_por_departamento(
+    geo_localidades: Iterable[dict[str, Any]],
+    id_geos_oficiales: set[str] | None = None,
+) -> dict[str, int]:
     """Total de localidades ACTIVAS del padrón por departamento
     (`viv_geo_localidades`, ADR-024) — denominador del % de cobertura del
     tablero territorial (Etapa 3, spec-resumen-territorial-tablero-v2.md §4).
@@ -315,10 +318,25 @@ def contar_localidades_por_departamento(geo_localidades: Iterable[dict[str, Any]
     un programa; sin este conteo no hay forma de saber contra cuántas
     localidades reales se está cubriendo. No renormaliza el nombre del
     departamento — usa la grafía tal cual está en el padrón, para calzar con
-    `ResumenLocalidad.departamento` cuando viene resuelto por id_geo."""
+    `ResumenLocalidad.departamento` cuando viene resuelto por id_geo.
+
+    `id_geos_oficiales`, cuando se pasa no vacío, acota el conteo a sólo las
+    localidades que son "gobierno local" oficial (municipio o comuna) según
+    `svc-datos-externos` (Censo 2022 / transferencias automáticas, ADR-025) —
+    pedido real del usuario (2026-10-01): el padrón completo de
+    `viv_geo_localidades` (537 activas) es más amplio que "los municipios y
+    comunas de Córdoba" (426/427, lo que la gente reconoce como el total real)
+    porque incluye parajes/villas chicas sin gobierno local propio, que nunca
+    van a tener una fila de Censo ni una transferencia independiente — eso
+    inflaba el denominador de cobertura con lugares que estructuralmente no
+    pueden "contar". Vacío o `None` (datos_externos deshabilitado o caído) =>
+    sin acotar, mismo criterio fail-open que el resto de la federación: mejor
+    un denominador más grande que uno en cero."""
     conteo: dict[str, int] = {}
     for g in geo_localidades:
         if not g.get("activo", True):
+            continue
+        if id_geos_oficiales and g.get("id_geo") not in id_geos_oficiales:
             continue
         dep = g.get("departamento")
         if not dep:

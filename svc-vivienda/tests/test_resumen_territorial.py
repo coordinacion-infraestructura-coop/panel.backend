@@ -217,6 +217,27 @@ def test_contar_localidades_por_departamento_asume_activo_si_no_viene_el_campo()
     assert aggregations.contar_localidades_por_departamento(geo) == {"Colón": 1}
 
 
+def test_contar_localidades_por_departamento_acota_a_id_geos_oficiales():
+    """Pedido real (2026-10-01): el padrón completo (viv_geo_localidades)
+    incluye parajes/villas chicas sin gobierno local propio -- con el set de
+    id_geo oficiales (Censo/transferencias, ADR-025) sólo cuentan los que
+    svc-datos-externos reconoce como municipio o comuna."""
+    geo = [
+        {"departamento": "Colón", "localidad": "Jesús María", "id_geo": "1", "activo": True},
+        {"departamento": "Colón", "localidad": "Paraje Chico", "id_geo": "2", "activo": True},
+        {"departamento": "Punilla", "localidad": "Cosquín", "id_geo": "3", "activo": True},
+    ]
+    assert aggregations.contar_localidades_por_departamento(geo, {"1", "3"}) == {"Colón": 1, "Punilla": 1}
+
+
+def test_contar_localidades_por_departamento_sin_acotar_si_id_geos_oficiales_vacio():
+    """Fail-open: si datos_externos no trajo nada (deshabilitado o caído), no
+    acotar -- mejor un denominador más grande que uno en cero."""
+    geo = [{"departamento": "Colón", "localidad": "X", "id_geo": "1", "activo": True}]
+    assert aggregations.contar_localidades_por_departamento(geo, set()) == {"Colón": 1}
+    assert aggregations.contar_localidades_por_departamento(geo, None) == {"Colón": 1}
+
+
 def test_enriquecer_con_datos_externos_agrega_poblacion_y_transferencias():
     localidad = {"id_geo": "g1", "localidad": "Alta Gracia", "departamento": "Santa María", "programas": []}
     por_concepto = {"coparticipacion_ley_8663": 400000.0, "fasamu": 100000.0}
