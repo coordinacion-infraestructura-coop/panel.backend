@@ -92,12 +92,18 @@ ALIAS_MANUAL_SEED_20260929: list[dict] = [
 # 2568 filas). Investigados uno por uno contra el padrón real (2026-10-01):
 # 16 con un único candidato claro (abreviatura/espaciado/singular-plural —
 # mismo criterio que las tandas anteriores), 2 de confianza media (marcados
-# abajo), y 3 que NO se fuerzan:
+# abajo), y 3 que NO se agregan acá:
 # - "KILOMETRO 658" (Río Primero) — mismo caso ya documentado en la migración
 #   0032 (Gasífera encontró lo mismo), el padrón no tiene ningún "658", sólo
-#   "KILOMETRO 691" (número distinto, no es un typo de un dígito).
-# - "Santiago Temple" (Río Segundo) — mismo gap ya confirmado ausente del
-#   padrón (migración original, origen "atp").
+#   "KILOMETRO 691" (número distinto, no es un typo de un dígito). Se agrega
+#   con id_geo=None para no seguir disparando la notificación de "sin
+#   resolver" en cada sync mensual futuro.
+# - "Santiago Temple" (Río Segundo) — YA existe como alias con id_geo=None
+#   desde el seed original (origen "atp", mismo gap confirmado ausente del
+#   padrón) — `texto_normalizado` es UNIQUE, re-agregarlo con otro origen
+#   rompe la migración (`UniqueViolationError`, confirmado al correrla contra
+#   prod). El resolver ya lo encuentra igual — el alias no se filtra por
+#   origen, sólo por texto normalizado.
 # - "TTOTAL Río Segundo" — no es una localidad real, es una fila de TOTAL del
 #   PDF mal parseada como si fuera un municipio (ver nota en
 #   app/transferencias/extract.py sobre anomalías conocidas del PDF fuente);
@@ -123,7 +129,7 @@ _ALIAS_RAW_20261001: list[tuple[str, str | None, str, str]] = [
     ("LASPIUR", "296", "mismo caso que el alias 'Saturnino María Laspiur' ya existente, forma corta — SAN JUSTO", "datos_externos"),
     ("VILLA PQUE.SANTA ANA", "317", "'Pque.' abrevia 'Parque' en el PDF (padrón: VILLA PARQUE SANTA ANA) — SANTA MARÍA", "datos_externos"),
     ("KILOMETRO 658", None, "mismo caso ya documentado en la migración 0032 (Gasífera) — el padrón sólo tiene 'Kilometro 691', número distinto, no se inventa un id_geo — RÍO PRIMERO", "datos_externos"),
-    ("Santiago Temple", None, "mismo gap ya confirmado ausente del padrón (ver alias original, origen atp) — RÍO SEGUNDO", "datos_externos"),
+    # "Santiago Temple" NO va acá — ya existe (origen "atp"), ver nota arriba.
 ]
 
 ALIAS_MANUAL_SEED_20261001: list[dict] = [

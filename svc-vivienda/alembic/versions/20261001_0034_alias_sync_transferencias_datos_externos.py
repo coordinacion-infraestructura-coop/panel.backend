@@ -1,17 +1,18 @@
-"""19 alias de la primera carga real de transferencias (svc-datos-externos, ADR-025)
+"""18 alias de la primera carga real de transferencias (svc-datos-externos, ADR-025)
 
 Investigación uno por uno de los 21 grupos (departamento, nombre_pdf) que
 quedaron con `id_geo IS NULL` en `ext_transferencias` tras la primera carga a
 producción (Municipios+Comunas, julio 2026). 16 con un único candidato claro
 en el padrón (abreviatura/espaciado/singular-plural), 2 de confianza media
-(marcados en el motivo), y 2 que se agregan con `id_geo=None` para no seguir
+(marcados en el motivo), y 1 que se agrega con `id_geo=None` para no seguir
 disparando la notificación de "sin resolver" en cada sync mensual futuro
-("Kilometro 658" — mismo caso que la migración 0032 — y "Santiago Temple" —
-mismo gap ya confirmado por el alias original). Un tercer caso
-("TTOTAL Río Segundo") NO se agrega como alias — es una fila de TOTAL del PDF
-mal parseada como si fuera una localidad, el problema está en el parser de
-svc-datos-externos, no en el matching geográfico; queda fuera de esta
-migración.
+("Kilometro 658" — mismo caso que la migración 0032). "Santiago Temple" NO se
+re-agrega — ya existe como alias con `id_geo=None` desde el seed original
+(origen "atp"); `texto_normalizado` es UNIQUE, duplicarlo rompe la migración
+(confirmado al correrla contra prod). Un tercer caso ("TTOTAL Río Segundo")
+tampoco se agrega como alias — es una fila de TOTAL del PDF mal parseada como
+si fuera una localidad, el problema está en el parser de svc-datos-externos,
+no en el matching geográfico; queda fuera de esta migración.
 
 Esta migración sólo agrega los alias (para que la PRÓXIMA llamada a
 `/internal/geo/resolver-localidades` resuelva bien) — no toca
