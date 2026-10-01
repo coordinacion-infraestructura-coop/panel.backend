@@ -69,3 +69,38 @@ async def test_rollup_ignora_censo_sin_id_geo(db_session: AsyncSession):
 
     resultado = await rollup.rollup_territorial(db_session)
     assert resultado == []
+
+
+@pytest.mark.asyncio
+async def test_rollup_incluye_transferencias_sin_fila_de_censo(db_session: AsyncSession):
+    """Bug real de producción (2026-10-01): una localidad cuya fila de Censo
+    quedó ambigua/sin `id_geo` (el Cuadro 1.6 no trae departamento, dos
+    localidades homónimas en deptos distintos no se pueden desambiguar) pero
+    cuyas transferencias SÍ matchearon bien (el PDF de transferencias sí trae
+    departamento) no debe desaparecer del rollup — antes se perdía porque el
+    rollup sólo iteraba sobre las filas de censo con id_geo resuelto."""
+    db_session.add(ExtGeoCenso(
+        id="c4", id_geo=None, codigo_indec="140099", categoria="MU",
+        departamento_censo=None, localidad_censo="Agua de Oro", match_tipo="ambiguo",
+    ))
+    db_session.add_all([
+        ExtTransferencia(
+            periodo=date(2026, 7, 1), tipo="municipio", id_geo="22", codigo_indec="140022",
+            nombre_pdf="Agua de Oro", departamento_pdf="Colón", concepto="coparticipacion_ley_8663", monto=100,
+        ),
+        ExtTransferencia(
+            periodo=date(2026, 7, 1), tipo="municipio", id_geo="22", codigo_indec="140022",
+            nombre_pdf="Agua de Oro", departamento_pdf="Colón", concepto="fasamu", monto=50,
+        ),
+    ])
+    await db_session.flush()
+
+    resultado = await rollup.rollup_territorial(db_session)
+
+    assert len(resultado) == 1
+    r = resultado[0]
+    assert r["id_geo"] == "22"
+    assert r["poblacion_2022"] is None  # censo nunca resolvió este id_geo
+    assert r["codigo_indec"] == "140022"  # sacado de transferencias, no de censo
+    assert r["categoria"] == "MU"
+    assert r["transferencias_total"] == 150.0
