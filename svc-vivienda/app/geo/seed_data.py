@@ -86,3 +86,54 @@ ALIAS_MANUAL_SEED_20260929: list[dict] = [
     }
     for texto_original, id_geo, motivo, origen in _ALIAS_RAW_20260929
 ]
+
+# svc-datos-externos / ETL de transferencias (ADR-025): 21 grupos sin id_geo
+# tras la primera carga real a producción (Municipios+Comunas, julio 2026,
+# 2568 filas). Investigados uno por uno contra el padrón real (2026-10-01):
+# 16 con un único candidato claro (abreviatura/espaciado/singular-plural —
+# mismo criterio que las tandas anteriores), 2 de confianza media (marcados
+# abajo), y 3 que NO se fuerzan:
+# - "KILOMETRO 658" (Río Primero) — mismo caso ya documentado en la migración
+#   0032 (Gasífera encontró lo mismo), el padrón no tiene ningún "658", sólo
+#   "KILOMETRO 691" (número distinto, no es un typo de un dígito).
+# - "Santiago Temple" (Río Segundo) — mismo gap ya confirmado ausente del
+#   padrón (migración original, origen "atp").
+# - "TTOTAL Río Segundo" — no es una localidad real, es una fila de TOTAL del
+#   PDF mal parseada como si fuera un municipio (ver nota en
+#   app/transferencias/extract.py sobre anomalías conocidas del PDF fuente);
+#   forzar un id_geo acá sería inventar un dato, el problema real está en el
+#   parser de svc-datos-externos, no en el matching geográfico.
+_ALIAS_RAW_20261001: list[tuple[str, str | None, str, str]] = [
+    ("CAÑADA DEL SAUCE", "510", "el padrón antepone 'Villa' (VILLA CAÑADA DEL SAUCE) — CALAMUCHITA", "datos_externos"),
+    ("LAS BAJADAS", "7", "nombre exacto en el padrón; ambiguo contra el alias de SOCONCHO (las Bajadas) en el mismo depto — se linkea al nombre literal, no al alias — CALAMUCHITA", "datos_externos"),
+    ("PACHECO DE MELO", "96", "el padrón antepone 'Estacion' (ESTACION PACHECO DE MELO) — JUÁREZ CELMAN", "datos_externos"),
+    ('LA CAROLINA "EL POTOSI"', "170", "mismo caso que el alias 'La Carolina El Potosí' ya existente, con comillas en vez de paréntesis — RÍO CUARTO", "datos_externos"),
+    ("VILLA CANDELARIA NORTE", "220", "el padrón no tiene el sufijo 'Norte' (VILLA CANDELARIA) — único candidato con ese nombre en el depto, confianza media — RIO SECO", "datos_externos"),
+    ("ARROYO LOS PATOS", "511", "al padrón le falta 'DE' (ARROYO DE LOS PATOS) — SAN ALBERTO", "datos_externos"),
+    ("VILLA C.PAR. LOS REARTES", "560", "abreviado en el PDF (padrón: Villa Ciudad Parque los Reartes) — CALAMUCHITA", "datos_externos"),
+    ("VILLA GRAL. BELGRANO", "17", "'Gral.' abrevia 'General' en el PDF (padrón: VILLA GENERAL BELGRANO) — CALAMUCHITA", "datos_externos"),
+    ("SAN MARCOS SIERRAS", "45", "plural en el PDF, singular en el padrón (SAN MARCOS SIERRA) — CRUZ DEL EJE", "datos_externos"),
+    ("CAP. GRAL. B. O'HIGGINS", "103", "mismo caso que el alias 'Capitán General Bernardo O'Higgins' ya existente, abreviado distinto — MARCOS JUÁREZ", "datos_externos"),
+    ("SANTA MARIA", "152", "el PDF omite 'DE PUNILLA' (padrón: SANTA MARIA DE PUNILLA) — PUNILLA", "datos_externos"),
+    ("YCHO CRUZ", "158", "'Y' por 'I' en el PDF (padrón: ICHO CRUZ) — PUNILLA", "datos_externos"),
+    ("ALCIRA GIGENA", "161", "separador distinto en el padrón (ALCIRA - EST. GIGENA) — RÍO CUARTO", "datos_externos"),
+    ("SANTA ROSA DE RIO PRIMERO", "206", "el padrón registra la cabecera del depto sólo como 'Rio Primero' (nombre oficial completo es Santa Rosa de Río Primero) — confianza media — RÍO PRIMERO", "datos_externos"),
+    ("SEBASTIAN EL CANO", "219", "con espacio en el PDF (padrón: SEBASTIAN ELCANO) — RIO SECO", "datos_externos"),
+    ("COSTASACATE", "228", "sin espacio en el PDF (padrón: COSTA SACATE) — RÍO SEGUNDO", "datos_externos"),
+    ("LASPIUR", "296", "mismo caso que el alias 'Saturnino María Laspiur' ya existente, forma corta — SAN JUSTO", "datos_externos"),
+    ("VILLA PQUE.SANTA ANA", "317", "'Pque.' abrevia 'Parque' en el PDF (padrón: VILLA PARQUE SANTA ANA) — SANTA MARÍA", "datos_externos"),
+    ("KILOMETRO 658", None, "mismo caso ya documentado en la migración 0032 (Gasífera) — el padrón sólo tiene 'Kilometro 691', número distinto, no se inventa un id_geo — RÍO PRIMERO", "datos_externos"),
+    ("Santiago Temple", None, "mismo gap ya confirmado ausente del padrón (ver alias original, origen atp) — RÍO SEGUNDO", "datos_externos"),
+]
+
+ALIAS_MANUAL_SEED_20261001: list[dict] = [
+    {
+        "texto_normalizado": normalize_name(texto_original),
+        "texto_original": texto_original,
+        "id_geo": id_geo,
+        "motivo": motivo,
+        "origen": origen,
+        "created_by": "migracion-sync-transferencias-datos-externos",
+    }
+    for texto_original, id_geo, motivo, origen in _ALIAS_RAW_20261001
+]
