@@ -730,6 +730,7 @@ def test_map_atp_payload_arma_linea_correctamente():
     assert linea["nombre_localidad"] == "HUANCHILLA"
     assert linea["programa"]["area"] == "gralgob"
     assert linea["programa"]["monto"] == pytest.approx(300000.0)
+    assert linea["programa"]["monto_entregado"] == pytest.approx(50000.0)
     assert linea["programa"]["estado_general_label"] == "Parcial"
     assert linea["programa"]["ultima_comunicacion"]["fecha"] == "2026-03-05"
 

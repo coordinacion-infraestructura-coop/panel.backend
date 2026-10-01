@@ -555,6 +555,7 @@ def _map_atp_payload(data) -> list[dict]:
                 if r.get("fecha_max") else None
             ),
             "monto": float(monto_total) if monto_total is not None else None,
+            "monto_entregado": float(entregado),
             "expediente": None,
         }
         lineas.append({

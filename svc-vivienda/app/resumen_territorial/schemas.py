@@ -40,6 +40,12 @@ class ResumenPrograma(BaseModel):
     checklist_faltantes: list[str] = Field(default_factory=list)
     ultima_comunicacion: ResumenComunicacion | None = None
     monto: float | None = None
+    # ATP (gralgob): monto efectivamente pagado a la fecha, como lo trae
+    # `rollup_territorial` de svc-gralgob (`entregado_sum`) — ya se calculaba
+    # para clasificar `estado_general_label` (Pendiente/Parcial/Pagado) pero
+    # se descartaba sin llegar al payload (ADR-025, 2026-10-01). None para
+    # cualquier otro `programa` que no sea "atp".
+    monto_entregado: float | None = None
     expediente: str | None = None
     privada_conteos: PrivadaConteos | None = None
 
