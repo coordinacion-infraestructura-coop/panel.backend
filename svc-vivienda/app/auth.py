@@ -114,7 +114,7 @@ def require_roles(*roles: str):
     return check_role
 
 
-ROLES_LECTURA = ("Admin", "Supervisor", "Operador", "Consulta")
+ROLES_LECTURA = ("Admin", "Supervisor", "Operador", "Consulta", "Autoridad")
 ROLES_ESCRITURA = ("Admin", "Supervisor", "Operador")
 ROLES_TRANSICION = ("Admin", "Supervisor")
 ROLES_ELIMINACION = ("Admin",)
