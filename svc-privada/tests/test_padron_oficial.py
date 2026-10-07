@@ -32,7 +32,7 @@ _RESOLVER = {
 }
 
 
-async def _resolver(items):
+async def _resolver(items, cantidades=None):
     return [_RESOLVER.get((dep, loc), (None, "sin_match")) for dep, loc in items]
 
 

@@ -42,17 +42,26 @@ def _base_url() -> str:
 
 
 async def resolver_localidades_estricto(
-    items: list[tuple[str | None, str | None]]
+    items: list[tuple[str | None, str | None]],
+    cantidades: list[int] | None = None,
 ) -> list[tuple[str | None, str | None]]:
     """Igual que `resolver_localidades` pero lanza `PadronNoDisponible` si la
     llamada falla, en vez de devolver todo sin resolver — quien normaliza datos
-    no puede confundir "svc-vivienda caído" con "ninguna localidad matchea"."""
+    no puede confundir "svc-vivienda caído" con "ninguna localidad matchea".
+
+    `cantidades` (alineado con `items`) es cuántas gestiones tiene cada par: los
+    pares llegan deduplicados y svc-vivienda lo muestra en la pantalla de
+    localidades sin resolver (spec-geo-asignacion-manual-localidades.md §3.3)."""
     if not items:
         return []
     base = _base_url()
     url = f"{base}/internal/geo/resolver-localidades"
+    cantidades = cantidades or [None] * len(items)
     payload = {
-        "items": [{"departamento": dep, "localidad": loc} for dep, loc in items],
+        "items": [
+            {"departamento": dep, "localidad": loc, "cantidad": cantidad}
+            for (dep, loc), cantidad in zip(items, cantidades)
+        ],
         "origen": "privada",
     }
     try:
@@ -68,7 +77,8 @@ async def resolver_localidades_estricto(
 
 
 async def resolver_localidades(
-    items: list[tuple[str | None, str | None]]
+    items: list[tuple[str | None, str | None]],
+    cantidades: list[int] | None = None,
 ) -> list[tuple[str | None, str | None]]:
     """Devuelve `[(id_geo, match_tipo), ...]` alineado con `items`. Ante
     cualquier fallo (red, servicio caído, timeout) devuelve todo `(None,
@@ -77,7 +87,7 @@ async def resolver_localidades(
     if not items or not settings.resolver_localidades_enabled or not settings.svc_vivienda_internal_url:
         return vacio
     try:
-        return await resolver_localidades_estricto(items)
+        return await resolver_localidades_estricto(items, cantidades)
     except PadronNoDisponible as exc:  # tolerante por diseño, nunca rompe el rollup
         logger.warning("geo_resolver: fallo resolviendo localidades: %s", exc)
         return vacio

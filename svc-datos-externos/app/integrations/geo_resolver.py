@@ -30,20 +30,29 @@ def _mint_id_token(audience: str) -> str | None:
 
 
 async def resolver_localidades(
-    items: list[tuple[str | None, str | None]]
+    items: list[tuple[str | None, str | None]],
+    cantidades: list[int] | None = None,
 ) -> list[tuple[str | None, str | None]]:
     """Devuelve `[(id_geo, match_tipo), ...]` alineado con `items`. Ante
     cualquier fallo (red, servicio caído, timeout) devuelve todo `(None,
     None)` — el sync sigue su curso sin bloquear (mismo criterio tolerante
-    que gasífera/gralgob)."""
+    que gasífera/gralgob).
+
+    `cantidades` (alineado con `items`) es cuántas filas tiene cada par: los
+    pares llegan deduplicados y svc-vivienda lo muestra en la pantalla de
+    localidades sin resolver (spec-geo-asignacion-manual-localidades.md §3.3)."""
     vacio: list[tuple[str | None, str | None]] = [(None, None)] * len(items)
     if not items or not settings.resolver_localidades_enabled or not settings.svc_vivienda_internal_url:
         return vacio
 
     base = settings.svc_vivienda_internal_url.rstrip("/")
     url = f"{base}/internal/geo/resolver-localidades"
+    cantidades = cantidades or [None] * len(items)
     payload = {
-        "items": [{"departamento": dep, "localidad": loc} for dep, loc in items],
+        "items": [
+            {"departamento": dep, "localidad": loc, "cantidad": cantidad}
+            for (dep, loc), cantidad in zip(items, cantidades)
+        ],
         "origen": "datos_externos",
     }
     try:

@@ -94,6 +94,7 @@ async def resolver_localidades(payload: ResolverRequest, db: AsyncSession = Depe
     resultados = await geo_service.resolver_lote(
         db, [(item.departamento, item.localidad) for item in payload.items],
         origen=payload.origen,
+        cantidades=[item.cantidad for item in payload.items],
     )
     return {
         "resultados": [

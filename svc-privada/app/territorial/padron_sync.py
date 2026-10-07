@@ -130,16 +130,6 @@ async def normalizar_gestiones(db: AsyncSession, actor: AuthUser, *, dry_run: bo
             .distinct()
         )
     ).all()
-    resueltos = await geo_resolver.resolver_localidades_estricto(
-        [(g.departamento, g.localidad) for g in grupos]
-    )
-
-    por_motivo: Counter[str] = Counter()
-    ejemplos: dict[str, list[dict]] = {}
-    modificadas = 0
-    now = now_utc()
-    usuario = actor.email or actor.uid or "system"
-
     # Los ids de cada grupo se fijan ANTES de escribir nada: una gestión ya
     # repunteada pasa a tener los valores de otro grupo (el que ya estaba
     # bien) y, leída después, se contaría dos veces en el resumen.
@@ -151,6 +141,17 @@ async def normalizar_gestiones(db: AsyncSession, actor: AuthUser, *, dry_run: bo
         )
     ).all():
         ids_por_grupo.setdefault((g_geo, g_dep, g_loc), []).append(gestion_id)
+
+    resueltos = await geo_resolver.resolver_localidades_estricto(
+        [(g.departamento, g.localidad) for g in grupos],
+        [len(ids_por_grupo.get((g.geo_id, g.departamento, g.localidad), [])) for g in grupos],
+    )
+
+    por_motivo: Counter[str] = Counter()
+    ejemplos: dict[str, list[dict]] = {}
+    modificadas = 0
+    now = now_utc()
+    usuario = actor.email or actor.uid or "system"
 
     for g, (resuelto, _tipo) in zip(grupos, resueltos):
         geo_id, departamento, localidad, motivo = _destino(g.geo_id, g.departamento, g.localidad, resuelto, espejo)

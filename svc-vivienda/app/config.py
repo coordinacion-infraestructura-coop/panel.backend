@@ -42,6 +42,11 @@ class Settings(BaseSettings):
     # flag/URL, sólo agrega el path del endpoint IAM-only de habitantes.
     privada_localidades_internal_path: str = "/internal/privada/localidades-habitantes"
 
+    # Asignación manual de localidades (spec-geo-asignacion-manual-localidades.md §4):
+    # al vincular un pendiente, svc-vivienda le pide a svc-privada que repunte sus
+    # gestiones. Reusa `svc_privada_internal_url` de arriba como base + audience.
+    privada_normalizar_internal_path: str = "/internal/privada/geo/normalizar-gestiones"
+
     # Resumen Territorial — federación server-side de svc-gasifera (ADR-017,
     # mismo patrón que ADR-016 hizo para Privada). Requiere que la SA
     # `svc-vivienda@` tenga `roles/run.invoker` sobre svc-gasifera (dirección

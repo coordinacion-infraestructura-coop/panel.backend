@@ -212,7 +212,8 @@ async def test_rollup_territorial_sin_vinculo_guardado_resuelve_contra_vivienda(
     rows = r.json()
     assert rows[0]["id_geo"] == "508"
     assert rows[0]["total_gestiones"] == 2
-    mock_resolver.assert_awaited_once_with([("CALAMUCHITA", "AMBOY")])
+    # El par va una sola vez, con la cantidad de gestiones que representa.
+    mock_resolver.assert_awaited_once_with([("CALAMUCHITA", "AMBOY")], [2])
 
 
 @pytest.mark.asyncio

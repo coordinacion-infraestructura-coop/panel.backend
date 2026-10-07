@@ -99,6 +99,7 @@ _AUDIT_PATCH_TARGETS = [
     "app.checklist_tecnico.service.log_audit",
     "app.resumen_territorial.service.log_audit",
     "app.notificaciones.service.log_audit",
+    "app.geo.asignacion.log_audit",
 ]
 
 

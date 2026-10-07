@@ -8,6 +8,7 @@ endpoint de carga manual (§2.3 paso 7).
 """
 import logging
 import tempfile
+from collections import Counter
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -90,8 +91,9 @@ async def sync_desde_pdf(
 
     # Resolución territorial en batch — una sola llamada a svc-vivienda para
     # toda la corrida (ADR-024), no una por fila.
-    pares_unicos = sorted({(f["departamento_pdf"], f["nombre_pdf"]) for f in filas})
-    resueltos = await geo_resolver.resolver_localidades(pares_unicos)
+    filas_por_par = Counter((f["departamento_pdf"], f["nombre_pdf"]) for f in filas)
+    pares_unicos = sorted(filas_por_par)
+    resueltos = await geo_resolver.resolver_localidades(pares_unicos, [filas_por_par[p] for p in pares_unicos])
     resolucion: dict[tuple[str, str], tuple[str | None, str | None]] = {
         par: res for par, res in zip(pares_unicos, resueltos)
     }

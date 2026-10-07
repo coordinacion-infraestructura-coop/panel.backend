@@ -771,12 +771,15 @@ async def rollup_territorial(db: AsyncSession) -> list[dict]:
         g.id_geo: g
         for g in (await db.execute(select(GeoLocalidad).where(GeoLocalidad.activo.is_(True)))).scalars().all()
     }
-    pendientes = list(dict.fromkeys(
-        (r.departamento, r.localidad) for r in rows if r.geo_id not in espejo
-    ))
+    gestiones_por_par: dict[tuple, int] = {}
+    for r in rows:
+        if r.geo_id not in espejo:
+            par = (r.departamento, r.localidad)
+            gestiones_por_par[par] = gestiones_por_par.get(par, 0) + int(r.total_gestiones)
+    pendientes = list(gestiones_por_par)
     resueltos: dict[tuple, str | None] = {}
     if pendientes:
-        respuesta = await geo_resolver.resolver_localidades(pendientes)
+        respuesta = await geo_resolver.resolver_localidades(pendientes, list(gestiones_por_par.values()))
         resueltos = {clave: id_geo for clave, (id_geo, _tipo) in zip(pendientes, respuesta)}
 
     # Una sola línea por localidad: las gestiones de un mismo `id_geo` se
