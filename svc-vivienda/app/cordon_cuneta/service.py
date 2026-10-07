@@ -204,6 +204,10 @@ async def actualizar_municipio(
         resuelto = await geo_service.resolver_uno(db, municipio.departamento, municipio.municipio, origen="cordon_cuneta")
         municipio.localidad_id = resuelto.id_geo
         municipio.localidad_match_tipo = resuelto.match_tipo
+        # Con vínculo, lo que se guarda es el nombre del padrón oficial (ADR-026);
+        # el texto que llegó sólo queda cuando la localidad no está en el padrón.
+        municipio.municipio = resuelto.localidad_oficial or municipio.municipio
+        municipio.departamento = resuelto.departamento_oficial or municipio.departamento
 
     await db.flush()
 
@@ -270,8 +274,8 @@ async def crear_municipio(
 
     municipio = MunicipioCordonCuneta(
         orden=max_orden + 1,
-        municipio=data.municipio,
-        departamento=data.departamento,
+        municipio=resuelto.localidad_oficial or data.municipio,
+        departamento=resuelto.departamento_oficial or data.departamento,
         localidad_id=resuelto.id_geo,
         localidad_match_tipo=resuelto.match_tipo,
         expediente=data.expediente,

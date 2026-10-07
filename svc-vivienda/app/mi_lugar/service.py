@@ -210,8 +210,8 @@ async def crear_proyecto_ml(
         nombre=data.nombre,
         localidad_id=resuelto.id_geo,
         localidad_match_tipo=resuelto.match_tipo,
-        localidad_nombre=data.localidad_nombre,
-        departamento=data.departamento,
+        localidad_nombre=resuelto.localidad_oficial or data.localidad_nombre,
+        departamento=resuelto.departamento_oficial or data.departamento,
         expediente=data.expediente,
         responsable=data.responsable,
         superficie=data.superficie,
@@ -300,6 +300,10 @@ async def actualizar_proyecto_ml(
         resuelto = await geo_service.resolver_uno(db, proy.departamento, proy.localidad_nombre, origen="mi_lugar")
         proy.localidad_id = resuelto.id_geo
         proy.localidad_match_tipo = resuelto.match_tipo
+        # Con vínculo, lo que se guarda es el nombre del padrón oficial (ADR-026);
+        # el texto que llegó sólo queda cuando la localidad no está en el padrón.
+        proy.localidad_nombre = resuelto.localidad_oficial or proy.localidad_nombre
+        proy.departamento = resuelto.departamento_oficial or proy.departamento
 
     if fecha_cambio is not None:
         proy.updated_at = datetime.combine(fecha_cambio, dtime(12, 0, 0), tzinfo=timezone.utc)

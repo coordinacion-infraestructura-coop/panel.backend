@@ -207,6 +207,10 @@ async def actualizar_localidad(
         resuelto = await geo_service.resolver_uno(db, localidad.departamento, localidad.localidad, origen="cordoba_hogar")
         localidad.localidad_id = resuelto.id_geo
         localidad.localidad_match_tipo = resuelto.match_tipo
+        # Con vínculo, lo que se guarda es el nombre del padrón oficial (ADR-026);
+        # el texto que llegó sólo queda cuando la localidad no está en el padrón.
+        localidad.localidad = resuelto.localidad_oficial or localidad.localidad
+        localidad.departamento = resuelto.departamento_oficial or localidad.departamento
 
     await db.flush()
 
@@ -273,8 +277,8 @@ async def crear_localidad(
 
     localidad = LocalidadCordobaHogar(
         orden=max_orden + 1,
-        localidad=data.localidad,
-        departamento=data.departamento,
+        localidad=resuelto.localidad_oficial or data.localidad,
+        departamento=resuelto.departamento_oficial or data.departamento,
         localidad_id=resuelto.id_geo,
         localidad_match_tipo=resuelto.match_tipo,
         fecha_anuncio=data.fecha_anuncio,
