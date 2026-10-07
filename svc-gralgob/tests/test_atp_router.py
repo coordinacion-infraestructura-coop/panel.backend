@@ -6,7 +6,13 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.atp.models import AtpCompromiso, AtpCronogramaPago
-from tests.conftest import CONSULTA_USER, INVITADO_USER, SIN_GRALGOB_USER
+from tests.conftest import (
+    AUTORIDAD_SIN_SECRETARIA_USER,
+    AUTORIDAD_USER,
+    CONSULTA_USER,
+    INVITADO_USER,
+    SIN_GRALGOB_USER,
+)
 
 
 @pytest.fixture
@@ -145,6 +151,20 @@ async def test_sin_secretaria_gralgob_devuelve_403(client: AsyncClient, as_user)
     r = await client.get("/api/v1/gralgob/compromisos")
     assert r.status_code == 403
     assert r.json()["detail"]["code"] == "PERMISO_INSUFICIENTE"
+
+
+@pytest.mark.asyncio
+async def test_autoridad_con_secretaria_puede_leer(client: AsyncClient, as_user):
+    as_user(AUTORIDAD_USER)
+    r = await client.get("/api/v1/gralgob/compromisos")
+    assert r.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_autoridad_sin_secretaria_devuelve_403(client: AsyncClient, as_user):
+    as_user(AUTORIDAD_SIN_SECRETARIA_USER)
+    r = await client.get("/api/v1/gralgob/compromisos")
+    assert r.status_code == 403
 
 
 @pytest.mark.asyncio

@@ -10,7 +10,7 @@
 - Cualquier fallo del lookup -> rol "invitado" (sin acceso), nunca 500.
 
 Roles de General de Gobierno mapean 1:1 a la jerarquía del portal (mismo criterio que
-svc-privada/svc-gasifera) — no es un rol acotado como TecnicoDGV/Autoridad.
+svc-privada/svc-gasifera) — no es un rol acotado como TecnicoDGV.
 """
 import time
 from functools import lru_cache
@@ -142,4 +142,7 @@ def require_gralgob(*roles: str):
     return check
 
 
-ROLES_LECTURA = ("Admin", "Supervisor", "Operador", "Consulta")
+# `Autoridad` lee los paneles operativos de las secretarías que tenga asignadas
+# (mismo criterio que svc-vivienda/svc-privada) — el chequeo de secretaría de
+# `require_gralgob` le aplica igual que al resto.
+ROLES_LECTURA = ("Admin", "Supervisor", "Operador", "Consulta", "Autoridad")

@@ -35,6 +35,12 @@ CONSULTA_USER = AuthUser(
 SIN_GRALGOB_USER = AuthUser(
     uid="otra-sec-uid", email="otra.sec@test.com", role="Operador", secretarias=["vivienda"]
 )
+AUTORIDAD_USER = AuthUser(
+    uid="aut-uid", email="autoridad@test.com", role="Autoridad", secretarias=["gralgob"]
+)
+AUTORIDAD_SIN_SECRETARIA_USER = AuthUser(
+    uid="aut2-uid", email="autoridad2@test.com", role="Autoridad", secretarias=["vivienda"]
+)
 INVITADO_USER = AuthUser(uid="inv-uid", email="invitado@test.com", role="invitado", secretarias=[])
 
 
