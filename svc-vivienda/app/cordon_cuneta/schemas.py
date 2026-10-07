@@ -66,7 +66,6 @@ class MunicipioUpdate(BaseModel):
     ok_gob: str | None = None
     doc_exp: str | None = None
     ejuridico: int | None = None
-    etecnico: int | None = None
     efinanciero: int | None = None
     estado_general: int | None = None
     cordon_cuneta_ml: float | None = None
@@ -82,7 +81,6 @@ class MunicipioCreate(BaseModel):
     monto: float | None = None
     ok_gob: str = "SI"
     ejuridico: int | None = None
-    etecnico: int | None = None
     efinanciero: int | None = None
 
 

@@ -326,10 +326,10 @@ async def test_cambio_estado_registra_anterior_nuevo_y_actor(
 ):
     """La entrada registra estado_anterior, estado_nuevo y el email del actor."""
     mid, id_a, id_b = municipio_con_estado
-    await client.patch(f"{BASE}/{mid}", json={"etecnico": id_b})
+    await client.patch(f"{BASE}/{mid}", json={"efinanciero": id_b})
 
     entry = (await client.get(f"{BASE}/{mid}/historial")).json()[0]
-    assert entry["campo"] == "etecnico"
+    assert entry["campo"] == "efinanciero"
     assert entry["estado_anterior_id"] == id_a
     assert entry["estado_nuevo_id"] == id_b
     assert entry["created_by"] == "admin@test.com"
@@ -351,14 +351,14 @@ async def test_mismo_estado_no_genera_historial(
 async def test_multiples_campos_generan_multiples_entradas(
     client: AsyncClient, municipio_con_estado: tuple
 ):
-    """Cambiar ejuridico + etecnico en un solo PATCH produce dos entradas."""
+    """Cambiar ejuridico + efinanciero en un solo PATCH produce dos entradas."""
     mid, id_a, id_b = municipio_con_estado
-    r = await client.patch(f"{BASE}/{mid}", json={"ejuridico": id_b, "etecnico": id_b})
+    r = await client.patch(f"{BASE}/{mid}", json={"ejuridico": id_b, "efinanciero": id_b})
     assert r.status_code == 200
 
     hist = (await client.get(f"{BASE}/{mid}/historial")).json()
     assert len(hist) == 2
-    assert {e["campo"] for e in hist} == {"ejuridico", "etecnico"}
+    assert {e["campo"] for e in hist} == {"ejuridico", "efinanciero"}
 
 
 @pytest.mark.asyncio
@@ -368,11 +368,11 @@ async def test_historial_retorna_entradas_mas_recientes_primero(
     """El endpoint /historial ordena de más reciente a más antiguo."""
     mid, id_a, id_b = municipio_con_estado
     await client.patch(f"{BASE}/{mid}", json={"ejuridico": id_b})
-    await client.patch(f"{BASE}/{mid}", json={"etecnico": id_b})
+    await client.patch(f"{BASE}/{mid}", json={"efinanciero": id_b})
 
     hist = (await client.get(f"{BASE}/{mid}/historial")).json()
     assert len(hist) == 2
-    assert hist[0]["campo"] == "etecnico"   # segundo cambio → primero en la lista
+    assert hist[0]["campo"] == "efinanciero"   # segundo cambio → primero en la lista
     assert hist[1]["campo"] == "ejuridico"
 
 

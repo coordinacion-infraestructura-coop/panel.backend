@@ -112,7 +112,6 @@ class ProyectoMLCreate(BaseModel):
     costo_total_infra: Decimal | None = None
     ok_gob: str = "SI"
     ejuridico: int | None = None
-    etecnico: int | None = None
     efinanciero: int | None = None
     estado_general: int | None = None
     obs: str | None = None
@@ -136,7 +135,6 @@ class ProyectoMLUpdate(BaseModel):
     costo_total_infra: Decimal | None = None
     ok_gob: str | None = None
     ejuridico: int | None = None
-    etecnico: int | None = None
     efinanciero: int | None = None
     estado_general: int | None = None
     obs: str | None = None

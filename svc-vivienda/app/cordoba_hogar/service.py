@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit import log_audit
 from app.auth import AuthUser
+from app.checklist_tecnico import estado_tecnico
 from app.integrations.privada_sync import sync_gestion_privada
 from app.cordoba_hogar.models import (
     ConfigCordobaHogar,
@@ -36,6 +37,13 @@ from app.geo import service as geo_service
 from app.geo.models import GeoLocalidad
 
 
+def _localidad_response(localidad: LocalidadCordobaHogar, etecnico: int | None) -> LocalidadResponse:
+    """`etecnico` no sale de la columna propia: es el estado del expediente del checklist
+    (spec-estado-tecnico-desde-checklist.md §3.2)."""
+    out = LocalidadResponse.model_validate(localidad)
+    out.etecnico = etecnico
+    return out
+
 
 async def get_full(db: AsyncSession) -> CordobaHogarFullResponse:
     localidades_res = await db.execute(
@@ -49,9 +57,10 @@ async def get_full(db: AsyncSession) -> CordobaHogarFullResponse:
     presupuesto = float(config.presupuesto) if config else 0.0
 
     monto_por_casa = float(config.monto_por_casa) if config and config.monto_por_casa is not None else 34000000.0
+    tecnico = await estado_tecnico.estados_expediente_por_entidad(db, "ch")
 
     return CordobaHogarFullResponse(
-        localidades=[LocalidadResponse.model_validate(l) for l in localidades_res.scalars().all()],
+        localidades=[_localidad_response(l, tecnico.get(l.id)) for l in localidades_res.scalars().all()],
         estados=[EstadoResponse.model_validate(e) for e in estados_res.scalars().all()],
         presupuesto=presupuesto,
         monto_por_casa=monto_por_casa,
@@ -171,7 +180,7 @@ async def actualizar_localidad(
     fecha_cambio = updates.pop("fecha_cambio", None)
 
     historial = []
-    for campo in ("ejuridico", "etecnico", "efinanciero"):
+    for campo in ("ejuridico", "efinanciero"):
         if campo in updates:
             old_val = getattr(localidad, campo)
             new_val = updates[campo]
@@ -214,7 +223,9 @@ async def actualizar_localidad(
         db, caso_tipo="ch", caso_id=localidad.id, nro_expediente=localidad.expediente,
         localidad=localidad.localidad, departamento=localidad.departamento, ok_gob=localidad.ok_gob,
     )
-    return LocalidadResponse.model_validate(localidad)
+    return _localidad_response(
+        localidad, await estado_tecnico.estado_expediente_de(db, "ch", localidad.id)
+    )
 
 
 async def _buscar_duplicado_ch(
@@ -272,7 +283,6 @@ async def crear_localidad(
         cantidad_casas=data.cantidad_casas,
         ok_gob=data.ok_gob,
         ejuridico=data.ejuridico,
-        etecnico=data.etecnico,
         efinanciero=data.efinanciero,
         updated_by=actor.email,
     )
@@ -306,7 +316,9 @@ async def crear_localidad(
         db, caso_tipo="ch", caso_id=localidad.id, nro_expediente=localidad.expediente,
         localidad=localidad.localidad, departamento=localidad.departamento, ok_gob=localidad.ok_gob,
     )
-    return LocalidadResponse.model_validate(localidad)
+    return _localidad_response(
+        localidad, await estado_tecnico.estado_expediente_de(db, "ch", localidad.id)
+    )
 
 
 async def eliminar_localidad(db: AsyncSession, localidad_id: str, actor: AuthUser) -> None:
@@ -337,9 +349,15 @@ async def get_historial(
     result = await db.execute(
         select(EstadoHistorialCH)
         .where(EstadoHistorialCH.localidad_id == localidad_id)
-        .order_by(EstadoHistorialCH.created_at.desc())
     )
-    return [EstadoHistorialResponse.model_validate(h) for h in result.scalars().all()]
+    entradas = [EstadoHistorialResponse.model_validate(h) for h in result.scalars().all()]
+    # El Técnico se cambia desde el checklist: su historial vive en viv_checklist_estado_hist.
+    entradas += [
+        EstadoHistorialResponse(localidad_id=localidad_id, **h)
+        for h in await estado_tecnico.historial_tecnico(db, "ch", localidad_id)
+    ]
+    entradas.sort(key=lambda h: estado_tecnico.orden_cronologico(h.created_at), reverse=True)
+    return entradas
 
 
 async def listar_geo_localidades(db: AsyncSession) -> list[GeoLocalidadResponse]:

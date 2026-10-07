@@ -71,7 +71,6 @@ class LocalidadUpdate(BaseModel):
     ok_gob: str | None = None
     doc_exp: str | None = None
     ejuridico: int | None = None
-    etecnico: int | None = None
     efinanciero: int | None = None
     estado_general: int | None = None
     obs: str | None = None
@@ -87,7 +86,6 @@ class LocalidadCreate(BaseModel):
     cantidad_casas: int | None = None
     ok_gob: str = "SI"
     ejuridico: int | None = None
-    etecnico: int | None = None
     efinanciero: int | None = None
 
 

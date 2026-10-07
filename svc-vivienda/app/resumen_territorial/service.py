@@ -18,7 +18,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit import log_audit
 from app.auth import AuthUser
-from app.checklist_tecnico.models import CatalogoItemEstado, ChecklistItem, ChecklistTecnico
+from app.checklist_tecnico.models import (
+    CatalogoEstadoExpediente,
+    CatalogoItemEstado,
+    ChecklistItem,
+    ChecklistTecnico,
+)
 from app.config import settings
 from app.cordoba_hogar.models import EstadoCordobaHogar, LocalidadCordobaHogar, PedidoCordobaHogar
 from app.cordon_cuneta.models import EstadoCordonCuneta, MunicipioCordonCuneta, PedidoCordonCuneta
@@ -55,7 +60,7 @@ def _catalogo(rows) -> dict[int, dict]:
     }
 
 
-def _estado_fields(entidad, catalogo: dict[int, dict]) -> dict:
+def _estado_fields(entidad, catalogo: dict[int, dict], tecnico_label: str | None) -> dict:
     est = catalogo.get(entidad.estado_general)
     return {
         "estado_general_id": entidad.estado_general,
@@ -64,7 +69,9 @@ def _estado_fields(entidad, catalogo: dict[int, dict]) -> dict:
         "estado_general_text_color": est["text_color"] if est else None,
         "subestados": {
             "juridico": (catalogo.get(entidad.ejuridico) or {}).get("label"),
-            "tecnico": (catalogo.get(entidad.etecnico) or {}).get("label"),
+            # El Técnico es el estado del expediente del checklist, no la columna del panel
+            # (spec-estado-tecnico-desde-checklist.md §3.5).
+            "tecnico": tecnico_label,
             "financiero": (catalogo.get(entidad.efinanciero) or {}).get("label"),
         },
     }
@@ -106,9 +113,13 @@ async def compute_resumen_territorial(db: AsyncSession) -> ResumenTerritorialPay
     ml_cat = _catalogo((await db.execute(select(EstadoML))).scalars().all())
 
     # Checklist técnico: todas las filas + ítems, agrupados en Python. No se crean filas.
-    chk_by_ent = {
-        (c.programa, c.entidad_id): c.id
-        for c in (await db.execute(select(ChecklistTecnico))).scalars().all()
+    checklists = (await db.execute(select(ChecklistTecnico))).scalars().all()
+    chk_by_ent = {(c.programa, c.entidad_id): c.id for c in checklists}
+    exp_labels = {
+        e.id: e.label for e in (await db.execute(select(CatalogoEstadoExpediente))).scalars().all()
+    }
+    tecnico_by_ent = {
+        (c.programa, c.entidad_id): exp_labels.get(c.estado_expediente_id) for c in checklists
     }
     # "completo" ya no es un literal: es el/los estado(s) del catálogo con es_completo=True.
     completo_ids = {
@@ -148,7 +159,7 @@ async def compute_resumen_territorial(db: AsyncSession) -> ResumenTerritorialPay
             "programa_label": aggregations.PROGRAMA_LABEL[programa],
             "entidad_id": entidad.id,
             "detalle": detalle,
-            **_estado_fields(entidad, catalogo),
+            **_estado_fields(entidad, catalogo, tecnico_by_ent.get((prog_cod, entidad.id))),
             "checklist_total": total,
             "checklist_faltan": faltan,
             "checklist_iniciado": iniciado,

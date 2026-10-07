@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit import log_audit
 from app.auth import AuthUser
+from app.checklist_tecnico import estado_tecnico
 from app.geo import service as geo_service
 from app.integrations.privada_sync import sync_gestion_privada
 from app.mi_lugar.models import (
@@ -126,9 +127,14 @@ async def eliminar_estado_ml(db: AsyncSession, estado_id: int, actor: AuthUser) 
 
 # ─── Proyectos ────────────────────────────────────────────────────────────────
 
-def _proyecto_con_geo(proy: ProyectoML, puntos: list[GeoPuntoML]) -> ProyectoMLOut:
+def _proyecto_con_geo(
+    proy: ProyectoML, puntos: list[GeoPuntoML], etecnico: int | None
+) -> ProyectoMLOut:
+    """`etecnico` no sale de la columna propia: es el estado del expediente del checklist
+    (spec-estado-tecnico-desde-checklist.md §3.2)."""
     out = ProyectoMLOut.model_validate(proy)
     out.geo_puntos = [GeoPuntoOut.model_validate(p) for p in puntos]
+    out.etecnico = etecnico
     return out
 
 
@@ -155,7 +161,6 @@ async def listar_proyectos_ml(
     if estado_id:
         q = q.where(
             (ProyectoML.ejuridico == estado_id)
-            | (ProyectoML.etecnico == estado_id)
             | (ProyectoML.efinanciero == estado_id)
         )
     q = q.order_by(ProyectoML.created_at)
@@ -170,7 +175,10 @@ async def listar_proyectos_ml(
     for punto in geo_result.scalars().all():
         puntos_by_proyecto.setdefault(punto.proyecto_id, []).append(punto)
 
-    return [_proyecto_con_geo(p, puntos_by_proyecto.get(p.id, [])) for p in proyectos]
+    tecnico = await estado_tecnico.estados_expediente_por_entidad(db, "ml")
+    return [
+        _proyecto_con_geo(p, puntos_by_proyecto.get(p.id, []), tecnico.get(p.id)) for p in proyectos
+    ]
 
 
 async def obtener_proyecto_ml(db: AsyncSession, proyecto_id: str) -> ProyectoMLOut:
@@ -187,7 +195,9 @@ async def obtener_proyecto_ml(db: AsyncSession, proyecto_id: str) -> ProyectoMLO
             detail={"code": "RECURSO_NO_ENCONTRADO", "message": f"Proyecto {proyecto_id} no encontrado"},
         )
     puntos = await _cargar_geo(db, proyecto_id)
-    return _proyecto_con_geo(proy, puntos)
+    return _proyecto_con_geo(
+        proy, puntos, await estado_tecnico.estado_expediente_de(db, "ml", proy.id)
+    )
 
 
 async def crear_proyecto_ml(
@@ -214,7 +224,6 @@ async def crear_proyecto_ml(
         costo_total_infra=data.costo_total_infra,
         ok_gob=data.ok_gob,
         ejuridico=data.ejuridico,
-        etecnico=data.etecnico,
         efinanciero=data.efinanciero,
         estado_general=data.estado_general,
         obs=data.obs,
@@ -238,7 +247,9 @@ async def crear_proyecto_ml(
         db, caso_tipo="ml", caso_id=proy.id, nro_expediente=proy.expediente,
         localidad=proy.localidad_nombre, departamento=proy.departamento, ok_gob=proy.ok_gob,
     )
-    return _proyecto_con_geo(proy, puntos)
+    return _proyecto_con_geo(
+        proy, puntos, await estado_tecnico.estado_expediente_de(db, "ml", proy.id)
+    )
 
 
 async def actualizar_proyecto_ml(
@@ -265,7 +276,7 @@ async def actualizar_proyecto_ml(
     updates.pop("localidad_id", None)
 
     historial = []
-    for campo in ("ejuridico", "etecnico", "efinanciero"):
+    for campo in ("ejuridico", "efinanciero"):
         if campo in updates:
             old_val = getattr(proy, campo)
             new_val = updates[campo]
@@ -318,7 +329,9 @@ async def actualizar_proyecto_ml(
         db, caso_tipo="ml", caso_id=proy.id, nro_expediente=proy.expediente,
         localidad=proy.localidad_nombre, departamento=proy.departamento, ok_gob=proy.ok_gob,
     )
-    return _proyecto_con_geo(proy, puntos)
+    return _proyecto_con_geo(
+        proy, puntos, await estado_tecnico.estado_expediente_de(db, "ml", proy.id)
+    )
 
 
 async def eliminar_proyecto_ml(db: AsyncSession, proyecto_id: str, actor: AuthUser) -> None:
@@ -347,9 +360,15 @@ async def get_historial_ml(db: AsyncSession, proyecto_id: str) -> list[EstadoHis
     result = await db.execute(
         select(EstadoHistorialML)
         .where(EstadoHistorialML.proyecto_id == proyecto_id)
-        .order_by(EstadoHistorialML.created_at.desc())
     )
-    return [EstadoHistorialMLOut.model_validate(h) for h in result.scalars().all()]
+    entradas = [EstadoHistorialMLOut.model_validate(h) for h in result.scalars().all()]
+    # El Técnico se cambia desde el checklist: su historial vive en viv_checklist_estado_hist.
+    entradas += [
+        EstadoHistorialMLOut(proyecto_id=proyecto_id, **h)
+        for h in await estado_tecnico.historial_tecnico(db, "ml", proyecto_id)
+    ]
+    entradas.sort(key=lambda h: estado_tecnico.orden_cronologico(h.created_at), reverse=True)
+    return entradas
 
 
 # ─── Pedidos ──────────────────────────────────────────────────────────────────

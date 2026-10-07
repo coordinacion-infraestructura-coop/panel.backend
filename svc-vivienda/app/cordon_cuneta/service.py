@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit import log_audit
 from app.auth import AuthUser
+from app.checklist_tecnico import estado_tecnico
 from app.integrations.privada_sync import sync_gestion_privada
 from app.cordon_cuneta.models import (
     ConfigCordonCuneta,
@@ -36,6 +37,13 @@ from app.geo import service as geo_service
 from app.geo.models import GeoLocalidad
 
 
+def _municipio_response(municipio: MunicipioCordonCuneta, etecnico: int | None) -> MunicipioResponse:
+    """`etecnico` no sale de la columna propia: es el estado del expediente del checklist
+    (spec-estado-tecnico-desde-checklist.md §3.2)."""
+    out = MunicipioResponse.model_validate(municipio)
+    out.etecnico = etecnico
+    return out
+
 
 async def get_full(db: AsyncSession) -> CordonCunetaFullResponse:
     municipios_res = await db.execute(
@@ -47,9 +55,10 @@ async def get_full(db: AsyncSession) -> CordonCunetaFullResponse:
     config_res = await db.execute(select(ConfigCordonCuneta).where(ConfigCordonCuneta.id == 1))
     config = config_res.scalar_one_or_none()
     presupuesto = float(config.presupuesto) if config else 0.0
+    tecnico = await estado_tecnico.estados_expediente_por_entidad(db, "cc")
 
     return CordonCunetaFullResponse(
-        municipios=[MunicipioResponse.model_validate(m) for m in municipios_res.scalars().all()],
+        municipios=[_municipio_response(m, tecnico.get(m.id)) for m in municipios_res.scalars().all()],
         estados=[EstadoResponse.model_validate(e) for e in estados_res.scalars().all()],
         presupuesto=presupuesto,
     )
@@ -168,7 +177,7 @@ async def actualizar_municipio(
     fecha_cambio = updates.pop("fecha_cambio", None)
 
     historial = []
-    for campo in ("ejuridico", "etecnico", "efinanciero"):
+    for campo in ("ejuridico", "efinanciero"):
         if campo in updates:
             old_val = getattr(municipio, campo)
             new_val = updates[campo]
@@ -211,7 +220,9 @@ async def actualizar_municipio(
         db, caso_tipo="cc", caso_id=municipio.id, nro_expediente=municipio.expediente,
         localidad=municipio.municipio, departamento=municipio.departamento, ok_gob=municipio.ok_gob,
     )
-    return MunicipioResponse.model_validate(municipio)
+    return _municipio_response(
+        municipio, await estado_tecnico.estado_expediente_de(db, "cc", municipio.id)
+    )
 
 
 async def _buscar_duplicado_cc(
@@ -267,7 +278,6 @@ async def crear_municipio(
         monto=data.monto,
         ok_gob=data.ok_gob,
         ejuridico=data.ejuridico,
-        etecnico=data.etecnico,
         efinanciero=data.efinanciero,
         updated_by=actor.email,
     )
@@ -301,7 +311,9 @@ async def crear_municipio(
         db, caso_tipo="cc", caso_id=municipio.id, nro_expediente=municipio.expediente,
         localidad=municipio.municipio, departamento=municipio.departamento, ok_gob=municipio.ok_gob,
     )
-    return MunicipioResponse.model_validate(municipio)
+    return _municipio_response(
+        municipio, await estado_tecnico.estado_expediente_de(db, "cc", municipio.id)
+    )
 
 
 async def eliminar_municipio(db: AsyncSession, municipio_id: str, actor: AuthUser) -> None:
@@ -332,9 +344,15 @@ async def get_historial(
     result = await db.execute(
         select(EstadoHistorialCC)
         .where(EstadoHistorialCC.municipio_id == municipio_id)
-        .order_by(EstadoHistorialCC.created_at.desc())
     )
-    return [EstadoHistorialResponse.model_validate(h) for h in result.scalars().all()]
+    entradas = [EstadoHistorialResponse.model_validate(h) for h in result.scalars().all()]
+    # El Técnico se cambia desde el checklist: su historial vive en viv_checklist_estado_hist.
+    entradas += [
+        EstadoHistorialResponse(municipio_id=municipio_id, **h)
+        for h in await estado_tecnico.historial_tecnico(db, "cc", municipio_id)
+    ]
+    entradas.sort(key=lambda h: estado_tecnico.orden_cronologico(h.created_at), reverse=True)
+    return entradas
 
 
 async def listar_geo_localidades(db: AsyncSession) -> list[GeoLocalidadResponse]:
