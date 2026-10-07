@@ -26,7 +26,7 @@ _CERRADOS = {"FINALIZADA", "ARCHIVADO"}
 
 # Eventos que quedan en `priv_gestiones_eventos` (auditoría interna) pero no se muestran
 # en el timeline de Movimientos del usuario — ver DetalleCorreccion.
-_TIPO_EVENTO_OCULTO = {"CORRECCION_DETALLE"}
+_TIPO_EVENTO_OCULTO = {"CORRECCION_DETALLE", "NORMALIZACION_LOCALIDAD"}
 
 
 def _err(code: int, detail):
@@ -747,6 +747,7 @@ async def rollup_territorial(db: AsyncSession) -> list[dict]:
             select(
                 dep.label("departamento"),
                 loc.label("localidad"),
+                Gestion.geo_id.label("geo_id"),
                 func.count().label("total_gestiones"),
                 func.count().filter(est.notin_(("FINALIZADA", "ARCHIVADO"))).label("abiertas"),
                 func.count().filter(est == "FINALIZADA").label("finalizadas"),
@@ -755,34 +756,61 @@ async def rollup_territorial(db: AsyncSession) -> list[dict]:
                 func.max(Gestion.fecha_estado).label("fecha_estado_max"),
             )
             .where(Gestion.deleted_at.is_(None))
-            .group_by(dep, loc)
+            .group_by(dep, loc, Gestion.geo_id)
             .order_by(dep, loc)
         )
     ).all()
 
-    # Resolución en batch contra el padrón de svc-vivienda (ADR-024) — una sola
-    # llamada para todas las filas del rollup (típicamente unos cientos, no
-    # miles), no persiste id_geo por gestión, sólo enriquece este agregado.
-    # Best-effort: si falla, cada fila queda con id_geo=None y resumen_territorial
-    # sigue cayendo al matching por texto para ellas, como antes.
-    resueltos = await geo_resolver.resolver_localidades(
-        [(r.departamento, r.localidad) for r in rows]
-    )
+    # ADR-026: el `geo_id` de la gestión ES el `id_geo` oficial cuando apunta a
+    # una fila activa del espejo `priv_geo_localidades`. Para lo que no (datos
+    # todavía sin normalizar, o una localidad sin vínculo) queda de respaldo la
+    # resolución en batch contra svc-vivienda (ADR-024) — best-effort: si
+    # falla, esas filas salen con id_geo=None y resumen_territorial cae al
+    # matching por texto para ellas, como antes.
+    espejo = {
+        g.id_geo: g
+        for g in (await db.execute(select(GeoLocalidad).where(GeoLocalidad.activo.is_(True)))).scalars().all()
+    }
+    pendientes = list(dict.fromkeys(
+        (r.departamento, r.localidad) for r in rows if r.geo_id not in espejo
+    ))
+    resueltos: dict[tuple, str | None] = {}
+    if pendientes:
+        respuesta = await geo_resolver.resolver_localidades(pendientes)
+        resueltos = {clave: id_geo for clave, (id_geo, _tipo) in zip(pendientes, respuesta)}
 
-    return [
-        {
-            "departamento": r.departamento,
-            "localidad": r.localidad,
-            "id_geo": id_geo,
-            "total_gestiones": int(r.total_gestiones),
-            "abiertas": int(r.abiertas),
-            "finalizadas": int(r.finalizadas),
-            "urgentes": int(r.urgentes),
-            "costo_estimado_sum": as_float(r.costo_estimado_sum),
-            "fecha_estado_max": iso(r.fecha_estado_max),
-        }
-        for r, (id_geo, _match_tipo) in zip(rows, resueltos)
-    ]
+    # Una sola línea por localidad: las gestiones de un mismo `id_geo` se
+    # consolidan aunque su texto difiera; las que no tienen vínculo, por texto.
+    grupos: dict[tuple, dict] = {}
+    for r in rows:
+        id_geo = r.geo_id if r.geo_id in espejo else resueltos.get((r.departamento, r.localidad))
+        fila = espejo.get(id_geo) if id_geo else None
+        clave = ("geo", id_geo) if id_geo else ("txt", r.departamento, r.localidad)
+        g = grupos.get(clave)
+        if g is None:
+            g = grupos[clave] = {
+                "departamento": norm(fila.departamento) if fila is not None else r.departamento,
+                "localidad": norm(fila.localidad) if fila is not None else r.localidad,
+                "id_geo": id_geo,
+                "total_gestiones": 0, "abiertas": 0, "finalizadas": 0, "urgentes": 0,
+                "costo_estimado_sum": None, "fecha_estado_max": None,
+            }
+        g["total_gestiones"] += int(r.total_gestiones)
+        g["abiertas"] += int(r.abiertas)
+        g["finalizadas"] += int(r.finalizadas)
+        g["urgentes"] += int(r.urgentes)
+        costo = as_float(r.costo_estimado_sum)
+        if costo is not None:
+            g["costo_estimado_sum"] = (g["costo_estimado_sum"] or 0.0) + costo
+        if r.fecha_estado_max is not None and (
+            g["fecha_estado_max"] is None or r.fecha_estado_max > g["fecha_estado_max"]
+        ):
+            g["fecha_estado_max"] = r.fecha_estado_max
+
+    salida = sorted(grupos.values(), key=lambda g: (g["departamento"], g["localidad"]))
+    for g in salida:
+        g["fecha_estado_max"] = iso(g["fecha_estado_max"])
+    return salida
 
 
 # ── localidades-info (GET / PUT) ──────────────────────────────────────────

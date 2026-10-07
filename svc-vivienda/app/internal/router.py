@@ -77,6 +77,14 @@ async def crear_notificacion_interna(
     return {"id": n.id}
 
 
+@router.get("/geo/padron")
+async def padron_localidades(db: AsyncSession = Depends(get_db)):
+    """Padrón oficial de localidades completo, para los servicios que guardan
+    un espejo de solo lectura (svc-privada — ADR-026,
+    docs/files/spec-privada-padron-oficial.md §3.1)."""
+    return await geo_service.listar_padron(db)
+
+
 @router.post("/geo/resolver-localidades", response_model=ResolverResponse)
 async def resolver_localidades(payload: ResolverRequest, db: AsyncSession = Depends(get_db)):
     """Resolución batch (departamento, localidad) → id_geo del padrón oficial,

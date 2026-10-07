@@ -178,3 +178,28 @@ async def test_resolver_localidades_interno_propaga_origen_a_la_notificacion(db_
         assert "gas_pit" in notifs[0].titulo
     finally:
         app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_padron_interno_devuelve_activas_e_inactivas(db_session: AsyncSession):
+    """GET /internal/geo/padron — lo consume svc-privada para su espejo (ADR-026)."""
+    from app.geo.models import GeoLocalidad
+
+    db_session.add(GeoLocalidad(id_geo="141", departamento="PUNILLA", localidad="CHARBONIER", activo=True))
+    db_session.add(GeoLocalidad(id_geo="555", departamento="PUNILLA", localidad="CHARBONIER", activo=False))
+    await db_session.flush()
+
+    async def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+            r = await c.get("/internal/geo/padron")
+        assert r.status_code == 200
+        por_id = {f["id_geo"]: f for f in r.json()}
+        assert por_id["141"]["activo"] is True
+        assert por_id["555"]["activo"] is False
+        assert set(por_id["141"]) == {"id_geo", "departamento", "localidad", "lat_centro", "lon_centro", "activo"}
+    finally:
+        app.dependency_overrides.clear()

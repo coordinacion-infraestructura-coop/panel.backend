@@ -56,6 +56,26 @@ async def _cargar_padron(db: AsyncSession) -> tuple[dict[str, list[GeoLocalidad]
     return por_nombre, por_id
 
 
+async def listar_padron(db: AsyncSession) -> list[dict]:
+    """Padrón oficial completo (activas e inactivas) para los servicios que
+    mantienen un espejo de solo lectura — hoy svc-privada (ADR-026,
+    docs/files/spec-privada-padron-oficial.md)."""
+    rows = (
+        await db.execute(select(GeoLocalidad).order_by(GeoLocalidad.departamento, GeoLocalidad.localidad))
+    ).scalars().all()
+    return [
+        {
+            "id_geo": g.id_geo,
+            "departamento": g.departamento,
+            "localidad": g.localidad,
+            "lat_centro": float(g.lat_centro) if g.lat_centro is not None else None,
+            "lon_centro": float(g.lon_centro) if g.lon_centro is not None else None,
+            "activo": g.activo,
+        }
+        for g in rows
+    ]
+
+
 async def _cargar_alias(db: AsyncSession) -> dict[str, GeoAliasManual]:
     rows = (await db.execute(select(GeoAliasManual))).scalars().all()
     return {a.texto_normalizado: a for a in rows}

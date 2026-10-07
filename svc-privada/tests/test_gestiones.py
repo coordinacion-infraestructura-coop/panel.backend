@@ -188,34 +188,30 @@ async def test_rollup_territorial(client, seed):
     assert rows[0]["departamento"] == "CALAMUCHITA"
     assert rows[0]["total_gestiones"] == 2
     assert rows[0]["finalizadas"] == 1
-    # Sin resolver_localidades_enabled (default False en tests) el rollup no
-    # llama a svc-vivienda — id_geo queda en None, no rompe el resto.
-    assert rows[0]["id_geo"] is None
+    # ADR-026: el geo_id de la gestión apunta a una fila activa del espejo del
+    # padrón oficial -> es el id_geo, sin consultar a svc-vivienda.
+    assert rows[0]["id_geo"] == "508"
 
 
 @pytest.mark.asyncio
-async def test_rollup_territorial_resuelve_id_geo_contra_padron_de_vivienda(client, seed):
-    """ADR-024: el rollup resuelve id_geo en batch contra el padrón de
-    svc-vivienda — así Privada matchea contra la misma base que
-    Vivienda/Gasífera/Gralgob en resumen_territorial."""
+async def test_rollup_territorial_sin_vinculo_guardado_resuelve_contra_vivienda(client, seed, db_session):
+    """ADR-024 queda de respaldo: una gestión cuyo geo_id no está en el espejo
+    del padrón se resuelve en batch contra svc-vivienda."""
     from unittest.mock import AsyncMock, patch
 
-    from app.config import settings
+    from sqlalchemy import update
 
-    prev = settings.resolver_localidades_enabled
-    settings.resolver_localidades_enabled = True
-    try:
-        with patch(
-            "app.gestiones.service.geo_resolver.resolver_localidades",
-            new=AsyncMock(return_value=[("508", "exacto")]),
-        ) as mock_resolver:
-            r = await client.get("/api/v1/privada/gestiones/rollup-territorial")
-    finally:
-        settings.resolver_localidades_enabled = prev
+    await db_session.execute(update(Gestion).values(geo_id="BOOT|CALAMUCHITA|AMBOY"))
+    with patch(
+        "app.gestiones.service.geo_resolver.resolver_localidades",
+        new=AsyncMock(return_value=[("508", "exacto")]),
+    ) as mock_resolver:
+        r = await client.get("/api/v1/privada/gestiones/rollup-territorial")
 
     assert r.status_code == 200
     rows = r.json()
     assert rows[0]["id_geo"] == "508"
+    assert rows[0]["total_gestiones"] == 2
     mock_resolver.assert_awaited_once_with([("CALAMUCHITA", "AMBOY")])
 
 

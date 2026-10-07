@@ -57,6 +57,9 @@ async def localidades(db: AsyncSession, departamento: str) -> list[str]:
         await db.execute(
             select(GeoLocalidad.localidad)
             .where(
+                # Sólo activas: el espejo del padrón oficial (ADR-026) conserva
+                # desactivadas las filas duplicadas, que no se deben ofrecer.
+                GeoLocalidad.activo.is_(True),
                 func.upper(func.trim(GeoLocalidad.departamento)) == norm(departamento),
                 GeoLocalidad.localidad.isnot(None),
                 func.trim(GeoLocalidad.localidad) != "",

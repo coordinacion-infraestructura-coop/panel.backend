@@ -25,6 +25,9 @@ class LocalidadInfo(Base):
     partido_politico: Mapped[str | None] = mapped_column(String(200))
     tipo_localidad: Mapped[str | None] = mapped_column(String(60))
     color_semaforo: Mapped[str | None] = mapped_column(String(20))
+    # `id_geo` del padrón oficial (ADR-026) — lo completa la normalización en
+    # lote; la clave sigue siendo el texto (departamento, localidad).
+    id_geo: Mapped[str | None] = mapped_column(String(30))
     created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_by: Mapped[str | None] = mapped_column(String(200))
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

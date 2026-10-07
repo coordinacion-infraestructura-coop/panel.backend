@@ -4,13 +4,15 @@
 `infra/gateway/openapi.yaml`. Mismo patrón que `app/internal/router.py` de
 svc-vivienda (ADR-015).
 """
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import AuthUser
 from app.database import get_db
 from app.gestiones import service, vivienda_sync
+from app.integrations.geo_resolver import PadronNoDisponible
 from app.internal.schemas import GestionSyncFromVivienda, GestionSyncResult
+from app.territorial import padron_sync
 
 router = APIRouter(prefix="/internal/privada", tags=["internal"])
 
@@ -41,6 +43,35 @@ async def localidades_habitantes(db: AsyncSession = Depends(get_db)):
     bulk ("evita el N+1 de GET /localidades-info de a una").
     """
     return await service.listar_localidades_info(db)
+
+
+# Actor sintético de las operaciones sobre el padrón (Cloud Scheduler / corrida manual).
+_PADRON_ACTOR = AuthUser(uid="padron-oficial", email="padron-oficial@system", role="system", secretarias=[])
+
+
+@router.post("/geo/sync")
+async def sync_padron_localidades(db: AsyncSession = Depends(get_db)):
+    """Actualiza el espejo `priv_geo_localidades` con el padrón oficial de
+    svc-vivienda (ADR-026, docs/files/spec-privada-padron-oficial.md §3.2).
+    Lo dispara Cloud Scheduler. 502 si svc-vivienda no responde — el espejo
+    queda como estaba."""
+    try:
+        return await padron_sync.sync_padron(db, _PADRON_ACTOR)
+    except PadronNoDisponible as exc:
+        raise HTTPException(status_code=502, detail={"code": "PADRON_NO_DISPONIBLE", "message": str(exc)})
+
+
+@router.post("/geo/normalizar-gestiones")
+async def normalizar_gestiones(
+    dry_run: bool = Query(True, description="true (default): sólo informa qué cambiaría, no escribe"),
+    db: AsyncSession = Depends(get_db),
+):
+    """Repunta en lote las gestiones al `id_geo` y nombre oficiales (ADR-026,
+    spec §3.3). Idempotente. Correr después de `/geo/sync`."""
+    try:
+        return await padron_sync.normalizar_gestiones(db, _PADRON_ACTOR, dry_run=dry_run)
+    except PadronNoDisponible as exc:
+        raise HTTPException(status_code=502, detail={"code": "PADRON_NO_DISPONIBLE", "message": str(exc)})
 
 
 @router.post("/gestiones/sync", response_model=GestionSyncResult)
