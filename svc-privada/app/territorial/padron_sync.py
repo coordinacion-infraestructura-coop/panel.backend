@@ -140,15 +140,22 @@ async def normalizar_gestiones(db: AsyncSession, actor: AuthUser, *, dry_run: bo
     now = now_utc()
     usuario = actor.email or actor.uid or "system"
 
+    # Los ids de cada grupo se fijan ANTES de escribir nada: una gestión ya
+    # repunteada pasa a tener los valores de otro grupo (el que ya estaba
+    # bien) y, leída después, se contaría dos veces en el resumen.
+    ids_por_grupo: dict[tuple, list[str]] = {}
+    for gestion_id, g_geo, g_dep, g_loc in (
+        await db.execute(
+            select(Gestion.id, Gestion.geo_id, Gestion.departamento, Gestion.localidad)
+            .where(Gestion.deleted_at.is_(None))
+        )
+    ).all():
+        ids_por_grupo.setdefault((g_geo, g_dep, g_loc), []).append(gestion_id)
+
     for g, (resuelto, _tipo) in zip(grupos, resueltos):
         geo_id, departamento, localidad, motivo = _destino(g.geo_id, g.departamento, g.localidad, resuelto, espejo)
-        filtro = [
-            Gestion.deleted_at.is_(None),
-            Gestion.departamento == g.departamento,
-            Gestion.localidad == g.localidad,
-            Gestion.geo_id.is_(None) if g.geo_id is None else Gestion.geo_id == g.geo_id,
-        ]
-        ids = (await db.execute(select(Gestion.id).where(*filtro))).scalars().all()
+        ids = ids_por_grupo.get((g.geo_id, g.departamento, g.localidad), [])
+        filtro = [Gestion.id.in_(ids)]
         cambia = (geo_id, departamento, localidad) != (g.geo_id, g.departamento, g.localidad)
         if cambia and motivo == "ya_correcta":
             motivo = "solo_grafia"  # el vínculo estaba bien, cambia sólo cómo está escrito

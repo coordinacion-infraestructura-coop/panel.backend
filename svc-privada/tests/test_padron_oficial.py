@@ -151,7 +151,11 @@ async def test_normalizar_dry_run_informa_y_no_escribe(client, db_session, datos
 async def test_normalizar_repunta_al_padron_oficial(client, db_session, datos, vivienda):
     r = await client.post("/internal/privada/geo/normalizar-gestiones", params={"dry_run": "false"})
     assert r.status_code == 200
-    assert r.json()["gestiones_modificadas"] == 5
+    body = r.json()
+    assert body["gestiones_modificadas"] == 5
+    # mismo resumen que la simulación: lo ya repunteado no se cuenta dos veces
+    assert body["gestiones_activas"] == 6
+    assert body["por_motivo"]["ya_correcta"] == 1
 
     db_session.expire_all()
     estado = await _estado(db_session)
