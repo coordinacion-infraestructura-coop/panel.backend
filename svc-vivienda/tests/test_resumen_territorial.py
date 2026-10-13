@@ -854,6 +854,130 @@ async def test_lineas_de_datos_externos_enriquecen_localidad_por_id_geo(
     assert op_ag.poblacion_2022 == 51000
 
 
+# ── Fase 1 Tablero de Gobierno: superficie, población 2010, zona rural y ficha restringida ──
+
+_FICHA = {
+    "electores": 40000, "empleados": 900, "masa_salarial": 123456789.5, "intendente": "INTENDENTE-CENTINELA",
+    "reelecto": True, "partido": "PARTIDO-CENTINELA", "continuidad": False, "legislador": "LEGISLADOR-CENTINELA",
+    "partido_legislador": "PL-CENTINELA", "contacto_intendente": "3510000000",
+}
+_CENTINELAS = ("INTENDENTE-CENTINELA", "PARTIDO-CENTINELA", "LEGISLADOR-CENTINELA", "PL-CENTINELA",
+               "3510000000", "123456789.5", "ficha_gobierno\": {")
+_EXTERNOS_FASE1 = [{
+    "id_geo": "g1", "codigo_indec": "140001", "categoria": "MU", "poblacion_2022": 51000,
+    "superficie_km2": 25.5, "poblacion_2010": 48000, "ficha_gobierno": _FICHA,
+}]
+
+
+def _payload_con_ficha() -> ResumenTerritorialPayload:
+    base = _payload_demo()
+    loc = {
+        **base.localidades[0].model_dump(),
+        "superficie_km2": 25.5, "poblacion_2010": 48000, "ficha_gobierno": _FICHA,
+    }
+    return ResumenTerritorialPayload.model_validate({
+        **base.model_dump(), "localidades": [loc],
+        "zonas_rurales": [{"departamento": "Santa María", "poblacion_2022": 3000, "poblacion_2010": 4000}],
+    })
+
+
+@pytest.mark.parametrize("rol,secretarias", [("Autoridad", []), ("Admin", ["vivienda", "privada"]), ("Admin", [])])
+def test_ficha_gobierno_la_reciben_admin_y_autoridad(rol, secretarias):
+    out = filtrar_por_visibilidad(_payload_con_ficha(), rol=rol, secretarias=secretarias)
+    assert out.localidades[0].ficha_gobierno.intendente == "INTENDENTE-CENTINELA"
+    assert out.localidades[0].ficha_gobierno.contacto_intendente == "3510000000"
+
+
+@pytest.mark.parametrize("rol,secretarias", [
+    ("Supervisor", ["vivienda"]), ("Operador", ["vivienda", "privada"]), ("Consulta", ["vivienda"]),
+    ("Consulta", ["privada"]), ("TecnicoDGV", ["vivienda"]), ("invitado", []), ("", []), ("autoridad", ["vivienda"]),
+    ("admin", ["vivienda"]), ("RolFuturo", ["vivienda"]),
+    ("Supervisor", ["vivienda", "privada", "gralgob", "gasifera", "infraestructura", "supervision"]),
+])
+def test_ficha_gobierno_se_quita_para_cualquier_otro_rol(rol, secretarias):
+    out = filtrar_por_visibilidad(_payload_con_ficha(), rol=rol, secretarias=secretarias)
+    volcado = out.model_dump_json()
+    for centinela in _CENTINELAS[:-1]:
+        assert centinela not in volcado
+    for loc in out.localidades:
+        assert loc.ficha_gobierno is None
+        # Los datos públicos llegan a todos los que ven la localidad.
+        assert loc.superficie_km2 == 25.5 and loc.poblacion_2010 == 48000
+    assert out.zonas_rurales[0].poblacion_2022 == 3000
+
+
+def test_normalizar_zonas_rurales_usa_la_grafia_del_padron():
+    geo = [{"departamento": "Colón", "localidad": "Jesús María"}, {"departamento": "Santa María", "localidad": "Alta Gracia"}]
+    zonas = [
+        {"departamento": "COLON", "poblacion_2022": 10, "poblacion_2010": 12},
+        {"departamento": "SANTA MARÍA", "poblacion_2022": 5, "poblacion_2010": None},
+        {"departamento": "INEXISTENTE", "poblacion_2022": 1, "poblacion_2010": 1},
+        {"departamento": None, "poblacion_2022": 9, "poblacion_2010": 9},
+    ]
+    assert aggregations.normalizar_zonas_rurales(zonas, geo) == [
+        {"departamento": "Colón", "poblacion_2022": 10, "poblacion_2010": 12},
+        {"departamento": "Santa María", "poblacion_2022": 5, "poblacion_2010": None},
+        {"departamento": "INEXISTENTE", "poblacion_2022": 1, "poblacion_2010": 1},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_api_admin_recibe_ficha_gobierno_y_los_datos_publicos(
+    client: AsyncClient, datos_vivienda: dict
+):
+    """`client` es Admin: ve todo, también la ficha de Gobierno."""
+    zonas = [{"departamento": "SANTA MARIA", "poblacion_2022": 3000, "poblacion_2010": 4000}]
+    with patch("app.resumen_territorial.service.fetch_datos_externos_lineas", new=AsyncMock(return_value=_EXTERNOS_FASE1)), \
+         patch("app.resumen_territorial.service.fetch_zonas_rurales", new=AsyncMock(return_value=zonas)):
+        post = await client.post(f"{BASE}/actualizar")
+    get = await client.get(BASE)
+    for resp in (post, get):
+        assert resp.status_code == 200
+        ag = next(loc for loc in resp.json()["payload"]["localidades"] if loc["localidad"] == "Alta Gracia")
+        assert ag["ficha_gobierno"] == _FICHA
+        assert ag["superficie_km2"] == 25.5 and ag["poblacion_2010"] == 48000
+        assert resp.json()["payload"]["zonas_rurales"] == [
+            {"departamento": "Santa María", "poblacion_2022": 3000, "poblacion_2010": 4000}
+        ]
+
+
+@pytest.mark.asyncio
+async def test_api_autoridad_recibe_ficha_gobierno(client_autoridad: AsyncClient, datos_vivienda: dict):
+    with patch("app.resumen_territorial.service.fetch_datos_externos_lineas", new=AsyncMock(return_value=_EXTERNOS_FASE1)):
+        await client_autoridad.post(f"{BASE}/actualizar")
+    payload = (await client_autoridad.get(BASE)).json()["payload"]
+    ag = next(loc for loc in payload["localidades"] if loc["localidad"] == "Alta Gracia")
+    assert ag["ficha_gobierno"] == _FICHA
+
+
+@pytest.mark.asyncio
+async def test_api_usuarios_de_vivienda_no_reciben_ficha_gobierno(
+    client: AsyncClient, client_consulta: AsyncClient, client_operador: AsyncClient, datos_vivienda: dict
+):
+    """Consulta y Operador de la secretaría de Vivienda: ven la localidad y
+    sus datos públicos, pero ningún dato de la ficha llega en la respuesta."""
+    with patch("app.resumen_territorial.service.fetch_datos_externos_lineas", new=AsyncMock(return_value=_EXTERNOS_FASE1)):
+        await client.post(f"{BASE}/actualizar")
+    for c in (client_consulta, client_operador):
+        resp = await c.get(BASE)
+        assert resp.status_code == 200
+        ag = next(loc for loc in resp.json()["payload"]["localidades"] if loc["localidad"] == "Alta Gracia")
+        assert ag["ficha_gobierno"] is None and ag["superficie_km2"] == 25.5
+        for centinela in _CENTINELAS:
+            assert centinela not in resp.text
+
+
+@pytest.mark.asyncio
+async def test_fetch_zonas_rurales_desactivado_y_tolerante_a_fallos():
+    from app.resumen_territorial import service as svc
+
+    assert await svc.fetch_zonas_rurales() == []
+    with patch.object(svc.settings, "datos_externos_fetch_enabled", True), patch.object(
+        svc.settings, "svc_datos_externos_internal_url", "http://127.0.0.1:1"
+    ):
+        assert await svc.fetch_zonas_rurales() == []
+
+
 @pytest.mark.asyncio
 async def test_fetch_datos_externos_lineas_desactivado_por_defecto():
     """Por defecto `datos_externos_fetch_enabled` es False → [] sin tocar la red."""

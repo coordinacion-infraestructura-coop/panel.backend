@@ -10,6 +10,7 @@ from app.database import Base
 
 # Importar todos los modelos para que Alembic los detecte
 from app.geo_censo.models import ExtGeoCenso
+from app.gobierno.models import ExtGobEnte, ExtGobLocalidad, ExtGobSyncLog
 from app.transferencias.models import ExtTransferencia, ExtTransferenciaSyncLog
 
 config = context.config

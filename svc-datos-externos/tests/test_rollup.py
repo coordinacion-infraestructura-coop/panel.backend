@@ -56,6 +56,7 @@ async def test_rollup_sin_transferencias_devuelve_censo_solo(db_session: AsyncSe
         "id_geo": "200", "codigo_indec": "140002", "categoria": "CO",
         "poblacion_2022": 500, "viviendas_2022": 250,
         "transferencias_periodo": None, "transferencias_total": None, "transferencias_por_concepto": None,
+        "superficie_km2": None, "poblacion_2010": None, "ficha_gobierno": None,
     }]
 
 

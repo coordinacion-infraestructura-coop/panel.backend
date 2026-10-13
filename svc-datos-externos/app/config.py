@@ -25,5 +25,14 @@ class Settings(BaseSettings):
         "(KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
     )
 
+    # Sync de solo lectura del nomenclador de localidades de Gobierno y de la
+    # ficha de localidad (spec-datos-externos-fase1-nomenclador-demografia.md
+    # §5). Defaults vacíos/apagados; los valores reales viven en
+    # services/cloudbuild.yaml (un `gcloud run deploy --set-env-vars` pisa
+    # todo el set de variables).
+    google_sheet_gob_nomenclador_id: str = ""
+    google_sheet_gob_resumen_general_id: str = ""
+    gob_localidades_sync_enabled: bool = False
+
 
 settings = Settings()

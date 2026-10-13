@@ -16,7 +16,10 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, s
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import rollup
+from app.config import settings
 from app.database import get_db
+from app.gobierno import sync as gobierno_sync
+from app.gobierno.schemas import GobSyncFuenteResponse, GobSyncResultResponse, ZonaRuralResponse
 from app.transferencias import sync as transferencias_sync
 from app.transferencias.schemas import SyncResultResponse, SyncStatusResponse
 
@@ -28,6 +31,41 @@ async def rollup_territorial(db: AsyncSession = Depends(get_db)):
     """Consumido por resumen_territorial de svc-vivienda (ADR-025). Solo la
     SA de svc-vivienda tiene roles/run.invoker sobre este servicio."""
     return await rollup.rollup_territorial(db)
+
+
+@router.get("/datos-externos/zonas-rurales", response_model=list[ZonaRuralResponse])
+async def zonas_rurales(db: AsyncSession = Depends(get_db)):
+    """Población de zona rural por departamento (estimación de Gobierno). Va
+    aparte del rollup porque las zonas rurales no tienen `id_geo`."""
+    return await rollup.zonas_rurales(db)
+
+
+@router.post("/datos-externos/gobierno/localidades/sync", response_model=GobSyncResultResponse)
+async def sync_gobierno_localidades(
+    triggered_by: str = "cloud-scheduler",
+    db: AsyncSession = Depends(get_db),
+):
+    """Disparado por Cloud Scheduler (diario) o manualmente. Solo lee las
+    planillas de Gobierno; nunca escribe en ellas."""
+    if not settings.gob_localidades_sync_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"code": "GOB_SYNC_DESHABILITADO", "message": "GOB_LOCALIDADES_SYNC_ENABLED está apagado"},
+        )
+    try:
+        return await gobierno_sync.sync_localidades(db, disparado_por=triggered_by)
+    except gobierno_sync.SyncFallido as exc:
+        # 502: la falla es de la fuente externa (planilla/Sheets API), no del servicio.
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail={"code": "GOB_SYNC_FALLIDO", "message": str(exc)},
+        )
+
+
+@router.get("/datos-externos/gobierno/localidades/sync-estado", response_model=list[GobSyncFuenteResponse])
+async def estado_sync_gobierno_localidades(db: AsyncSession = Depends(get_db)):
+    """Última corrida de cada fuente (`nomenclador`, `datos_loc`)."""
+    return await gobierno_sync.get_sync_estado(db)
 
 
 @router.post("/datos-externos/transferencias/sync", response_model=SyncResultResponse)

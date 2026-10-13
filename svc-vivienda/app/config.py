@@ -73,6 +73,10 @@ class Settings(BaseSettings):
     datos_externos_fetch_enabled: bool = False
     svc_datos_externos_internal_url: str = ""
     datos_externos_rollup_internal_path: str = "/internal/datos-externos/rollup-territorial"
+    # Población de zona rural por departamento (estimación de Gobierno) — va
+    # aparte del rollup porque no tiene `id_geo`
+    # (spec-datos-externos-fase1-nomenclador-demografia.md §6.2).
+    datos_externos_zonas_rurales_internal_path: str = "/internal/datos-externos/zonas-rurales"
 
 
 settings = Settings()

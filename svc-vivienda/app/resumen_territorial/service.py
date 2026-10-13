@@ -36,6 +36,12 @@ from app.resumen_territorial.schemas import ResumenLocalidad, ResumenTerritorial
 logger = logging.getLogger(__name__)
 
 _VER_TODO = ("Admin", "Autoridad")
+# Únicos roles que reciben `ficha_gobierno` (datos institucionales de
+# Gobierno: electores, masa salarial, intendente, partido, contacto, etc.).
+# Lista propia, separada de `_VER_TODO` a propósito: sumar un rol a "ver todas
+# las áreas" no debe abrirle estos datos por arrastre
+# (spec-datos-externos-fase1-nomenclador-demografia.md §7.1).
+_ROLES_FICHA_GOBIERNO = ("Admin", "Autoridad")
 
 
 # ── Helpers de carga ─────────────────────────────────────────────────────────
@@ -211,6 +217,7 @@ async def compute_resumen_territorial(db: AsyncSession) -> ResumenTerritorialPay
     }
     if datos_externos_por_id_geo:
         generado_para.append("datos_externos")
+    zonas_rurales = aggregations.normalizar_zonas_rurales(await fetch_zonas_rurales(), geo)
 
     grupos = aggregations.agrupar_por_localidad(lineas, geo)
     localidades = [
@@ -225,6 +232,7 @@ async def compute_resumen_territorial(db: AsyncSession) -> ResumenTerritorialPay
         total_localidades_por_departamento=aggregations.contar_localidades_por_departamento(
             geo, set(datos_externos_por_id_geo.keys())
         ),
+        zonas_rurales=zonas_rurales,
     )
 
 
@@ -624,6 +632,30 @@ async def fetch_datos_externos_lineas() -> list[dict]:
         return []
 
 
+async def fetch_zonas_rurales() -> list[dict]:
+    """Población de zona rural por departamento, del endpoint interno IAM-only
+    de svc-datos-externos. Misma tolerancia que `fetch_datos_externos_lineas`:
+    cualquier fallo → `[]`."""
+    if not settings.datos_externos_fetch_enabled or not settings.svc_datos_externos_internal_url:
+        return []
+
+    base = settings.svc_datos_externos_internal_url.rstrip("/")
+    url = base + settings.datos_externos_zonas_rurales_internal_path
+    try:
+        token = _mint_id_token(base)
+        headers = {"Authorization": f"Bearer {token}"} if token else {}
+        async with httpx.AsyncClient(timeout=20) as client:
+            resp = await client.get(url, headers=headers)
+        if resp.status_code != 200:
+            logger.warning("resumen_territorial: zonas-rurales respondió %s. url=%s", resp.status_code, url)
+            return []
+        data = resp.json()
+        return [r for r in data if isinstance(r, dict)] if isinstance(data, list) else []
+    except Exception as exc:  # noqa: BLE001 — tolerante por diseño
+        logger.warning("resumen_territorial: fetch de zonas-rurales falló (%s): %r", url, exc)
+        return []
+
+
 # ── Snapshot ─────────────────────────────────────────────────────────────────
 
 async def get_last_snapshot(db: AsyncSession) -> ResumenTerritorialSnapshot | None:
@@ -682,7 +714,19 @@ def filtrar_por_visibilidad(
 ) -> ResumenTerritorialPayload:
     """Filtra el payload según el usuario. `Admin`/`Autoridad` ven todo. El resto
     ve sólo las líneas cuya `area` está en sus secretarías, y con el `texto` de
-    comunicaciones de infraestructura/supervisión enmascarado. Spec §7.2."""
+    comunicaciones de infraestructura/supervisión enmascarado. Spec §7.2.
+
+    `ficha_gobierno` tiene su propia regla, más estricta: parte de "no se
+    muestra" y sólo se conserva para `_ROLES_FICHA_GOBIERNO`. Se aplica antes
+    que cualquier otra rama, para que ningún camino la deje pasar."""
+    if rol not in _ROLES_FICHA_GOBIERNO:
+        payload = payload.model_copy(update={
+            "localidades": [
+                loc if loc.ficha_gobierno is None else loc.model_copy(update={"ficha_gobierno": None})
+                for loc in payload.localidades
+            ]
+        })
+
     if rol in _VER_TODO:
         return payload
 
@@ -702,4 +746,5 @@ def filtrar_por_visibilidad(
         # de ninguna secretaría — se preserva igual para todos los roles, mismo
         # criterio que el enriquecimiento de datos-externos (población/transferencias).
         total_localidades_por_departamento=payload.total_localidades_por_departamento,
+        zonas_rurales=payload.zonas_rurales,
     )

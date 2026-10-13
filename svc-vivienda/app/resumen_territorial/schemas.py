@@ -50,6 +50,35 @@ class ResumenPrograma(BaseModel):
     privada_conteos: PrivadaConteos | None = None
 
 
+class FichaGobierno(BaseModel):
+    """Datos institucionales de la localidad que mantiene la Secretaría General
+    de Gobierno (planilla `DATOS LOC`, vía svc-datos-externos). **Restringido:
+    sólo lo reciben los roles `Admin` y `Autoridad`** —
+    `service.filtrar_por_visibilidad` lo reemplaza por `None` para cualquier otro rol
+    (spec-datos-externos-fase1-nomenclador-demografia.md §7)."""
+
+    electores: int | None = None
+    empleados: int | None = None
+    masa_salarial: float | None = None
+    intendente: str | None = None
+    reelecto: bool | None = None
+    partido: str | None = None
+    continuidad: bool | None = None
+    legislador: str | None = None
+    partido_legislador: str | None = None
+    contacto_intendente: str | None = None          # dato personal
+
+
+class ZonaRural(BaseModel):
+    """Población sin gobierno local de un departamento. Es una estimación del
+    área de Gobierno (el Censo 2022 no la desagrega por departamento); no se
+    suma a ninguna localidad."""
+
+    departamento: str
+    poblacion_2022: int | None = None
+    poblacion_2010: int | None = None
+
+
 class ResumenLocalidad(BaseModel):
     id_geo: str | None = None                      # ADR-024 — llave de join con svc-datos-externos
     localidad: str
@@ -66,6 +95,11 @@ class ResumenLocalidad(BaseModel):
     transferencias_por_concepto: dict[str, float] | None = None  # coparticipacion_ley_8663 | fasamu | fofindes | fondo_compensacion | bono_consenso_fiscal | total
     transferencias_per_capita: float | None = None  # ver nota en aggregations.enriquecer_con_datos_externos
     atp_monto_per_capita: float | None = None
+    # Fase 1 del Tablero de Gobierno (spec-datos-externos-fase1-nomenclador-demografia.md).
+    # Públicos: superficie del radio municipal (IDECOR) y población del Censo 2010.
+    superficie_km2: float | None = None
+    poblacion_2010: int | None = None
+    ficha_gobierno: FichaGobierno | None = None     # restringido — ver FichaGobierno
     programas: list[ResumenPrograma]
 
 
@@ -86,6 +120,9 @@ class ResumenTerritorialPayload(BaseModel):
     # en el padrón (misma grafía que `ResumenLocalidad.departamento` cuando hay
     # id_geo resuelto).
     total_localidades_por_departamento: dict[str, int] = Field(default_factory=dict)
+    # Dato público, igual que el denominador de arriba. `departamento` usa la
+    # grafía del padrón cuando el departamento existe en él.
+    zonas_rurales: list[ZonaRural] = Field(default_factory=list)
 
 
 class ResumenSnapshotResponse(BaseModel):

@@ -389,7 +389,37 @@ def enriquecer_con_datos_externos(
         "atp_monto_per_capita": (
             round(atp_monto / poblacion, 2) if atp_monto and poblacion else None
         ),
+        # Fase 1 del Tablero de Gobierno: se pasan tal cual, sin calcular nada
+        # (densidad y crecimiento intercensal se calculan en el cliente).
+        "superficie_km2": (datos or {}).get("superficie_km2"),
+        "poblacion_2010": (datos or {}).get("poblacion_2010"),
+        "ficha_gobierno": (datos or {}).get("ficha_gobierno"),
     }
+
+
+def normalizar_zonas_rurales(
+    zonas: Iterable[dict[str, Any]], geo_localidades: Iterable[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Lleva el departamento de cada zona rural (grafía de la planilla de
+    Gobierno, p. ej. "COLON") a la grafía del padrón ("Colón"), comparando con
+    `normalize_departamento`. Si el departamento no está en el padrón se deja
+    el texto original. Descarta filas sin departamento. Pura."""
+    oficial: dict[str, str] = {}
+    for g in geo_localidades:
+        dep = g.get("departamento")
+        if dep:
+            oficial.setdefault(normalize_departamento(dep), dep)
+    resultado = []
+    for z in zonas:
+        dep = z.get("departamento")
+        if not dep:
+            continue
+        resultado.append({
+            "departamento": oficial.get(normalize_departamento(dep), dep),
+            "poblacion_2022": z.get("poblacion_2022"),
+            "poblacion_2010": z.get("poblacion_2010"),
+        })
+    return resultado
 
 
 def focalizacion_atp_por_departamento(
