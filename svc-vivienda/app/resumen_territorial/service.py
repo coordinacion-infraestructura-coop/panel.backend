@@ -18,191 +18,29 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit import log_audit
 from app.auth import AuthUser
-from app.checklist_tecnico.models import (
-    CatalogoEstadoExpediente,
-    CatalogoItemEstado,
-    ChecklistItem,
-    ChecklistTecnico,
-)
+from app.checklist_tecnico import estado_tecnico
 from app.config import settings
-from app.cordoba_hogar.models import EstadoCordobaHogar, LocalidadCordobaHogar, PedidoCordobaHogar
-from app.cordon_cuneta.models import EstadoCordonCuneta, MunicipioCordonCuneta, PedidoCordonCuneta
-from app.geo.models import GeoLocalidad
-from app.mi_lugar.models import EstadoML, PedidoML, ProyectoML
 from app.resumen_territorial import aggregations
+from app.resumen_territorial import lineas as lineas_mod
 from app.resumen_territorial.models import ResumenTerritorialSnapshot
 from app.resumen_territorial.schemas import ResumenLocalidad, ResumenTerritorialPayload
 
 logger = logging.getLogger(__name__)
 
-_VER_TODO = ("Admin", "Autoridad")
+VER_TODO = ("Admin", "Autoridad")
 # Únicos roles que reciben `ficha_gobierno` (datos institucionales de
 # Gobierno: electores, masa salarial, intendente, partido, contacto, etc.).
-# Lista propia, separada de `_VER_TODO` a propósito: sumar un rol a "ver todas
+# Lista propia, separada de `VER_TODO` a propósito: sumar un rol a "ver todas
 # las áreas" no debe abrirle estos datos por arrastre
 # (spec-datos-externos-fase1-nomenclador-demografia.md §7.1).
 _ROLES_FICHA_GOBIERNO = ("Admin", "Autoridad")
 
 
-# ── Helpers de carga ─────────────────────────────────────────────────────────
-
-async def _geo_rows(db: AsyncSession) -> list[dict]:
-    result = await db.execute(select(GeoLocalidad))
-    return [
-        {
-            "departamento": g.departamento, "localidad": g.localidad,
-            "id_geo": g.id_geo, "activo": g.activo,
-            "lat_centro": float(g.lat_centro) if g.lat_centro is not None else None,
-            "lon_centro": float(g.lon_centro) if g.lon_centro is not None else None,
-        }
-        for g in result.scalars().all()
-    ]
-
-
-def _catalogo(rows) -> dict[int, dict]:
-    return {
-        c.id: {"label": c.label, "bg": c.bg, "text_color": c.text_color}
-        for c in rows
-    }
-
-
-def _estado_fields(entidad, catalogo: dict[int, dict], tecnico_label: str | None) -> dict:
-    est = catalogo.get(entidad.estado_general)
-    return {
-        "estado_general_id": entidad.estado_general,
-        "estado_general_label": est["label"] if est else None,
-        "estado_general_bg": est["bg"] if est else None,
-        "estado_general_text_color": est["text_color"] if est else None,
-        "subestados": {
-            "juridico": (catalogo.get(entidad.ejuridico) or {}).get("label"),
-            # El Técnico es el estado del expediente del checklist, no la columna del panel
-            # (spec-estado-tecnico-desde-checklist.md §3.5).
-            "tecnico": tecnico_label,
-            "financiero": (catalogo.get(entidad.efinanciero) or {}).get("label"),
-        },
-    }
-
-
-def _pedidos_por_entidad(rows, fk: str) -> dict[str, list[dict]]:
-    d: dict[str, list[dict]] = {}
-    for p in rows:
-        d.setdefault(getattr(p, fk), []).append(
-            {
-                "fecha_pedido": p.fecha_pedido,
-                "created_at": p.created_at,
-                "descripcion": p.descripcion,
-                "secretaria": p.secretaria,
-                "created_by": p.created_by,
-                "created_by_nombre": p.created_by_nombre,
-            }
-        )
-    return d
-
-
 # ── Cómputo ──────────────────────────────────────────────────────────────────
 
 async def compute_resumen_territorial(db: AsyncSession) -> ResumenTerritorialPayload:
-    geo = await _geo_rows(db)
-
-    cc_rows = (
-        await db.execute(select(MunicipioCordonCuneta).where(MunicipioCordonCuneta.deleted_at.is_(None)))
-    ).scalars().all()
-    ch_rows = (
-        await db.execute(select(LocalidadCordobaHogar).where(LocalidadCordobaHogar.deleted_at.is_(None)))
-    ).scalars().all()
-    ml_rows = (
-        await db.execute(select(ProyectoML).where(ProyectoML.deleted_at.is_(None)))
-    ).scalars().all()
-
-    cc_cat = _catalogo((await db.execute(select(EstadoCordonCuneta))).scalars().all())
-    ch_cat = _catalogo((await db.execute(select(EstadoCordobaHogar))).scalars().all())
-    ml_cat = _catalogo((await db.execute(select(EstadoML))).scalars().all())
-
-    # Checklist técnico: todas las filas + ítems, agrupados en Python. No se crean filas.
-    checklists = (await db.execute(select(ChecklistTecnico))).scalars().all()
-    chk_by_ent = {(c.programa, c.entidad_id): c.id for c in checklists}
-    exp_labels = {
-        e.id: e.label for e in (await db.execute(select(CatalogoEstadoExpediente))).scalars().all()
-    }
-    tecnico_by_ent = {
-        (c.programa, c.entidad_id): exp_labels.get(c.estado_expediente_id) for c in checklists
-    }
-    # "completo" ya no es un literal: es el/los estado(s) del catálogo con es_completo=True.
-    completo_ids = {
-        e.id
-        for e in (
-            await db.execute(select(CatalogoItemEstado).where(CatalogoItemEstado.es_completo.is_(True)))
-        ).scalars().all()
-    }
-    # "No Proyectado / No Aplica" (excluye_completitud) queda fuera del total y de los faltantes.
-    no_aplica_ids = {
-        e.id
-        for e in (
-            await db.execute(
-                select(CatalogoItemEstado).where(CatalogoItemEstado.excluye_completitud.is_(True))
-            )
-        ).scalars().all()
-    }
-    items_by_chk: dict[str, list[dict]] = {}
-    for it in (await db.execute(select(ChecklistItem))).scalars().all():
-        if it.item_estado_id in completo_ids:
-            valor = "completo"
-        elif it.item_estado_id in no_aplica_ids:
-            valor = "no_aplica"
-        else:
-            valor = "pendiente"
-        items_by_chk.setdefault(it.checklist_id, []).append(
-            {"item_num": it.item_num, "sub_item_num": it.sub_item_num, "valor": valor}
-        )
-
-    cc_ped = _pedidos_por_entidad(
-        (await db.execute(select(PedidoCordonCuneta))).scalars().all(), "municipio_id"
-    )
-    ch_ped = _pedidos_por_entidad(
-        (await db.execute(select(PedidoCordobaHogar))).scalars().all(), "localidad_id"
-    )
-    ml_ped = _pedidos_por_entidad(
-        (await db.execute(select(PedidoML))).scalars().all(), "proyecto_id"
-    )
-
-    def _linea_vivienda(programa, prog_cod, entidad, nombre, catalogo, pedidos_map, detalle=None):
-        chk_id = chk_by_ent.get((prog_cod, entidad.id))
-        total, faltan, faltantes, iniciado = aggregations.items_faltantes(
-            items_by_chk.get(chk_id, []) if chk_id else [], prog_cod
-        )
-        prog = {
-            "area": "vivienda",
-            "programa": programa,
-            "programa_label": aggregations.PROGRAMA_LABEL[programa],
-            "entidad_id": entidad.id,
-            "detalle": detalle,
-            **_estado_fields(entidad, catalogo, tecnico_by_ent.get((prog_cod, entidad.id))),
-            "checklist_total": total,
-            "checklist_faltan": faltan,
-            "checklist_iniciado": iniciado,
-            "checklist_faltantes": faltantes,
-            "ultima_comunicacion": aggregations.ultima_comunicacion(pedidos_map.get(entidad.id, [])),
-            "monto": float(entidad.monto) if entidad.monto is not None else None,
-            "expediente": entidad.expediente,
-        }
-        return {
-            "departamento": entidad.departamento,
-            "nombre_localidad": nombre,
-            "id_geo": entidad.localidad_id,
-            "programa": prog,
-        }
-
-    lineas: list[dict] = []
-    for m in cc_rows:
-        lineas.append(_linea_vivienda("cordon_cuneta", "cc", m, m.municipio, cc_cat, cc_ped))
-    for loc in ch_rows:
-        lineas.append(_linea_vivienda("cordoba_hogar", "ch", loc, loc.localidad, ch_cat, ch_ped))
-    for pr in ml_rows:
-        lineas.append(
-            _linea_vivienda(
-                "mi_lugar", "ml", pr, pr.localidad_nombre or pr.nombre, ml_cat, ml_ped, detalle=pr.nombre
-            )
-        )
+    geo = await lineas_mod.geo_rows(db)
+    lineas = await lineas_mod.lineas_vivienda(db)
 
     generado_para = ["vivienda"]
     lineas_privada = await fetch_privada_lineas()
@@ -669,6 +507,24 @@ async def fetch_zonas_rurales() -> list[dict]:
 
 # ── Snapshot ─────────────────────────────────────────────────────────────────
 
+async def avances_vivienda(db: AsyncSession, localidades: list[dict]) -> list[int]:
+    """Avance vigente (%) de cada obra de Vivienda del payload que tenga al menos una
+    medición — insumo de `avance_obra_promedio` en los KPIs (spec-vivienda-tablero-analitico §4.3).
+    El avance no viaja en el payload del snapshot a propósito (ADR-030)."""
+    ids = {
+        (aggregations.PROGRAMA_A_CHECKLIST[p["programa"]], p["entidad_id"])
+        for loc in localidades
+        for p in loc.get("programas", [])
+        if p.get("area") == "vivienda" and p.get("programa") in aggregations.PROGRAMA_A_CHECKLIST
+    }
+    avances: list[int] = []
+    for cod in ("cc", "ch", "ml"):
+        for entidad_id, obra in (await estado_tecnico.avance_por_entidad(db, cod, {})).items():
+            if (cod, entidad_id) in ids and obra["avance_obra_pct"] is not None:
+                avances.append(obra["avance_obra_pct"])
+    return avances
+
+
 async def get_last_snapshot(db: AsyncSession) -> ResumenTerritorialSnapshot | None:
     result = await db.execute(
         select(ResumenTerritorialSnapshot)
@@ -683,11 +539,18 @@ async def actualizar_resumen(db: AsyncSession, actor: AuthUser) -> ResumenTerrit
     payload = await compute_resumen_territorial(db)
     duracion_ms = int((time.monotonic() - t0) * 1000)
 
+    computed_at = datetime.now(timezone.utc)
+    payload_json = payload.model_dump(mode="json")
     snapshot = ResumenTerritorialSnapshot(
-        payload=payload.model_dump(mode="json"),
-        computed_at=datetime.now(timezone.utc),
+        payload=payload_json,
+        computed_at=computed_at,
         computed_by=actor.email,
         duracion_ms=duracion_ms,
+        kpis=aggregations.kpis_por_area(
+            payload_json["localidades"],
+            aggregations.dia_ar(computed_at),
+            {"vivienda": await avances_vivienda(db, payload_json["localidades"])},
+        ),
     )
     db.add(snapshot)
     await db.flush()
@@ -710,14 +573,21 @@ async def actualizar_resumen(db: AsyncSession, actor: AuthUser) -> ResumenTerrit
 
 # ── Visibilidad ──────────────────────────────────────────────────────────────
 
+def comunicacion_visible(area: str | None, secs: set[str]) -> bool:
+    """¿Un usuario (no Admin/Autoridad) con secretarías `secs` puede leer el texto de una
+    comunicación del área `area`? Las de supervisión sólo las lee supervisión; las de
+    infraestructura, infraestructura o supervisión. También la usa `app/tablero_analitico`."""
+    if "supervision" in secs:
+        return True
+    area = (area or "").lower()
+    return not (area == "supervision" or (area == "infraestructura" and "infraestructura" not in secs))
+
+
 def _enmascarar_comunicacion(prog, secs: set[str]):
     uc = prog.ultima_comunicacion
-    if uc is None or uc.texto is None or "supervision" in secs:
+    if uc is None or uc.texto is None or comunicacion_visible(uc.area, secs):
         return prog
-    area = (uc.area or "").lower()
-    if area == "supervision" or (area == "infraestructura" and "infraestructura" not in secs):
-        return prog.model_copy(update={"ultima_comunicacion": uc.model_copy(update={"texto": None})})
-    return prog
+    return prog.model_copy(update={"ultima_comunicacion": uc.model_copy(update={"texto": None})})
 
 
 def filtrar_por_visibilidad(
@@ -738,7 +608,7 @@ def filtrar_por_visibilidad(
             ]
         })
 
-    if rol in _VER_TODO:
+    if rol in VER_TODO:
         return payload
 
     secs = set(secretarias or [])

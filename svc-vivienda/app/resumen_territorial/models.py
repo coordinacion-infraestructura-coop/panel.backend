@@ -27,3 +27,6 @@ class ResumenTerritorialSnapshot(Base):
     )
     computed_by: Mapped[str | None] = mapped_column(String(255))
     duracion_ms: Mapped[int | None] = mapped_column(Integer)
+    # KPIs por área precalculados al guardar — serie histórica del Tablero analítico
+    # (spec-vivienda-tablero-analitico.md §4.3). NULL en snapshots sin backfill.
+    kpis: Mapped[dict | None] = mapped_column(JSON, nullable=True)

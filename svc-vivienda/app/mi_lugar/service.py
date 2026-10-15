@@ -59,6 +59,7 @@ async def crear_estado_ml(db: AsyncSession, data: EstadoMLCreate, actor: AuthUse
         aplica_juridico=data.aplica_juridico,
         aplica_tecnico=data.aplica_tecnico,
         aplica_financiero=data.aplica_financiero,
+        area_responsable=data.area_responsable,
     )
     db.add(estado)
     await db.flush()

@@ -12,8 +12,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.checklist_tecnico import catalog
 from app.checklist_tecnico.models import (
+    CatalogoItemEstado,
     ChecklistAvanceMedicion,
     ChecklistEstadoHist,
+    ChecklistItem,
     ChecklistObraHito,
     ChecklistTecnico,
 )
@@ -118,15 +120,55 @@ def _resumen_obra(
 
 RESUMEN_OBRA_VACIO: dict = {
     "avance_obra_pct": None, "avance_obra_fecha": None, "fecha_fin_obra": None, "hitos_obra": None,
+    "doc_completos": None, "doc_total": None, "doc_iniciado": False,
 }
+
+
+def resumen_documentacion(programa: str, valores: list[tuple[int, int | None, str]]) -> dict:
+    """Completitud de la documentación de un checklist, con la misma regla que el Resumen
+    Territorial (`aggregations.items_faltantes`): los "No Aplica" salen del total.
+    `valores` = [(item_num, sub_item_num, 'completo'|'no_aplica'|'pendiente')].
+    Spec: spec-vivienda-tablero-analitico.md §4.5."""
+    from app.resumen_territorial.aggregations import items_faltantes
+
+    total, faltan, _, iniciado = items_faltantes(
+        [{"item_num": n, "sub_item_num": sub, "valor": v} for n, sub, v in valores], programa
+    )
+    return {"doc_completos": total - faltan, "doc_total": total, "doc_iniciado": iniciado}
+
+
+async def valores_items(db: AsyncSession, checklist_ids: list[str]) -> dict[str, list[tuple[int, int | None, str]]]:
+    """{checklist_id: [(item_num, sub_item_num, valor)]} — 2 consultas, sin N+1."""
+    if not checklist_ids:
+        return {}
+    estados = (
+        await db.execute(
+            select(CatalogoItemEstado.id, CatalogoItemEstado.es_completo, CatalogoItemEstado.excluye_completitud)
+        )
+    ).all()
+    completo = {e.id for e in estados if e.es_completo}
+    no_aplica = {e.id for e in estados if e.excluye_completitud}
+    out: dict[str, list[tuple[int, int | None, str]]] = {}
+    for chk_id, item_num, sub, estado_id in (
+        await db.execute(
+            select(
+                ChecklistItem.checklist_id, ChecklistItem.item_num, ChecklistItem.sub_item_num,
+                ChecklistItem.item_estado_id,
+            ).where(ChecklistItem.checklist_id.in_(checklist_ids))
+        )
+    ).all():
+        valor = "completo" if estado_id in completo else "no_aplica" if estado_id in no_aplica else "pendiente"
+        out.setdefault(chk_id, []).append((item_num, sub, valor))
+    return out
 
 
 async def avance_por_entidad(
     db: AsyncSession, programa: str, montos: dict[str, float | None], entidad_id: str | None = None
 ) -> dict[str, dict]:
-    """{entidad_id: {avance_obra_pct, avance_obra_fecha, fecha_fin_obra, hitos_obra}} de los
-    checklists del programa (o de una sola entidad). 3 consultas en total, sin N+1; nunca crea
-    filas. `montos` = {entidad_id: monto del convenio} para calcular el monto de cada hito.
+    """{entidad_id: {avance_obra_pct, avance_obra_fecha, fecha_fin_obra, hitos_obra,
+    doc_completos, doc_total, doc_iniciado}} de los checklists del programa (o de una sola
+    entidad). 5 consultas en total, sin N+1; nunca crea filas. `montos` = {entidad_id: monto
+    del convenio} para calcular el monto de cada hito.
     Una entidad sin fila de checklist no aparece (el panel usa `RESUMEN_OBRA_VACIO`)."""
     q = select(ChecklistTecnico.id, ChecklistTecnico.entidad_id, ChecklistTecnico.fecha_fin_obra).where(
         ChecklistTecnico.programa == programa
@@ -164,10 +206,14 @@ async def avance_por_entidad(
     ).all():
         pagos.setdefault(chk_id, {})[tipo] = fecha
 
+    items = await valores_items(db, ids)
     return {
-        c.entidad_id: _resumen_obra(
-            mediciones.get(c.id, []), pagos.get(c.id, {}), montos.get(c.entidad_id), c.fecha_fin_obra
-        )
+        c.entidad_id: {
+            **_resumen_obra(
+                mediciones.get(c.id, []), pagos.get(c.id, {}), montos.get(c.entidad_id), c.fecha_fin_obra
+            ),
+            **resumen_documentacion(programa, items.get(c.id, [])),
+        }
         for c in checklists
     }
 
@@ -179,13 +225,17 @@ async def avance_de(db: AsyncSession, programa: str, entidad_id: str, monto: flo
 
 
 def aplicar_obra(out, obra: dict | None) -> None:
-    """Vuelca el resumen de `avance_por_entidad` sobre la respuesta de un panel (CC/CH/ML)."""
+    """Vuelca el resumen de `avance_por_entidad` (obra + documentación) sobre la respuesta de
+    un panel (CC/CH/ML)."""
     from app.checklist_tecnico.schemas import HitoObraPanel
 
     obra = obra or RESUMEN_OBRA_VACIO
     out.avance_obra_pct = obra["avance_obra_pct"]
     out.avance_obra_fecha = obra["avance_obra_fecha"]
     out.fecha_fin_obra = obra["fecha_fin_obra"]
+    out.doc_completos = obra["doc_completos"]
+    out.doc_total = obra["doc_total"]
+    out.doc_iniciado = obra["doc_iniciado"]
     out.hitos_obra = (
         [HitoObraPanel(**h) for h in obra["hitos_obra"]] if obra["hitos_obra"] is not None else None
     )

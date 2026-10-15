@@ -8,6 +8,7 @@ Spec: docs/files/spec-resumen-territorial.md §6.1
 """
 from __future__ import annotations
 
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Iterable
 
 from app.checklist_tecnico import catalog
@@ -470,3 +471,87 @@ def focalizacion_atp_por_departamento(
         if pct_poblacion:
             resultado[dep] = round(pct_atp / pct_poblacion, 3)
     return resultado
+
+
+# ── KPIs por área (serie histórica del Tablero analítico) ────────────────────
+
+VENTANA_COMUNICACIONES_DIAS = 30
+# Hora de Argentina (UTC-3, sin horario de verano) para decidir "qué día es" un snapshot.
+# Offset fijo y no ZoneInfo: no depende de que el sistema tenga la base tzdata.
+TZ_AR = timezone(timedelta(hours=-3))
+
+
+def dia_ar(momento: datetime) -> date:
+    if momento.tzinfo is None:
+        momento = momento.replace(tzinfo=timezone.utc)
+    return momento.astimezone(TZ_AR).date()
+
+
+def _fecha(valor: Any) -> date | None:
+    if valor is None:
+        return None
+    if isinstance(valor, datetime):
+        return valor.date()
+    if isinstance(valor, date):
+        return valor
+    try:
+        return date.fromisoformat(str(valor)[:10])
+    except ValueError:
+        return None
+
+
+def kpis_por_area(
+    localidades: Iterable[dict[str, Any]],
+    ref: date,
+    avance_por_area: dict[str, list[int]] | None = None,
+) -> dict[str, dict[str, Any]]:
+    """KPIs de cada área sobre las localidades de un payload (ya en forma dict/JSON).
+
+    Mismas definiciones que calcula el frontend del Tablero analítico, para que el delta
+    contra la serie histórica compare lo mismo (spec-vivienda-tablero-analitico.md §4.3):
+    - `programas_activos`: líneas de programa del área (`programas_por_programa` las abre);
+    - `items_faltantes`: líneas con al menos un ítem de checklist faltante;
+    - `comunicaciones_30d`: líneas con última comunicación en los 30 días previos a `ref`;
+    - `avance_obra_promedio`: promedio de `avance_por_area[area]` (obras con medición), o None.
+    """
+    desde = ref - timedelta(days=VENTANA_COMUNICACIONES_DIAS)
+    acc: dict[str, dict[str, Any]] = {}
+    for loc in localidades:
+        for p in loc.get("programas", []):
+            area = p.get("area")
+            if not area:
+                continue
+            k = acc.setdefault(area, {
+                "localidades": set(), "departamentos": set(), "programas_activos": 0,
+                "programas_por_programa": {}, "items_faltantes": 0, "comunicaciones_30d": 0,
+                "monto_total": 0.0,
+            })
+            k["localidades"].add((loc.get("id_geo"), loc.get("departamento"), loc.get("localidad")))
+            if loc.get("departamento"):
+                k["departamentos"].add(loc["departamento"])
+            k["programas_activos"] += 1
+            prog = p.get("programa") or ""
+            k["programas_por_programa"][prog] = k["programas_por_programa"].get(prog, 0) + 1
+            if (p.get("checklist_faltan") or 0) > 0:
+                k["items_faltantes"] += 1
+            fecha_uc = _fecha((p.get("ultima_comunicacion") or {}).get("fecha"))
+            if fecha_uc is not None and desde <= fecha_uc <= ref:
+                k["comunicaciones_30d"] += 1
+            if p.get("monto") is not None:
+                k["monto_total"] += float(p["monto"])
+
+    avance_por_area = avance_por_area or {}
+    out: dict[str, dict[str, Any]] = {}
+    for area, k in acc.items():
+        avances = avance_por_area.get(area) or []
+        out[area] = {
+            "localidades": len(k["localidades"]),
+            "departamentos": len(k["departamentos"]),
+            "programas_activos": k["programas_activos"],
+            "programas_por_programa": k["programas_por_programa"],
+            "items_faltantes": k["items_faltantes"],
+            "comunicaciones_30d": k["comunicaciones_30d"],
+            "monto_total": round(k["monto_total"], 2),
+            "avance_obra_promedio": round(sum(avances) / len(avances), 1) if avances else None,
+        }
+    return out

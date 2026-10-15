@@ -18,6 +18,8 @@ class EstadoCordonCuneta(Base):
     aplica_juridico: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
     aplica_tecnico: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
     aplica_financiero: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
+    # juridica | tecnica | financiera | externa — qué área lleva el estado (spec-vivienda-tablero-analitico §4.4)
+    area_responsable: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
 
 class MunicipioCordonCuneta(Base):

@@ -1,10 +1,14 @@
 from datetime import date, datetime
 from decimal import Decimal
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
 from app.checklist_tecnico.schemas import HitoObraPanel
 
+
+# Área que lleva cada estado del catálogo (spec-vivienda-tablero-analitico §4.4).
+AreaResponsable = Literal["juridica", "tecnica", "financiera", "externa"]
 
 class EstadoResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -17,6 +21,7 @@ class EstadoResponse(BaseModel):
     aplica_juridico: bool
     aplica_tecnico: bool
     aplica_financiero: bool
+    area_responsable: AreaResponsable | None = None
 
 
 class EstadoCreate(BaseModel):
@@ -27,6 +32,7 @@ class EstadoCreate(BaseModel):
     aplica_juridico: bool = True
     aplica_tecnico: bool = True
     aplica_financiero: bool = True
+    area_responsable: AreaResponsable | None = None
 
 
 class EstadoUpdate(BaseModel):
@@ -37,6 +43,7 @@ class EstadoUpdate(BaseModel):
     aplica_juridico: bool | None = None
     aplica_tecnico: bool | None = None
     aplica_financiero: bool | None = None
+    area_responsable: AreaResponsable | None = None
 
 
 class LocalidadResponse(BaseModel):
@@ -66,6 +73,10 @@ class LocalidadResponse(BaseModel):
     avance_obra_fecha: date | None = None
     fecha_fin_obra: date | None = None
     hitos_obra: list[HitoObraPanel] | None = None
+    # Documentación del checklist sin los "No Aplica" (spec-vivienda-tablero-analitico §4.5)
+    doc_completos: int | None = None
+    doc_total: int | None = None
+    doc_iniciado: bool = False
 
 
 class LocalidadUpdate(BaseModel):

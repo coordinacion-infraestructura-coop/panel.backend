@@ -16,6 +16,7 @@ from app.mi_lugar.router import router as mi_lugar_router
 from app.checklist_tecnico.router import router as checklist_tecnico_router
 from app.informe_localidades.router import router as informe_localidades_router
 from app.resumen_territorial.router import router as resumen_territorial_router
+from app.tablero_analitico.router import router as tablero_analitico_router
 from app.notificaciones.router import router as notificaciones_router
 from app.portal.router import router as portal_router
 from app.internal.router import router as internal_router
@@ -111,6 +112,7 @@ app.include_router(mi_lugar_router, prefix="/api/v1/vivienda", tags=["mi-lugar"]
 app.include_router(checklist_tecnico_router, prefix="/api/v1/vivienda", tags=["checklist-tecnico"])
 app.include_router(informe_localidades_router, prefix="/api/v1/vivienda", tags=["informe-localidades"])
 app.include_router(geo_router, prefix="/api/v1/vivienda", tags=["geo"])
+app.include_router(tablero_analitico_router, prefix="/api/v1/vivienda", tags=["tablero-analitico"])
 # Transversal — prefijo /api/v1 (no /vivienda), mismo criterio que portal (ADR-007)
 app.include_router(resumen_territorial_router, prefix="/api/v1", tags=["resumen-territorial"])
 app.include_router(notificaciones_router, prefix="/api/v1", tags=["notificaciones"])
