@@ -134,14 +134,25 @@ async def compute_resumen_territorial(db: AsyncSession) -> ResumenTerritorialPay
             await db.execute(select(CatalogoItemEstado).where(CatalogoItemEstado.es_completo.is_(True)))
         ).scalars().all()
     }
+    # "No Proyectado / No Aplica" (excluye_completitud) queda fuera del total y de los faltantes.
+    no_aplica_ids = {
+        e.id
+        for e in (
+            await db.execute(
+                select(CatalogoItemEstado).where(CatalogoItemEstado.excluye_completitud.is_(True))
+            )
+        ).scalars().all()
+    }
     items_by_chk: dict[str, list[dict]] = {}
     for it in (await db.execute(select(ChecklistItem))).scalars().all():
+        if it.item_estado_id in completo_ids:
+            valor = "completo"
+        elif it.item_estado_id in no_aplica_ids:
+            valor = "no_aplica"
+        else:
+            valor = "pendiente"
         items_by_chk.setdefault(it.checklist_id, []).append(
-            {
-                "item_num": it.item_num,
-                "sub_item_num": it.sub_item_num,
-                "valor": "completo" if it.item_estado_id in completo_ids else "pendiente",
-            }
+            {"item_num": it.item_num, "sub_item_num": it.sub_item_num, "valor": valor}
         )
 
     cc_ped = _pedidos_por_entidad(

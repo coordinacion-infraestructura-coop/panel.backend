@@ -49,6 +49,30 @@ def test_items_faltantes_cuenta_los_no_completos_y_trae_labels():
     assert "Matrícula de cada lote" in labels  # ítem 2 de CH
 
 
+def test_items_faltantes_descarta_no_aplica_del_total_y_de_faltantes():
+    """spec-checklist-tecnico-dgv v1.6.0 §5.4-bis: "No Proyectado / No Aplica"."""
+    rows = [
+        {"item_num": 1, "sub_item_num": None, "valor": "completo"},
+        {"item_num": 2, "sub_item_num": None, "valor": "no_aplica"},
+        {"item_num": 3, "sub_item_num": None, "valor": "pendiente"},
+    ]
+    total, faltan, labels, iniciado = aggregations.items_faltantes(rows, "ch")
+    assert total == 13
+    assert faltan == 1
+    assert "Matrícula de cada lote" not in labels
+    assert iniciado is True
+
+
+def test_items_faltantes_todo_no_aplica_queda_en_cero():
+    from app.checklist_tecnico import catalog
+
+    rows = [
+        {"item_num": n, "sub_item_num": s, "valor": "no_aplica"}
+        for n, s in catalog.todos_los_item_keys("ch")
+    ]
+    assert aggregations.items_faltantes(rows, "ch")[:2] == (0, 0)
+
+
 def test_items_faltantes_totales_por_programa():
     assert aggregations.items_faltantes([], "cc")[0] == 19
     assert aggregations.items_faltantes([], "ch")[0] == 14

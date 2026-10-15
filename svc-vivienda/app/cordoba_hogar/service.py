@@ -37,11 +37,15 @@ from app.geo import service as geo_service
 from app.geo.models import GeoLocalidad
 
 
-def _localidad_response(localidad: LocalidadCordobaHogar, etecnico: int | None) -> LocalidadResponse:
+def _localidad_response(
+    localidad: LocalidadCordobaHogar, etecnico: int | None, obra: dict | None = None
+) -> LocalidadResponse:
     """`etecnico` no sale de la columna propia: es el estado del expediente del checklist
-    (spec-estado-tecnico-desde-checklist.md §3.2)."""
+    (spec-estado-tecnico-desde-checklist.md §3.2). `obra` = avance + hitos de obra, también
+    del checklist (spec-checklist-tecnico-dgv.md v1.6.0 §6-bis)."""
     out = LocalidadResponse.model_validate(localidad)
     out.etecnico = etecnico
+    estado_tecnico.aplicar_obra(out, obra)
     return out
 
 
@@ -58,9 +62,11 @@ async def get_full(db: AsyncSession) -> CordobaHogarFullResponse:
 
     monto_por_casa = float(config.monto_por_casa) if config and config.monto_por_casa is not None else 34000000.0
     tecnico = await estado_tecnico.estados_expediente_por_entidad(db, "ch")
+    localidades = localidades_res.scalars().all()
+    obra = await estado_tecnico.avance_por_entidades(db, "ch", localidades)
 
     return CordobaHogarFullResponse(
-        localidades=[_localidad_response(l, tecnico.get(l.id)) for l in localidades_res.scalars().all()],
+        localidades=[_localidad_response(l, tecnico.get(l.id), obra.get(l.id)) for l in localidades],
         estados=[EstadoResponse.model_validate(e) for e in estados_res.scalars().all()],
         presupuesto=presupuesto,
         monto_por_casa=monto_por_casa,
@@ -228,7 +234,9 @@ async def actualizar_localidad(
         localidad=localidad.localidad, departamento=localidad.departamento, ok_gob=localidad.ok_gob,
     )
     return _localidad_response(
-        localidad, await estado_tecnico.estado_expediente_de(db, "ch", localidad.id)
+        localidad,
+        await estado_tecnico.estado_expediente_de(db, "ch", localidad.id),
+        await estado_tecnico.avance_de_entidad(db, "ch", localidad),
     )
 
 
@@ -321,7 +329,9 @@ async def crear_localidad(
         localidad=localidad.localidad, departamento=localidad.departamento, ok_gob=localidad.ok_gob,
     )
     return _localidad_response(
-        localidad, await estado_tecnico.estado_expediente_de(db, "ch", localidad.id)
+        localidad,
+        await estado_tecnico.estado_expediente_de(db, "ch", localidad.id),
+        await estado_tecnico.avance_de_entidad(db, "ch", localidad),
     )
 
 

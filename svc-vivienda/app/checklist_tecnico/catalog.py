@@ -93,6 +93,19 @@ HITOS_LABEL: dict[str, str] = {
 }
 # Confirmado empíricamente sobre la planilla real (spec §5.5): 50/25/25 + saldo.
 HITOS_PORCENTAJE: dict[str, float] = {"anticipo": 0.5, "40": 0.25, "70": 0.25, "100": 0.0}
+# Avance físico que tiene que alcanzar una medición para "medir" el hito (spec v1.6.0 §5.6).
+# El anticipo es financiero: no tiene medición.
+HITOS_UMBRAL: dict[str, int] = {"40": 40, "70": 70, "100": 100}
+
+
+def monto_hito(tipo: str, monto_convenio: float | None) -> float | None:
+    """Monto de un hito sobre el convenio vigente — única fuente de la fórmula 50/25/25/0, la
+    usan el GET del checklist y los paneles CC/CH/ML para que no puedan diferir (spec §5.5)."""
+    if tipo == "100":
+        return 0.0
+    if not monto_convenio:
+        return None
+    return round(monto_convenio * HITOS_PORCENTAJE[tipo], 2)
 
 
 def item_label(programa: str, item_num: int, sub_item_num: int | None) -> str | None:

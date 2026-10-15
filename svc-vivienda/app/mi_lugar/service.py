@@ -128,13 +128,15 @@ async def eliminar_estado_ml(db: AsyncSession, estado_id: int, actor: AuthUser) 
 # ─── Proyectos ────────────────────────────────────────────────────────────────
 
 def _proyecto_con_geo(
-    proy: ProyectoML, puntos: list[GeoPuntoML], etecnico: int | None
+    proy: ProyectoML, puntos: list[GeoPuntoML], etecnico: int | None, obra: dict | None = None
 ) -> ProyectoMLOut:
     """`etecnico` no sale de la columna propia: es el estado del expediente del checklist
-    (spec-estado-tecnico-desde-checklist.md §3.2)."""
+    (spec-estado-tecnico-desde-checklist.md §3.2). `obra` = avance + hitos de obra, también
+    del checklist (spec-checklist-tecnico-dgv.md v1.6.0 §6-bis)."""
     out = ProyectoMLOut.model_validate(proy)
     out.geo_puntos = [GeoPuntoOut.model_validate(p) for p in puntos]
     out.etecnico = etecnico
+    estado_tecnico.aplicar_obra(out, obra)
     return out
 
 
@@ -176,8 +178,10 @@ async def listar_proyectos_ml(
         puntos_by_proyecto.setdefault(punto.proyecto_id, []).append(punto)
 
     tecnico = await estado_tecnico.estados_expediente_por_entidad(db, "ml")
+    obra = await estado_tecnico.avance_por_entidades(db, "ml", proyectos)
     return [
-        _proyecto_con_geo(p, puntos_by_proyecto.get(p.id, []), tecnico.get(p.id)) for p in proyectos
+        _proyecto_con_geo(p, puntos_by_proyecto.get(p.id, []), tecnico.get(p.id), obra.get(p.id))
+        for p in proyectos
     ]
 
 
@@ -196,7 +200,10 @@ async def obtener_proyecto_ml(db: AsyncSession, proyecto_id: str) -> ProyectoMLO
         )
     puntos = await _cargar_geo(db, proyecto_id)
     return _proyecto_con_geo(
-        proy, puntos, await estado_tecnico.estado_expediente_de(db, "ml", proy.id)
+        proy,
+        puntos,
+        await estado_tecnico.estado_expediente_de(db, "ml", proy.id),
+        await estado_tecnico.avance_de_entidad(db, "ml", proy),
     )
 
 
@@ -248,7 +255,10 @@ async def crear_proyecto_ml(
         localidad=proy.localidad_nombre, departamento=proy.departamento, ok_gob=proy.ok_gob,
     )
     return _proyecto_con_geo(
-        proy, puntos, await estado_tecnico.estado_expediente_de(db, "ml", proy.id)
+        proy,
+        puntos,
+        await estado_tecnico.estado_expediente_de(db, "ml", proy.id),
+        await estado_tecnico.avance_de_entidad(db, "ml", proy),
     )
 
 
@@ -334,7 +344,10 @@ async def actualizar_proyecto_ml(
         localidad=proy.localidad_nombre, departamento=proy.departamento, ok_gob=proy.ok_gob,
     )
     return _proyecto_con_geo(
-        proy, puntos, await estado_tecnico.estado_expediente_de(db, "ml", proy.id)
+        proy,
+        puntos,
+        await estado_tecnico.estado_expediente_de(db, "ml", proy.id),
+        await estado_tecnico.avance_de_entidad(db, "ml", proy),
     )
 
 

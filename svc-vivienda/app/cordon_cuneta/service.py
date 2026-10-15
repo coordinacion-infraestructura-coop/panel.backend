@@ -37,11 +37,15 @@ from app.geo import service as geo_service
 from app.geo.models import GeoLocalidad
 
 
-def _municipio_response(municipio: MunicipioCordonCuneta, etecnico: int | None) -> MunicipioResponse:
+def _municipio_response(
+    municipio: MunicipioCordonCuneta, etecnico: int | None, obra: dict | None = None
+) -> MunicipioResponse:
     """`etecnico` no sale de la columna propia: es el estado del expediente del checklist
-    (spec-estado-tecnico-desde-checklist.md §3.2)."""
+    (spec-estado-tecnico-desde-checklist.md §3.2). `obra` = avance + hitos de obra, también
+    del checklist (spec-checklist-tecnico-dgv.md v1.6.0 §6-bis)."""
     out = MunicipioResponse.model_validate(municipio)
     out.etecnico = etecnico
+    estado_tecnico.aplicar_obra(out, obra)
     return out
 
 
@@ -56,9 +60,11 @@ async def get_full(db: AsyncSession) -> CordonCunetaFullResponse:
     config = config_res.scalar_one_or_none()
     presupuesto = float(config.presupuesto) if config else 0.0
     tecnico = await estado_tecnico.estados_expediente_por_entidad(db, "cc")
+    municipios = municipios_res.scalars().all()
+    obra = await estado_tecnico.avance_por_entidades(db, "cc", municipios)
 
     return CordonCunetaFullResponse(
-        municipios=[_municipio_response(m, tecnico.get(m.id)) for m in municipios_res.scalars().all()],
+        municipios=[_municipio_response(m, tecnico.get(m.id), obra.get(m.id)) for m in municipios],
         estados=[EstadoResponse.model_validate(e) for e in estados_res.scalars().all()],
         presupuesto=presupuesto,
     )
@@ -225,7 +231,9 @@ async def actualizar_municipio(
         localidad=municipio.municipio, departamento=municipio.departamento, ok_gob=municipio.ok_gob,
     )
     return _municipio_response(
-        municipio, await estado_tecnico.estado_expediente_de(db, "cc", municipio.id)
+        municipio,
+        await estado_tecnico.estado_expediente_de(db, "cc", municipio.id),
+        await estado_tecnico.avance_de_entidad(db, "cc", municipio),
     )
 
 
@@ -316,7 +324,9 @@ async def crear_municipio(
         localidad=municipio.municipio, departamento=municipio.departamento, ok_gob=municipio.ok_gob,
     )
     return _municipio_response(
-        municipio, await estado_tecnico.estado_expediente_de(db, "cc", municipio.id)
+        municipio,
+        await estado_tecnico.estado_expediente_de(db, "cc", municipio.id),
+        await estado_tecnico.avance_de_entidad(db, "cc", municipio),
     )
 
 

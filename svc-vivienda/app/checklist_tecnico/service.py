@@ -8,9 +8,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit import log_audit
 from app.auth import AuthUser
-from app.checklist_tecnico import catalog
+from app.checklist_tecnico import catalog, estado_tecnico
 from app.checklist_tecnico.models import (
     CatalogoEstadoExpediente,
+    ChecklistAvanceMedicion,
     CatalogoItemEstado,
     CatalogoReparticion,
     ChecklistEstadoHist,
@@ -20,6 +21,9 @@ from app.checklist_tecnico.models import (
     ChecklistTecnico,
 )
 from app.checklist_tecnico.schemas import (
+    AvanceMedicionCreate,
+    AvanceMedicionOut,
+    AvanceVigente,
     CatalogoEstadoExpedienteCreate,
     CatalogoEstadoExpedienteResponse,
     CatalogoEstadoExpedienteUpdate,
@@ -253,23 +257,27 @@ async def _build_response(db: AsyncSession, programa: str, checklist: ChecklistT
             )
         )
 
-    # Hitos de obra para los 3 programas — monto recalculado sobre el convenio vigente.
+    # Hitos de obra para los 3 programas — monto recalculado sobre el convenio vigente; fecha
+    # de medición derivada del historial de avance (spec v1.6.0 §5.6).
     hitos_result = await db.execute(
         select(ChecklistObraHito).where(ChecklistObraHito.checklist_id == checklist.id)
     )
+    mediciones = await _mediciones_vigentes(db, checklist.id)
+    medidas = [(m.fecha_medicion, m.created_at, m.porcentaje) for m in mediciones]
     monto_convenio = float(entidad.monto) if entidad.monto is not None else None
     hitos: list[HitoResponse] = []
     for h in hitos_result.scalars().all():
-        if h.tipo == "100":
-            monto = 0.0
-        else:
-            monto = round(monto_convenio * catalog.HITOS_PORCENTAJE[h.tipo], 2) if monto_convenio else None
         hitos.append(
             HitoResponse(
-                tipo=h.tipo, label=catalog.HITOS_LABEL[h.tipo], monto=monto, fecha_acreditado=h.fecha_acreditado
+                tipo=h.tipo,
+                label=catalog.HITOS_LABEL[h.tipo],
+                monto=catalog.monto_hito(h.tipo, monto_convenio),
+                fecha_acreditado=h.fecha_acreditado,
+                fecha_medicion=estado_tecnico.fecha_medicion_hito(h.tipo, medidas),
             )
         )
     hitos.sort(key=lambda h: catalog.HITOS_TIPOS.index(h.tipo))
+    vigente = estado_tecnico.avance_vigente(medidas)
 
     visitados = set(
         (
@@ -295,6 +303,8 @@ async def _build_response(db: AsyncSession, programa: str, checklist: ChecklistT
         estados_visitados=sorted(visitados),
         items=items,
         hitos=hitos,
+        fecha_fin_obra=checklist.fecha_fin_obra,
+        avance=AvanceVigente(porcentaje=vigente[0], fecha_medicion=vigente[1]) if vigente else None,
         updated_at=checklist.updated_at,
         updated_by=checklist.updated_by,
     )
@@ -434,6 +444,85 @@ async def crear_obs_obra(
         resource_id=checklist.id, payload={"fecha": str(data.fecha)},
     )
     return ObraObsOut.model_validate(row)
+
+
+# ── Avance físico de obra — historial de mediciones (spec v1.6.0 §5.6) ──────────────
+
+async def _mediciones_vigentes(db: AsyncSession, checklist_id: str) -> list[ChecklistAvanceMedicion]:
+    """Mediciones no borradas, más nueva primero (fecha_medicion DESC, created_at DESC)."""
+    return list(
+        (
+            await db.execute(
+                select(ChecklistAvanceMedicion)
+                .where(
+                    ChecklistAvanceMedicion.checklist_id == checklist_id,
+                    ChecklistAvanceMedicion.deleted_at.is_(None),
+                )
+                .order_by(ChecklistAvanceMedicion.fecha_medicion.desc(), ChecklistAvanceMedicion.created_at.desc())
+            )
+        ).scalars().all()
+    )
+
+
+async def listar_avance(db: AsyncSession, programa: str, entidad_id: str) -> list[AvanceMedicionOut]:
+    _validar_programa(programa)
+    await _get_entidad(db, programa, entidad_id)
+    checklist = await _get_or_create_checklist(db, programa, entidad_id)
+    return [AvanceMedicionOut.model_validate(m) for m in await _mediciones_vigentes(db, checklist.id)]
+
+
+async def crear_avance(
+    db: AsyncSession, programa: str, entidad_id: str, data: AvanceMedicionCreate, actor: AuthUser
+) -> AvanceMedicionOut:
+    _validar_programa(programa)
+    await _get_entidad(db, programa, entidad_id)
+    checklist = await _get_or_create_checklist(db, programa, entidad_id, actor)
+    row = ChecklistAvanceMedicion(
+        id=str(uuid.uuid4()),
+        checklist_id=checklist.id,
+        fecha_medicion=data.fecha_medicion,
+        porcentaje=data.porcentaje,
+        created_by=actor.email,
+        created_by_nombre=actor.nombre,
+    )
+    db.add(row)
+    checklist.updated_by = actor.email
+    checklist.updated_at = datetime.now(timezone.utc)
+    await db.flush()
+    await log_audit(
+        db, actor=actor, action="CREATE", resource_type="checklist_avance_medicion",
+        resource_id=row.id,
+        payload={"checklist_id": checklist.id, "fecha_medicion": str(data.fecha_medicion), "porcentaje": data.porcentaje},
+    )
+    return AvanceMedicionOut.model_validate(row)
+
+
+async def eliminar_avance(
+    db: AsyncSession, programa: str, entidad_id: str, medicion_id: str, actor: AuthUser
+) -> None:
+    _validar_programa(programa)
+    await _get_entidad(db, programa, entidad_id)
+    row = (
+        await db.execute(
+            select(ChecklistAvanceMedicion)
+            .join(ChecklistTecnico, ChecklistTecnico.id == ChecklistAvanceMedicion.checklist_id)
+            .where(
+                ChecklistAvanceMedicion.id == medicion_id,
+                ChecklistAvanceMedicion.deleted_at.is_(None),
+                ChecklistTecnico.programa == programa,
+                ChecklistTecnico.entidad_id == entidad_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        raise _recurso_no_encontrado(f"Medición de avance {medicion_id} no encontrada")
+    row.deleted_at = datetime.now(timezone.utc)
+    await db.flush()
+    await log_audit(
+        db, actor=actor, action="DELETE", resource_type="checklist_avance_medicion",
+        resource_id=row.id,
+        payload={"checklist_id": row.checklist_id, "fecha_medicion": str(row.fecha_medicion), "porcentaje": row.porcentaje},
+    )
 
 
 async def actualizar_checklist(
@@ -655,6 +744,7 @@ async def crear_item_estado(
     estado = CatalogoItemEstado(
         id=new_id, label=data.label, orden=data.orden, activo=data.activo,
         bg=data.bg, text_color=data.text_color, es_completo=data.es_completo,
+        excluye_completitud=data.excluye_completitud,
     )
     db.add(estado)
     await db.flush()
@@ -672,6 +762,16 @@ async def actualizar_item_estado(
     if not estado:
         raise _recurso_no_encontrado(f"Estado de la documentación {item_estado_id} no encontrado")
     updates = data.model_dump(exclude_unset=True)
+    es_completo = updates.get("es_completo", estado.es_completo)
+    excluye = updates.get("excluye_completitud", estado.excluye_completitud)
+    if es_completo and excluye:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "code": "FLAGS_EXCLUYENTES",
+                "message": "Un estado no puede ser 'completo' y 'no aplica' a la vez",
+            },
+        )
     for key, value in updates.items():
         setattr(estado, key, value)
     await db.flush()

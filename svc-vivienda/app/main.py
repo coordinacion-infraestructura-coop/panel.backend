@@ -29,6 +29,7 @@ from app.cordon_cuneta.checklist_models import (  # noqa: F401 — ensures table
 )
 from app.checklist_tecnico.models import (  # noqa: F401 — ensures tables are registered with Base
     CatalogoEstadoExpediente,
+    ChecklistAvanceMedicion,
     CatalogoItemEstado,
     CatalogoReparticion,
     ChecklistEstadoHist,

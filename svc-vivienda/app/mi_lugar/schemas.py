@@ -6,6 +6,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
+from app.checklist_tecnico.schemas import HitoObraPanel
+
 
 # ─── Estado ───────────────────────────────────────────────────────────────────
 
@@ -92,6 +94,11 @@ class ProyectoMLOut(BaseModel):
     updated_at: datetime
     updated_by: str | None
     geo_puntos: list[GeoPuntoOut] = []
+    # Avance de obra — solo lectura, viene del Checklist Técnico (spec-checklist-tecnico-dgv v1.6.0 §6-bis)
+    avance_obra_pct: int | None = None
+    avance_obra_fecha: date | None = None
+    fecha_fin_obra: date | None = None
+    hitos_obra: list[HitoObraPanel] | None = None
 
 
 class ProyectoMLCreate(BaseModel):

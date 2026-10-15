@@ -1,6 +1,6 @@
 from datetime import date, datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.checklist_tecnico.catalog import Programa, TipoHito
 
@@ -60,6 +60,7 @@ class CatalogoItemEstadoResponse(BaseModel):
     bg: str
     text_color: str
     es_completo: bool
+    excluye_completitud: bool
 
 
 class CatalogoItemEstadoCreate(BaseModel):
@@ -69,6 +70,13 @@ class CatalogoItemEstadoCreate(BaseModel):
     bg: str = "#f1f5f9"
     text_color: str = "#64748b"
     es_completo: bool = False
+    excluye_completitud: bool = False
+
+    @model_validator(mode="after")
+    def _flags_excluyentes(self) -> "CatalogoItemEstadoCreate":
+        if self.es_completo and self.excluye_completitud:
+            raise ValueError("Un estado no puede ser 'completo' y 'no aplica' a la vez")
+        return self
 
 
 class CatalogoItemEstadoUpdate(BaseModel):
@@ -78,6 +86,7 @@ class CatalogoItemEstadoUpdate(BaseModel):
     bg: str | None = None
     text_color: str | None = None
     es_completo: bool | None = None
+    excluye_completitud: bool | None = None
 
 
 class ItemSubDefinicion(BaseModel):
@@ -174,6 +183,43 @@ class HitoResponse(BaseModel):
     label: str
     monto: float | None
     fecha_acreditado: date | None
+    # Derivada del historial de avance (spec v1.6.0 §5.6) — siempre None en 'anticipo'.
+    fecha_medicion: date | None = None
+
+
+class AvanceVigente(BaseModel):
+    porcentaje: int
+    fecha_medicion: date
+
+
+class AvanceMedicionCreate(BaseModel):
+    fecha_medicion: date
+    porcentaje: int = Field(ge=0, le=100)
+
+    @field_validator("fecha_medicion")
+    @classmethod
+    def _no_futura(cls, v: date) -> date:
+        if v > date.today():
+            raise ValueError("La fecha de medición no puede ser futura")
+        return v
+
+
+class AvanceMedicionOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    fecha_medicion: date
+    porcentaje: int
+    created_at: datetime
+    created_by: str | None = None
+    created_by_nombre: str | None = None
+
+
+class HitoObraPanel(BaseModel):
+    """Hito de obra tal como lo ven los paneles CC/CH/ML — solo lectura (spec v1.6.0 §6-bis)."""
+    tipo: TipoHito
+    monto: float | None
+    fecha_medicion: date | None
+    fecha_acreditado: date | None
 
 
 class HitoUpdate(BaseModel):
@@ -192,6 +238,8 @@ class ChecklistTecnicoResponse(BaseModel):
     estados_visitados: list[int]
     items: list[ChecklistItemResponse]
     hitos: list[HitoResponse] | None
+    fecha_fin_obra: date | None = None
+    avance: AvanceVigente | None = None
     updated_at: datetime
     updated_by: str | None
 
@@ -200,3 +248,4 @@ class ChecklistTecnicoUpdate(BaseModel):
     estado_expediente_id: int | None = None
     fecha_radicacion: date | None = None
     reparticion_id: int | None = None
+    fecha_fin_obra: date | None = None

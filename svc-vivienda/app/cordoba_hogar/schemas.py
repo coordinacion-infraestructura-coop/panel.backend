@@ -3,6 +3,8 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict
 
+from app.checklist_tecnico.schemas import HitoObraPanel
+
 
 class EstadoResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -59,6 +61,11 @@ class LocalidadResponse(BaseModel):
     obs: str | None
     updated_at: datetime
     updated_by: str | None
+    # Avance de obra — solo lectura, viene del Checklist Técnico (spec-checklist-tecnico-dgv v1.6.0 §6-bis)
+    avance_obra_pct: int | None = None
+    avance_obra_fecha: date | None = None
+    fecha_fin_obra: date | None = None
+    hitos_obra: list[HitoObraPanel] | None = None
 
 
 class LocalidadUpdate(BaseModel):

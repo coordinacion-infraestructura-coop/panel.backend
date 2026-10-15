@@ -160,13 +160,15 @@ def items_faltantes(
 
     `programa_cod` es 'cc'|'ch'|'ml'. Si `items_rows` está vacío → el checklist
     nunca se abrió: (total, total, [], False). Si no → cuenta los ítems con
-    `valor != 'completo'`.
+    `valor` distinto de 'completo' y de 'no_aplica'. Los 'no_aplica' ("No Proyectado / No
+    Aplica", spec-checklist-tecnico-dgv v1.6.0 §5.4-bis) se descartan también del total.
     """
     total = len(catalog.todos_los_item_keys(programa_cod))
     rows = list(items_rows)
     if not rows:
         return total, total, [], False
-    faltan = [r for r in rows if r.get("valor") != "completo"]
+    total -= sum(1 for r in rows if r.get("valor") == "no_aplica")
+    faltan = [r for r in rows if r.get("valor") not in ("completo", "no_aplica")]
     labels = [
         lbl
         for r in faltan

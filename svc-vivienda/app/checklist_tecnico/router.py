@@ -5,6 +5,8 @@ from app.auth import AuthUser, ROLES_ADMIN, ROLES_ESCRITURA, ROLES_LECTURA, requ
 from app.checklist_tecnico import service
 from app.checklist_tecnico.catalog import Programa, TipoHito
 from app.checklist_tecnico.schemas import (
+    AvanceMedicionCreate,
+    AvanceMedicionOut,
     CatalogoEstadoExpedienteCreate,
     CatalogoEstadoExpedienteResponse,
     CatalogoEstadoExpedienteUpdate,
@@ -119,6 +121,45 @@ async def crear_obs_obra(
     actor: AuthUser = Depends(require_roles(*ROLES_ESCRITURA_CHECKLIST)),
 ):
     return await service.crear_obs_obra(db, programa, entidad_id, data, actor)
+
+
+@router.get(
+    "/checklist-tecnico/{programa}/{entidad_id}/avance",
+    response_model=list[AvanceMedicionOut],
+)
+async def listar_avance(
+    programa: Programa,
+    entidad_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: AuthUser = Depends(require_roles(*ROLES_LECTURA_CHECKLIST)),
+):
+    return await service.listar_avance(db, programa, entidad_id)
+
+
+@router.post(
+    "/checklist-tecnico/{programa}/{entidad_id}/avance",
+    response_model=AvanceMedicionOut,
+    status_code=201,
+)
+async def crear_avance(
+    programa: Programa,
+    entidad_id: str,
+    data: AvanceMedicionCreate,
+    db: AsyncSession = Depends(get_db),
+    actor: AuthUser = Depends(require_roles(*ROLES_ESCRITURA_CHECKLIST)),
+):
+    return await service.crear_avance(db, programa, entidad_id, data, actor)
+
+
+@router.delete("/checklist-tecnico/{programa}/{entidad_id}/avance/{medicion_id}", status_code=204)
+async def eliminar_avance(
+    programa: Programa,
+    entidad_id: str,
+    medicion_id: str,
+    db: AsyncSession = Depends(get_db),
+    actor: AuthUser = Depends(require_roles(*ROLES_ESCRITURA_CHECKLIST)),
+):
+    await service.eliminar_avance(db, programa, entidad_id, medicion_id, actor)
 
 
 @router.patch("/checklist-tecnico/{programa}/{entidad_id}", response_model=ChecklistTecnicoResponse)
