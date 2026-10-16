@@ -138,6 +138,9 @@ class PedidoResponse(BaseModel):
     created_by: str | None
     created_by_nombre: str | None
     secretaria: str | None
+    editado_at: datetime | None = None
+    editado_por: str | None = None
+    editado_por_nombre: str | None = None
 
 
 class EstadoHistorialResponse(BaseModel):

@@ -20,12 +20,14 @@ from app.checklist_tecnico.schemas import (
     ChecklistItemUpdate,
     ChecklistPedidoCreate,
     ChecklistPedidoOut,
+    ChecklistPedidoUpdate,
     ChecklistTecnicoResponse,
     ChecklistTecnicoUpdate,
     EntidadListItem,
     HitoUpdate,
     ObraObsCreate,
     ObraObsOut,
+    ObraObsUpdate,
 )
 from app.database import get_db
 
@@ -95,6 +97,22 @@ async def crear_pedido(
     return await service.crear_pedido(db, programa, entidad_id, data, actor)
 
 
+@router.patch(
+    "/checklist-tecnico/{programa}/{entidad_id}/pedidos/{pedido_id}",
+    response_model=ChecklistPedidoOut,
+)
+async def corregir_pedido(
+    programa: Programa,
+    entidad_id: str,
+    pedido_id: str,
+    data: ChecklistPedidoUpdate,
+    db: AsyncSession = Depends(get_db),
+    actor: AuthUser = Depends(require_roles(*ROLES_ESCRITURA_CHECKLIST)),
+):
+    """Corrige una observación del expediente ya cargada (spec v1.7.0 §6-ter.2)."""
+    return await service.corregir_pedido(db, programa, entidad_id, pedido_id, data, actor)
+
+
 @router.get(
     "/checklist-tecnico/{programa}/{entidad_id}/obs-obra",
     response_model=list[ObraObsOut],
@@ -121,6 +139,22 @@ async def crear_obs_obra(
     actor: AuthUser = Depends(require_roles(*ROLES_ESCRITURA_CHECKLIST)),
 ):
     return await service.crear_obs_obra(db, programa, entidad_id, data, actor)
+
+
+@router.patch(
+    "/checklist-tecnico/{programa}/{entidad_id}/obs-obra/{obs_id}",
+    response_model=ObraObsOut,
+)
+async def corregir_obs_obra(
+    programa: Programa,
+    entidad_id: str,
+    obs_id: str,
+    data: ObraObsUpdate,
+    db: AsyncSession = Depends(get_db),
+    actor: AuthUser = Depends(require_roles(*ROLES_ESCRITURA_CHECKLIST)),
+):
+    """Corrige una observación de obra ya cargada (spec v1.7.0 §6-ter.2)."""
+    return await service.corregir_obs_obra(db, programa, entidad_id, obs_id, data, actor)
 
 
 @router.get(

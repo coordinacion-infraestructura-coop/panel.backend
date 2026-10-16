@@ -38,6 +38,7 @@ from app.checklist_tecnico.schemas import (
     ChecklistItemUpdate,
     ChecklistPedidoCreate,
     ChecklistPedidoOut,
+    ChecklistPedidoUpdate,
     ChecklistTecnicoResponse,
     ChecklistTecnicoUpdate,
     EntidadListItem,
@@ -47,13 +48,14 @@ from app.checklist_tecnico.schemas import (
     ItemDefinicion,
     ObraObsCreate,
     ObraObsOut,
+    ObraObsUpdate,
 )
 from app.cordoba_hogar import service as ch_service
-from app.cordoba_hogar.models import LocalidadCordobaHogar
+from app.cordoba_hogar.models import LocalidadCordobaHogar, PedidoCordobaHogar
 from app.cordon_cuneta import service as cc_service
-from app.cordon_cuneta.models import MunicipioCordonCuneta
+from app.cordon_cuneta.models import MunicipioCordonCuneta, PedidoCordonCuneta
 from app.mi_lugar import service as ml_service
-from app.mi_lugar.models import ProyectoML
+from app.mi_lugar.models import PedidoML, ProyectoML
 
 
 def _recurso_no_encontrado(mensaje: str) -> HTTPException:
@@ -401,6 +403,95 @@ async def crear_pedido(
 
         pedido = await ml_service.crear_pedido_ml(db, entidad_id, _PedidoMLCreate(**data.model_dump()), actor)
     return ChecklistPedidoOut.model_validate(pedido)
+
+
+# ── Corrección de observaciones ya cargadas (spec v1.7.0 §6-ter.2) ───────────────
+# Corrige texto y/o fecha de una entrada por error de carga. Deja la marca `editado_*` en la fila
+# y el valor anterior en el audit log. Las comunicaciones de otra secretaría no se tocan desde acá.
+
+_PEDIDO_POR_PROGRAMA = {
+    "cc": (PedidoCordonCuneta, "municipio_id"),
+    "ch": (PedidoCordobaHogar, "localidad_id"),
+    "ml": (PedidoML, "proyecto_id"),
+}
+_SECRETARIAS_NO_CORREGIBLES = ("infraestructura", "supervision")
+
+
+def _aplicar_correccion(row, cambios: dict, actor: AuthUser) -> dict | None:
+    """Aplica `cambios` sobre `row`. Devuelve {anterior, nuevo} de lo que cambió, o None."""
+    anterior: dict = {}
+    nuevo: dict = {}
+    for campo, valor in cambios.items():
+        if valor is None or getattr(row, campo) == valor:
+            continue
+        anterior[campo] = str(getattr(row, campo))
+        nuevo[campo] = str(valor)
+        setattr(row, campo, valor)
+    if not nuevo:
+        return None
+    row.editado_at = datetime.now(timezone.utc)
+    row.editado_por = actor.email
+    row.editado_por_nombre = actor.nombre
+    return {"anterior": anterior, "nuevo": nuevo}
+
+
+async def corregir_pedido(
+    db: AsyncSession, programa: str, entidad_id: str, pedido_id: str,
+    data: ChecklistPedidoUpdate, actor: AuthUser,
+) -> ChecklistPedidoOut:
+    _validar_programa(programa)
+    await _get_entidad(db, programa, entidad_id)
+    modelo, fk = _PEDIDO_POR_PROGRAMA[programa]
+    row = (
+        await db.execute(
+            select(modelo).where(modelo.id == pedido_id, getattr(modelo, fk) == entidad_id)
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        raise _recurso_no_encontrado(f"Observación {pedido_id} no encontrada")
+    if row.secretaria in _SECRETARIAS_NO_CORREGIBLES:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"code": "OBSERVACION_OTRA_SECRETARIA",
+                    "message": "Las comunicaciones de otra secretaría no se corrigen desde el Checklist Técnico"},
+        )
+    diff = _aplicar_correccion(row, data.model_dump(exclude_unset=True), actor)
+    if diff:
+        await db.flush()
+        await log_audit(
+            db, actor=actor, action="CORRECCION", resource_type=f"{programa}_pedido",
+            resource_id=row.id, payload=diff,
+        )
+    return ChecklistPedidoOut.model_validate(row)
+
+
+async def corregir_obs_obra(
+    db: AsyncSession, programa: str, entidad_id: str, obs_id: str,
+    data: ObraObsUpdate, actor: AuthUser,
+) -> ObraObsOut:
+    _validar_programa(programa)
+    await _get_entidad(db, programa, entidad_id)
+    row = (
+        await db.execute(
+            select(ChecklistObraObs)
+            .join(ChecklistTecnico, ChecklistTecnico.id == ChecklistObraObs.checklist_id)
+            .where(
+                ChecklistObraObs.id == obs_id,
+                ChecklistTecnico.programa == programa,
+                ChecklistTecnico.entidad_id == entidad_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        raise _recurso_no_encontrado(f"Observación de obra {obs_id} no encontrada")
+    diff = _aplicar_correccion(row, data.model_dump(exclude_unset=True), actor)
+    if diff:
+        await db.flush()
+        await log_audit(
+            db, actor=actor, action="CORRECCION", resource_type="checklist_obra_obs",
+            resource_id=row.id, payload=diff,
+        )
+    return ObraObsOut.model_validate(row)
 
 
 # ── Observaciones de obra — bitácora propia del módulo (spec v1.3.0) ──────────────

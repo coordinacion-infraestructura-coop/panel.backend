@@ -641,3 +641,134 @@ async def test_admin_item_estado_403_para_no_admin(
 async def test_admin_item_estado_inexistente_404(client: AsyncClient, catalogos: None):
     r = await client.patch(f"{BASE}/admin/item-estado/999", json={"label": "X"})
     assert r.status_code == 404
+
+
+# ── v1.7.0: secciones de documentación y corrección de observaciones (§6-ter) ──────
+
+@pytest.mark.asyncio
+async def test_catalogo_items_cc_dividido_en_secciones(client: AsyncClient, catalogos: None):
+    items = (await client.get(f"{BASE}/catalogos")).json()["items_por_programa"]
+    cc = items["cc"]
+    assert {i["seccion"] for i in cc} == {"legal_financiera"}          # ítems 1-9, incluido el 4
+    item4 = next(i for i in cc if i["item_num"] == 4)
+    assert len(item4["sub_items"]) == 10
+    assert {s["seccion"] for s in item4["sub_items"]} == {"tecnica"}  # detalle técnico
+    # CH y ML no se dividen hasta que el área lo defina
+    assert {i["seccion"] for i in items["ch"]} == {None}
+    assert {i["seccion"] for i in items["ml"]} == {None}
+
+
+@pytest.mark.asyncio
+async def test_corregir_observacion_expediente_marca_editado(
+    client: AsyncClient, municipio_cc: str, catalogos: None
+):
+    creada = (await client.post(
+        f"{BASE}/cc/{municipio_cc}/pedidos",
+        json={"descripcion": "Falta estudio de suleo", "fecha_pedido": "2026-08-31"},
+    )).json()
+    assert creada["editado_at"] is None
+
+    r = await client.patch(
+        f"{BASE}/cc/{municipio_cc}/pedidos/{creada['id']}",
+        json={"descripcion": "  Falta estudio de suelo  ", "fecha_pedido": "2026-09-01"},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["descripcion"] == "Falta estudio de suelo"
+    assert body["fecha_pedido"] == "2026-09-01"
+    assert body["editado_at"] is not None
+    assert body["editado_por"] == "admin@test.com"
+    assert body["created_at"][:26] == creada["created_at"][:26]  # la carga original no cambia (SQLite pierde la tz)
+
+    # la lista (y por herencia la de los paneles) trae la marca
+    lista = (await client.get(f"{CC_BASE}/{municipio_cc}/pedidos")).json()
+    assert lista[0]["editado_por"] == "admin@test.com"
+
+
+@pytest.mark.asyncio
+async def test_corregir_observacion_sin_cambios_no_marca(
+    client: AsyncClient, localidad_ch: str, catalogos: None
+):
+    creada = (await client.post(
+        f"{BASE}/ch/{localidad_ch}/pedidos", json={"descripcion": "igual", "fecha_pedido": "2026-08-31"},
+    )).json()
+    r = await client.patch(f"{BASE}/ch/{localidad_ch}/pedidos/{creada['id']}", json={"descripcion": "igual"})
+    assert r.status_code == 200
+    assert r.json()["editado_at"] is None
+
+
+@pytest.mark.asyncio
+async def test_corregir_observacion_vacia_422(client: AsyncClient, proyecto_ml: str, catalogos: None):
+    creada = (await client.post(
+        f"{BASE}/ml/{proyecto_ml}/pedidos", json={"descripcion": "algo", "fecha_pedido": "2026-08-31"},
+    )).json()
+    r = await client.patch(f"{BASE}/ml/{proyecto_ml}/pedidos/{creada['id']}", json={"descripcion": "   "})
+    assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_corregir_observacion_de_otra_entidad_404(
+    client: AsyncClient, municipio_cc: str, localidad_ch: str, catalogos: None
+):
+    creada = (await client.post(
+        f"{BASE}/cc/{municipio_cc}/pedidos", json={"descripcion": "algo", "fecha_pedido": "2026-08-31"},
+    )).json()
+    # mismo id, pero pedido por otro programa/entidad
+    r = await client.patch(f"{BASE}/ch/{localidad_ch}/pedidos/{creada['id']}", json={"descripcion": "x"})
+    assert r.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_corregir_comunicacion_de_infraestructura_403(
+    client: AsyncClient, db_session: AsyncSession, municipio_cc: str, catalogos: None
+):
+    from datetime import date
+
+    from app.cordon_cuneta.models import PedidoCordonCuneta
+
+    p = PedidoCordonCuneta(
+        municipio_id=municipio_cc, descripcion="comunicación de infra",
+        fecha_pedido=date(2026, 9, 1), secretaria="infraestructura",
+    )
+    db_session.add(p)
+    await db_session.flush()
+    r = await client.patch(f"{BASE}/cc/{municipio_cc}/pedidos/{p.id}", json={"descripcion": "cambiada"})
+    assert r.status_code == 403
+    assert r.json()["detail"]["code"] == "OBSERVACION_OTRA_SECRETARIA"
+
+
+@pytest.mark.asyncio
+async def test_tecnico_dgv_corrige_observacion_de_obra(
+    client_tecnico_dgv: AsyncClient, municipio_cc: str, catalogos: None
+):
+    creada = (await client_tecnico_dgv.post(
+        f"{BASE}/cc/{municipio_cc}/obs-obra", json={"descripcion": "Certifcado 40%", "fecha": "2026-09-03"},
+    )).json()
+    r = await client_tecnico_dgv.patch(
+        f"{BASE}/cc/{municipio_cc}/obs-obra/{creada['id']}", json={"descripcion": "Certificado 40%"},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["descripcion"] == "Certificado 40%"
+    assert r.json()["fecha"] == "2026-09-03"
+    assert r.json()["editado_at"] is not None
+
+
+@pytest.mark.asyncio
+async def test_corregir_obs_obra_de_otra_entidad_404(
+    client: AsyncClient, municipio_cc: str, localidad_ch: str, catalogos: None
+):
+    creada = (await client.post(
+        f"{BASE}/cc/{municipio_cc}/obs-obra", json={"descripcion": "x", "fecha": "2026-09-03"},
+    )).json()
+    r = await client.patch(f"{BASE}/ch/{localidad_ch}/obs-obra/{creada['id']}", json={"descripcion": "y"})
+    assert r.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_consulta_no_corrige_observaciones(
+    client_consulta: AsyncClient, municipio_cc: str, catalogos: None
+):
+    r1 = await client_consulta.patch(f"{BASE}/cc/{municipio_cc}/pedidos/{uuid.uuid4()}", json={"descripcion": "x"})
+    r2 = await client_consulta.patch(f"{BASE}/cc/{municipio_cc}/obs-obra/{uuid.uuid4()}", json={"descripcion": "x"})
+    assert r1.status_code == 403
+    assert r2.status_code == 403

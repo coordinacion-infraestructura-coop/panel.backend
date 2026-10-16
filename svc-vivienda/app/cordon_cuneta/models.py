@@ -98,3 +98,7 @@ class PedidoCordonCuneta(Base):
     created_by: Mapped[str | None] = mapped_column(String(200))
     created_by_nombre: Mapped[str | None] = mapped_column(String(255))
     secretaria: Mapped[str | None] = mapped_column(String(100))
+    # Corrección de la observación (spec-checklist-tecnico-dgv.md v1.7.0 §6-ter.2, migración 0041).
+    editado_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    editado_por: Mapped[str | None] = mapped_column(String(200))
+    editado_por_nombre: Mapped[str | None] = mapped_column(String(255))

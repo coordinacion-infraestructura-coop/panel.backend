@@ -2,7 +2,7 @@ from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from app.checklist_tecnico.catalog import Programa, TipoHito
+from app.checklist_tecnico.catalog import Programa, Seccion, TipoHito
 
 
 class CatalogoEstadoExpedienteResponse(BaseModel):
@@ -92,11 +92,13 @@ class CatalogoItemEstadoUpdate(BaseModel):
 class ItemSubDefinicion(BaseModel):
     sub_item_num: int
     label: str
+    seccion: Seccion | None = None  # spec v1.7.0 §6-ter.1
 
 
 class ItemDefinicion(BaseModel):
     item_num: int
     label: str
+    seccion: Seccion | None = None  # spec v1.7.0 §6-ter.1
     sub_items: list[ItemSubDefinicion] | None
 
 
@@ -146,6 +148,34 @@ class ChecklistPedidoOut(BaseModel):
     created_by: str | None = None
     created_by_nombre: str | None = None
     secretaria: str | None = None
+    editado_at: datetime | None = None
+    editado_por: str | None = None
+    editado_por_nombre: str | None = None
+
+
+class _CorreccionObservacion(BaseModel):
+    """Corrección de una observación ya cargada (spec v1.7.0 §6-ter.2): todo opcional, pero la
+    descripción, si viene, no puede quedar vacía."""
+
+    descripcion: str | None = None
+
+    @field_validator("descripcion")
+    @classmethod
+    def _no_vacia(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        v = v.strip()
+        if not v:
+            raise ValueError("La observación no puede quedar vacía")
+        return v
+
+
+class ChecklistPedidoUpdate(_CorreccionObservacion):
+    fecha_pedido: date | None = None
+
+
+class ObraObsUpdate(_CorreccionObservacion):
+    fecha: date | None = None
 
 
 class ObraObsCreate(BaseModel):
@@ -161,6 +191,9 @@ class ObraObsOut(BaseModel):
     created_at: datetime
     created_by: str | None = None
     created_by_nombre: str | None = None
+    editado_at: datetime | None = None
+    editado_por: str | None = None
+    editado_por_nombre: str | None = None
 
 
 class ChecklistItemResponse(BaseModel):

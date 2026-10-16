@@ -9,6 +9,7 @@ from typing import Literal
 
 Programa = Literal["cc", "ch", "ml"]
 TipoHito = Literal["anticipo", "40", "70", "100"]
+Seccion = Literal["tecnica", "legal_financiera"]
 
 PROGRAMAS: tuple[Programa, ...] = ("cc", "ch", "ml")
 
@@ -84,6 +85,12 @@ _ITEM_CON_SUBITEMS: dict[str, int | None] = {"cc": 4, "ch": None, "ml": 14}
 _ITEMS_POR_PROGRAMA: dict[str, dict[int, str]] = {"cc": CC_ITEMS, "ch": CH_ITEMS, "ml": ML_ITEMS}
 _SUBITEMS_POR_PROGRAMA: dict[str, dict[int, str]] = {"cc": CC_SUB_ITEM4, "ml": ML_SUB_ITEM14}
 
+# Sección de cada ítem para los dos botones del panel (spec v1.7.0 §6-ter.1): quién lo carga. Por
+# programa: (sección de los ítems, sección de los sub-ítems). Un programa ausente no se divide.
+# Cordón Cuneta: los ítems 1-9 (incluido el 4 como fila general) los carga el área legal y
+# financiera; los 10 sub-ítems del detalle técnico, el área técnica. CH y ML: a definir por el área.
+_SECCIONES: dict[str, tuple[Seccion, Seccion]] = {"cc": ("legal_financiera", "tecnica")}
+
 HITOS_TIPOS: tuple[TipoHito, ...] = ("anticipo", "40", "70", "100")
 HITOS_LABEL: dict[str, str] = {
     "anticipo": "Anticipo financiero",
@@ -116,7 +123,9 @@ def item_label(programa: str, item_num: int, sub_item_num: int | None) -> str | 
 
 
 def items_definition(programa: str) -> list[dict]:
-    """[{item_num, label, sub_items: [{sub_item_num, label}] | None}, ...] para el selector de catálogo."""
+    """[{item_num, label, seccion, sub_items: [{sub_item_num, label, seccion}] | None}, ...] para
+    el selector de catálogo. `seccion` es None en los programas que no se dividen."""
+    seccion_item, seccion_sub = _SECCIONES.get(programa, (None, None))
     items = _ITEMS_POR_PROGRAMA.get(programa, {})
     subitem_de = _ITEM_CON_SUBITEMS.get(programa)
     subitems = _SUBITEMS_POR_PROGRAMA.get(programa, {})
@@ -124,8 +133,11 @@ def items_definition(programa: str) -> list[dict]:
     for num, label in items.items():
         sub_items = None
         if num == subitem_de:
-            sub_items = [{"sub_item_num": s_num, "label": s_label} for s_num, s_label in subitems.items()]
-        result.append({"item_num": num, "label": label, "sub_items": sub_items})
+            sub_items = [
+                {"sub_item_num": s_num, "label": s_label, "seccion": seccion_sub}
+                for s_num, s_label in subitems.items()
+            ]
+        result.append({"item_num": num, "label": label, "seccion": seccion_item, "sub_items": sub_items})
     return result
 
 
