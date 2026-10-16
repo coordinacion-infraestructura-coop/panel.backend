@@ -166,11 +166,42 @@ def test_kpis_por_area():
     assert viv["programas_activos"] == 3
     assert viv["programas_por_programa"] == {"cordon_cuneta": 1, "cordoba_hogar": 2}
     assert viv["items_faltantes"] == 2
+    assert viv["localidades_items_faltantes"] == 2
     assert viv["comunicaciones_30d"] == 2
     assert viv["monto_total"] == 150.0
     assert viv["avance_obra_promedio"] == 60.0
     assert k["privada"]["programas_activos"] == 1
     assert k["privada"]["avance_obra_promedio"] is None
+
+
+def test_localidades_items_faltantes_cuenta_localidades_no_expedientes():
+    """Dos expedientes con faltantes en la misma localidad cuentan una (spec v1.1.0 §4.3)."""
+    localidades = [
+        {"id_geo": "1", "departamento": "CAPITAL", "localidad": "CÓRDOBA", "programas": [
+            {"area": "vivienda", "programa": "mi_lugar", "checklist_faltan": 20},   # no iniciado: falta todo
+            {"area": "vivienda", "programa": "mi_lugar", "checklist_faltan": 4},
+            {"area": "vivienda", "programa": "mi_lugar", "checklist_faltan": 0},
+        ]},
+        {"id_geo": "2", "departamento": "COLÓN", "localidad": "JESÚS MARÍA", "programas": [
+            {"area": "vivienda", "programa": "mi_lugar", "checklist_faltan": 0},
+        ]},
+    ]
+    viv = aggregations.kpis_por_area(localidades, date(2026, 10, 16))["vivienda"]
+    assert viv["items_faltantes"] == 2
+    assert viv["localidades_items_faltantes"] == 1
+    assert viv["localidades"] == 2
+
+
+def test_backfill_completar_no_pisa_claves_existentes():
+    from scripts.backfill_kpis_snapshot import completar
+
+    actual = {"vivienda": {"items_faltantes": 5, "avance_obra_promedio": 70.0}}
+    nuevos = {"vivienda": {"items_faltantes": 9, "avance_obra_promedio": None, "localidades_items_faltantes": 3},
+              "privada": {"programas_activos": 2}}
+    out = completar(actual, nuevos)
+    assert out["vivienda"] == {"items_faltantes": 5, "avance_obra_promedio": 70.0, "localidades_items_faltantes": 3}
+    assert out["privada"] == {"programas_activos": 2}
+    assert actual == {"vivienda": {"items_faltantes": 5, "avance_obra_promedio": 70.0}}  # no muta la entrada
 
 
 def test_dia_ar_usa_hora_argentina():

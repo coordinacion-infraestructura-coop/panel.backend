@@ -511,6 +511,7 @@ def kpis_por_area(
     contra la serie histórica compare lo mismo (spec-vivienda-tablero-analitico.md §4.3):
     - `programas_activos`: líneas de programa del área (`programas_por_programa` las abre);
     - `items_faltantes`: líneas con al menos un ítem de checklist faltante;
+    - `localidades_items_faltantes`: localidades distintas con al menos una de esas líneas (v1.1.0);
     - `comunicaciones_30d`: líneas con última comunicación en los 30 días previos a `ref`;
     - `avance_obra_promedio`: promedio de `avance_por_area[area]` (obras con medición), o None.
     """
@@ -522,11 +523,12 @@ def kpis_por_area(
             if not area:
                 continue
             k = acc.setdefault(area, {
-                "localidades": set(), "departamentos": set(), "programas_activos": 0,
+                "localidades": set(), "localidades_faltantes": set(), "departamentos": set(), "programas_activos": 0,
                 "programas_por_programa": {}, "items_faltantes": 0, "comunicaciones_30d": 0,
                 "monto_total": 0.0,
             })
-            k["localidades"].add((loc.get("id_geo"), loc.get("departamento"), loc.get("localidad")))
+            clave_loc = (loc.get("id_geo"), loc.get("departamento"), loc.get("localidad"))
+            k["localidades"].add(clave_loc)
             if loc.get("departamento"):
                 k["departamentos"].add(loc["departamento"])
             k["programas_activos"] += 1
@@ -534,6 +536,7 @@ def kpis_por_area(
             k["programas_por_programa"][prog] = k["programas_por_programa"].get(prog, 0) + 1
             if (p.get("checklist_faltan") or 0) > 0:
                 k["items_faltantes"] += 1
+                k["localidades_faltantes"].add(clave_loc)
             fecha_uc = _fecha((p.get("ultima_comunicacion") or {}).get("fecha"))
             if fecha_uc is not None and desde <= fecha_uc <= ref:
                 k["comunicaciones_30d"] += 1
@@ -550,6 +553,7 @@ def kpis_por_area(
             "programas_activos": k["programas_activos"],
             "programas_por_programa": k["programas_por_programa"],
             "items_faltantes": k["items_faltantes"],
+            "localidades_items_faltantes": len(k["localidades_faltantes"]),
             "comunicaciones_30d": k["comunicaciones_30d"],
             "monto_total": round(k["monto_total"], 2),
             "avance_obra_promedio": round(sum(avances) / len(avances), 1) if avances else None,
