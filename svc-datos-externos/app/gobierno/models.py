@@ -102,7 +102,7 @@ class ExtGobSyncLog(Base):
     __tablename__ = "ext_gob_sync_log"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    fuente: Mapped[str] = mapped_column(String(40), nullable=False)  # "nomenclador" | "datos_loc"
+    fuente: Mapped[str] = mapped_column(String(40), nullable=False)  # "nomenclador" | "resumen_vista" (hasta v1.1.0 del spec: "datos_loc")
     filas_leidas: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     filas_upsert: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     filas_error: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

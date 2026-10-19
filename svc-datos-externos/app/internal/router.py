@@ -64,7 +64,7 @@ async def sync_gobierno_localidades(
 
 @router.get("/datos-externos/gobierno/localidades/sync-estado", response_model=list[GobSyncFuenteResponse])
 async def estado_sync_gobierno_localidades(db: AsyncSession = Depends(get_db)):
-    """Última corrida de cada fuente (`nomenclador`, `datos_loc`)."""
+    """Última corrida de cada fuente (`nomenclador`, `resumen_vista`)."""
     return await gobierno_sync.get_sync_estado(db)
 
 

@@ -1,13 +1,19 @@
 """Sincronización de solo lectura del nomenclador de localidades de Gobierno
-y de la ficha de localidad (`DATOS LOC`).
+y de la vista por localidad ("0. Resumen General - Vista").
 
 Ver spec: docs/files/spec-datos-externos-fase1-nomenclador-demografia.md §5.
 
 Dos lecturas, con distinta tolerancia:
 - Nomenclador: si falla la lectura, faltan encabezados o vienen menos de
   `_MIN_GOBIERNOS_LOCALES` filas, la corrida falla entera sin tocar datos.
-- `DATOS LOC`: si falla, el nomenclador ya sincronizado se conserva y la
-  corrida queda `parcial`.
+- Vista: si falla, el nomenclador ya sincronizado se conserva y la corrida
+  queda `parcial`.
+
+Desde la v1.2.0 del spec la ficha sale de la Vista y no de la pestaña
+`DATOS LOC` de "0. Resumen General", que el área no puede compartir. La Vista
+trae menos columnas: superficie, población 2010, electores, empleados, masa
+salarial, intendente, reelecto, continuidad, legislador y contacto quedan sin
+fuente (las columnas siguen en el modelo, en `NULL`).
 
 Regla de privacidad: ni `anomalias` ni los logs de aplicación llevan valores
 de campos restringidos — sólo el código de la localidad y el nombre del campo.
@@ -29,15 +35,17 @@ from app.integrations import geo_resolver, google_sheets
 logger = logging.getLogger(__name__)
 
 FUENTE_NOMENCLADOR = "nomenclador"
-FUENTE_DATOS_LOC = "datos_loc"
+FUENTE_VISTA = "resumen_vista"
 
 _RANGO_NOMENCLADOR = "LOCALIDADES!A1:Z"
-_RANGO_DATOS_LOC = "'DATOS LOC'!A1:AZ"
+# Sin nombre de pestaña: la Vista tiene una sola ("Hoja 1") y así un cambio de
+# nombre no rompe la lectura.
+_RANGO_VISTA = "A1:AZ"
 
 # Fila (0-based) donde están los encabezados de cada pestaña: el nomenclador
 # tiene un título en la fila 1.
 _FILA_ENCABEZADOS_NOMENCLADOR = 1
-_FILA_ENCABEZADOS_DATOS_LOC = 0
+_FILA_ENCABEZADOS_VISTA = 0
 
 # Freno de seguridad: una planilla vaciada o mal filtrada no debe dar de
 # baja el padrón (hoy son 427 gobiernos locales).
@@ -45,23 +53,14 @@ _MIN_GOBIERNOS_LOCALES = 400
 
 _COLS_NOMENCLADOR = ("ID_LOC", "LOCALIDADES", "ID_DPTO", "DEPARTAMENTOS", "ID_COPA", "TIPO")
 
-# Lista blanca de `DATOS LOC`: encabezado de la planilla -> (campo, tipo).
+# Lista blanca de la Vista: encabezado de la planilla -> (campo, tipo).
 # Una columna nueva en la planilla no entra al sistema hasta sumarla acá (y
-# al spec); una columna esperada que falta hace fallar esta lectura.
-_COLS_DATOS_LOC: dict[str, tuple[str, str]] = {
-    "SUPERFICIE": ("superficie_km2", "decimal"),
-    "POBLACION 2010": ("poblacion_2010", "entero"),
-    "POBLACION 2022": ("poblacion_2022_gob", "entero"),
-    "ELECTORES": ("electores", "entero"),
-    "EMPLEADOS": ("empleados", "entero"),
-    "MASA SALARIAL": ("masa_salarial", "decimal"),
-    "INTENDENTE": ("intendente", "texto"),
-    "REELECTO": ("reelecto", "si_no"),
+# al spec); una columna esperada que falta hace fallar esta lectura. Las
+# columnas de montos de la Vista (ATP, COPA, FOFINDES, etc.) quedan fuera a
+# propósito (spec §3.2).
+_COLS_VISTA: dict[str, tuple[str, str]] = {
+    "POBLACION": ("poblacion_2022_gob", "entero"),
     "PARTIDO": ("partido", "texto"),
-    "CONTINUIDAD": ("continuidad", "si_no"),
-    "LEGISLADOR": ("legislador", "texto"),
-    "PARTIDO_LEG": ("partido_legislador", "texto"),
-    "CELULAR": ("contacto_intendente", "contacto"),
 }
 
 _LARGO_TEXTO = 150
@@ -371,9 +370,9 @@ async def _upsert_nomenclador(
     return upsert, error, sin_id_geo
 
 
-async def _aplicar_datos_loc(db: AsyncSession, valores: list[list[Any]], anomalias: list[dict]) -> tuple[int, int, int, int]:
+async def _aplicar_vista(db: AsyncSession, valores: list[list[Any]], anomalias: list[dict]) -> tuple[int, int, int, int]:
     """Devuelve `(leidas, upsert, error, sin_match)`."""
-    idx = _indices(valores, _FILA_ENCABEZADOS_DATOS_LOC, ["ID_LOC", *_COLS_DATOS_LOC])
+    idx = _indices(valores, _FILA_ENCABEZADOS_VISTA, ["ID_LOC", *_COLS_VISTA])
 
     # Se vuelven a traer: un SAVEPOINT revertido en el paso anterior deja las
     # instancias expiradas, y en async no hay carga perezosa.
@@ -388,14 +387,14 @@ async def _aplicar_datos_loc(db: AsyncSession, valores: list[list[Any]], anomali
     ahora = datetime.now(timezone.utc)
     leidas = upsert = error = sin_match = 0
 
-    for fila in valores[_FILA_ENCABEZADOS_DATOS_LOC + 1:]:
+    for fila in valores[_FILA_ENCABEZADOS_VISTA + 1:]:
         codigo = normalizar_codigo(_celda(fila, idx["ID_LOC"]))
         if codigo is None:
             continue  # filas de total o de relleno
         leidas += 1
 
         convertidos: dict[str, Any] = {}
-        for encabezado, (campo, tipo) in _COLS_DATOS_LOC.items():
+        for encabezado, (campo, tipo) in _COLS_VISTA.items():
             valor, invalido = _convertir(_celda(fila, idx[encabezado]), tipo)
             convertidos[campo] = valor
             if invalido:
@@ -410,9 +409,10 @@ async def _aplicar_datos_loc(db: AsyncSession, valores: list[list[Any]], anomali
                         setattr(loc, campo, valor)
                     loc.updated_at = ahora
                 elif codigo in entes and entes[codigo].tipo_ente == "zona_rural":
+                    # Hoy la Vista no trae zonas rurales; si vuelven, sólo
+                    # traen población 2022 (no hay 2010).
                     ente = entes[codigo]
                     ente.poblacion_2022 = convertidos["poblacion_2022_gob"]
-                    ente.poblacion_2010 = convertidos["poblacion_2010"]
                     ente.updated_at = ahora
                 else:
                     sin_match += 1
@@ -495,26 +495,26 @@ async def sync_localidades(db: AsyncSession, disparado_por: str = "cloud-schedul
 
     upsert, error, sin_id_geo = await _upsert_nomenclador(db, locales, entes, anomalias_nom)
 
-    # ── DATOS LOC: si falla, se conserva el nomenclador y la corrida queda parcial
+    # ── Vista: si falla, se conserva el nomenclador y la corrida queda parcial
     anomalias_loc: list[dict] = []
     estado_loc = "ok"
     leidas_loc = upsert_loc = error_loc = sin_match_loc = 0
     try:
-        if not settings.google_sheet_gob_resumen_general_id:
-            raise _LecturaInvalida("GOOGLE_SHEET_GOB_RESUMEN_GENERAL_ID no está configurado")
+        if not settings.google_sheet_gob_resumen_vista_id:
+            raise _LecturaInvalida("GOOGLE_SHEET_GOB_RESUMEN_VISTA_ID no está configurado")
         try:
             valores_loc = await google_sheets.get_values(
-                settings.google_sheet_gob_resumen_general_id, _RANGO_DATOS_LOC, "UNFORMATTED_VALUE"
+                settings.google_sheet_gob_resumen_vista_id, _RANGO_VISTA, "UNFORMATTED_VALUE"
             )
         except Exception as exc:  # noqa: BLE001
-            raise _LecturaInvalida(f"no se pudo leer la pestaña: {type(exc).__name__}") from exc
-        leidas_loc, upsert_loc, error_loc, sin_match_loc = await _aplicar_datos_loc(db, valores_loc, anomalias_loc)
+            raise _LecturaInvalida(f"no se pudo leer la planilla: {type(exc).__name__}") from exc
+        leidas_loc, upsert_loc, error_loc, sin_match_loc = await _aplicar_vista(db, valores_loc, anomalias_loc)
         if error_loc:
             estado_loc = "parcial"
     except _LecturaInvalida as exc:
         estado_loc = "fallido"
         anomalias_loc.append({"tipo": "lectura_fallida", "detalle": str(exc)})
-        logger.warning("sync gobierno: DATOS LOC no se pudo aplicar: %s", exc)
+        logger.warning("sync gobierno: la Vista no se pudo aplicar: %s", exc)
 
     censo_cerrados = await _cerrar_censo(db, anomalias_nom)
 
@@ -524,7 +524,7 @@ async def sync_localidades(db: AsyncSession, disparado_por: str = "cloud-schedul
         leidas=len(locales) + len(entes), upsert=upsert, error=error, sin_match=sin_id_geo,
     )
     log_loc = await _guardar_log(
-        db, FUENTE_DATOS_LOC, estado_loc, disparado_por, anomalias_loc,
+        db, FUENTE_VISTA, estado_loc, disparado_por, anomalias_loc,
         leidas=leidas_loc, upsert=upsert_loc, error=error_loc, sin_match=sin_match_loc,
     )
 
@@ -542,7 +542,7 @@ async def sync_localidades(db: AsyncSession, disparado_por: str = "cloud-schedul
 async def get_sync_estado(db: AsyncSession) -> list[ExtGobSyncLog]:
     """Última corrida de cada fuente."""
     resultado = []
-    for fuente in (FUENTE_NOMENCLADOR, FUENTE_DATOS_LOC):
+    for fuente in (FUENTE_NOMENCLADOR, FUENTE_VISTA):
         log = (
             await db.execute(
                 select(ExtGobSyncLog)
