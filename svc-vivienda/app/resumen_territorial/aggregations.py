@@ -397,6 +397,8 @@ def enriquecer_con_datos_externos(
         "superficie_km2": (datos or {}).get("superficie_km2"),
         "poblacion_2010": (datos or {}).get("poblacion_2010"),
         "ficha_gobierno": (datos or {}).get("ficha_gobierno"),
+        # Fuentes oficiales públicas (spec-datos-externos-fuentes-oficiales.md §6): tal cual.
+        "indicadores": (datos or {}).get("indicadores"),
     }
 
 
@@ -421,6 +423,7 @@ def normalizar_zonas_rurales(
             "departamento": oficial.get(normalize_departamento(dep), dep),
             "poblacion_2022": z.get("poblacion_2022"),
             "poblacion_2010": z.get("poblacion_2010"),
+            "fuente": z.get("fuente"),
         })
     return resultado
 

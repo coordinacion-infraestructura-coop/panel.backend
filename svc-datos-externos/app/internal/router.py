@@ -21,6 +21,7 @@ from app.catastro import service as catastro_service
 from app.catastro.schemas import ValuacionRequest, ValuacionResponse
 from app.config import settings
 from app.database import get_db
+from app.fuentes_oficiales import sync as fuentes_oficiales_sync
 from app.gobierno import sync as gobierno_sync
 from app.gobierno.schemas import GobSyncFuenteResponse, GobSyncResultResponse, ZonaRuralResponse
 from app.transferencias import sync as transferencias_sync
@@ -133,3 +134,39 @@ async def valuacion_catastro(data: ValuacionRequest):
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail={"code": "CATASTRO_FALLIDO", "message": str(exc)},
         )
+
+
+@router.post("/datos-externos/fuentes-oficiales/sync")
+async def sync_fuentes_oficiales(
+    fuentes: str | None = None,
+    triggered_by: str = "cloud-scheduler",
+    db: AsyncSession = Depends(get_db),
+):
+    """Estadística Córdoba, RENABAP e IDECOR (spec-datos-externos-fuentes-oficiales.md
+    §4). `fuentes` = lista separada por comas; sin él corren las cuatro. Cada
+    fuente es independiente: 502 solo si fallaron todas."""
+    if not settings.fuentes_oficiales_sync_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"code": "FUENTES_OFICIALES_DESHABILITADO", "message": "FUENTES_OFICIALES_SYNC_ENABLED está apagado"},
+        )
+    pedidas = [f.strip() for f in fuentes.split(",") if f.strip()] if fuentes else None
+    invalidas = [f for f in pedidas or [] if f not in fuentes_oficiales_sync.FUENTES]
+    if invalidas:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "FUENTE_INVALIDA", "message": f"Fuentes desconocidas: {', '.join(invalidas)}"},
+        )
+    resultados = await fuentes_oficiales_sync.sync_fuentes(db, pedidas, disparado_por=triggered_by)
+    if all(r["estado"] == "error" for r in resultados):
+        # Se commitea igual el log de la corrida fallida (lo hace get_db al
+        # salir sin excepción); el 502 se arma a mano por eso.
+        from fastapi.responses import JSONResponse
+        return JSONResponse(status_code=status.HTTP_502_BAD_GATEWAY, content={"fuentes": resultados})
+    return {"fuentes": resultados}
+
+
+@router.get("/datos-externos/fuentes-oficiales/sync-estado")
+async def estado_sync_fuentes_oficiales(db: AsyncSession = Depends(get_db)):
+    """Última corrida de cada fuente."""
+    return await fuentes_oficiales_sync.estado_sync(db)
