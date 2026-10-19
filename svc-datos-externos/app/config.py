@@ -16,6 +16,13 @@ class Settings(BaseSettings):
     svc_vivienda_internal_url: str = ""
     resolver_localidades_enabled: bool = False
 
+    # Auth de los paneles (ADR-028): JWT de Firebase validado contra las claves
+    # públicas de Google; el rol sale de svc-vivienda por la URL de arriba (ADR-015).
+    google_jwks_uri: str = (
+        "https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com"
+    )
+    google_issuer: str = "https://securetoken.google.com/gestorcooperativo"
+
     # ETL de transferencias automáticas a municipios/comunas
     # (spec-resumen-territorial-tablero-v2.md §2.3). El sitio bloquea
     # clientes sin user-agent de navegador — confirmado en el prototipo.
