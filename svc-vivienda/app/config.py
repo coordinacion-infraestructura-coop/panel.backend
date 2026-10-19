@@ -78,5 +78,13 @@ class Settings(BaseSettings):
     # (spec-datos-externos-fase1-nomenclador-demografia.md §6.2).
     datos_externos_zonas_rurales_internal_path: str = "/internal/datos-externos/zonas-rurales"
 
+    # Mi Lugar — valor fiscal sugerido y valor de referencia de mercado desde
+    # IDECOR, consultados vía svc-datos-externos (ADR-031,
+    # spec-mi-lugar-valor-fiscal-idecor.md §5). Reusa
+    # `svc_datos_externos_internal_url` como base + audience del ID token.
+    # Default apagado; `services/cloudbuild.yaml` lo prende en cada deploy.
+    valuacion_idecor_enabled: bool = False
+    datos_externos_valuacion_internal_path: str = "/internal/datos-externos/catastro/valuacion"
+
 
 settings = Settings()

@@ -4,7 +4,9 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+import re
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.checklist_tecnico.schemas import HitoObraPanel
 
@@ -68,6 +70,61 @@ class GeoPuntoIn(BaseModel):
     lng: Decimal
 
 
+# ─── Valuación IDECOR (spec-mi-lugar-valor-fiscal-idecor.md §5.5) ────────────
+
+MAX_NOMENCLATURAS = 50
+
+
+def normalizar_nomenclaturas(valores: list[str] | None) -> list[str] | None:
+    """Solo dígitos, sin vacías ni repetidas, en el orden en que llegaron."""
+    if valores is None:
+        return None
+    limpias = [re.sub(r"\D", "", v or "") for v in valores]
+    for v in limpias:
+        if len(v) > 30:
+            raise ValueError(f"nomenclatura demasiado larga: {v}")
+    return list(dict.fromkeys(v for v in limpias if v))
+
+
+class ParcelaIdecorOut(BaseModel):
+    nomenclatura: str
+    origen: Literal["punto", "nomenclatura", "ambos"]
+    nro_cuenta: str | None = None
+    tipo_parcela: str | None = None
+    estado: str | None = None
+    desig_oficial: str | None = None
+    localidad: str | None = None
+    superficie_urbana_m2: Decimal = Decimal("0")
+    superficie_rural_m2: Decimal = Decimal("0")
+    valuacion: Decimal = Decimal("0")
+    valuacion_tierra: Decimal = Decimal("0")
+    valuacion_mejoras: Decimal = Decimal("0")
+    vigencia_desde: date | None = None
+    valor_mercado: Decimal | None = None
+    vut_pesos_m2: Decimal | None = None
+    vur_pesos_ha: Decimal | None = None
+
+
+class ValuacionIdecorOut(BaseModel):
+    """Referencia de IDECOR. `valor_total` es la sugerencia para `valor_fiscal`
+    (que sigue siendo manual); `valor_mercado` es solo informativo."""
+
+    estado: Literal["ok", "parcial", "sin_datos", "sin_parcelas", "error"]
+    valor_total: Decimal | None = None
+    valor_tierra: Decimal | None = None
+    valor_mejoras: Decimal | None = None
+    valor_mercado: Decimal | None = None
+    mercado_anio: int | None = None
+    mercado_parcelas_sin_valor: int = 0
+    cant_parcelas: int = 0
+    puntos_sin_parcela: int = 0
+    nomenclaturas_no_encontradas: list[str] = []
+    vigencia_desde: date | None = None
+    parcelas: list[ParcelaIdecorOut] = []
+    consultado_at: datetime | None = None
+    ultimo_error_at: datetime | None = None
+
+
 # ─── Proyecto ─────────────────────────────────────────────────────────────────
 
 class ProyectoMLOut(BaseModel):
@@ -109,6 +166,8 @@ class ProyectoMLOut(BaseModel):
     doc_completos: int | None = None
     doc_total: int | None = None
     doc_iniciado: bool = False
+    nomenclaturas: list[str] = []
+    valuacion_idecor: ValuacionIdecorOut | None = None
 
 
 class ProyectoMLCreate(BaseModel):
@@ -133,6 +192,9 @@ class ProyectoMLCreate(BaseModel):
     estado_general: int | None = None
     obs: str | None = None
     geo_puntos: list[GeoPuntoIn] = []
+    nomenclaturas: list[str] = Field(default_factory=list, max_length=MAX_NOMENCLATURAS)
+
+    _norm_nomenclaturas = field_validator("nomenclaturas")(normalizar_nomenclaturas)
 
 
 class ProyectoMLUpdate(BaseModel):
@@ -156,7 +218,10 @@ class ProyectoMLUpdate(BaseModel):
     estado_general: int | None = None
     obs: str | None = None
     geo_puntos: list[GeoPuntoIn] | None = None
+    nomenclaturas: list[str] | None = Field(default=None, max_length=MAX_NOMENCLATURAS)
     fecha_cambio: date | None = None  # para backdating del historial
+
+    _norm_nomenclaturas = field_validator("nomenclaturas")(normalizar_nomenclaturas)
 
 
 # ─── Historial ────────────────────────────────────────────────────────────────

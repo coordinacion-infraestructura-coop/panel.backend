@@ -16,6 +16,9 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, s
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import rollup
+from app.catastro import idecor as catastro_idecor
+from app.catastro import service as catastro_service
+from app.catastro.schemas import ValuacionRequest, ValuacionResponse
 from app.config import settings
 from app.database import get_db
 from app.gobierno import sync as gobierno_sync
@@ -115,3 +118,18 @@ async def cargar_manual(
 async def estado_sync_transferencias(tipo: str | None = None, db: AsyncSession = Depends(get_db)):
     log = await transferencias_sync.get_last_sync_status(db, tipo=tipo)
     return SyncStatusResponse.model_validate(log) if log else None
+
+
+@router.post("/datos-externos/catastro/valuacion", response_model=ValuacionResponse)
+async def valuacion_catastro(data: ValuacionRequest):
+    """Valuación fiscal y valor de referencia de mercado (IDECOR) de las
+    parcelas que contienen los puntos más las de las nomenclaturas. Sin
+    estado; la llama svc-vivienda para Mi Lugar (ADR-031,
+    spec-mi-lugar-valor-fiscal-idecor.md §5.1)."""
+    try:
+        return await catastro_service.valuar(data)
+    except catastro_idecor.CatastroFallido as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail={"code": "CATASTRO_FALLIDO", "message": str(exc)},
+        )

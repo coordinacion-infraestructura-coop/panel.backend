@@ -34,5 +34,10 @@ class Settings(BaseSettings):
     google_sheet_gob_resumen_vista_id: str = ""
     gob_localidades_sync_enabled: bool = False
 
+    # WFS público de IDECOR (Catastro) para la valuación de parcelas de Mi Lugar
+    # (spec-mi-lugar-valor-fiscal-idecor.md §4, ADR-031). Sin autenticación.
+    idecor_wfs_url: str = "https://idecor-ws.mapascordoba.gob.ar/geoserver/idecor/wfs"
+    idecor_timeout_segundos: float = 30
+
 
 settings = Settings()

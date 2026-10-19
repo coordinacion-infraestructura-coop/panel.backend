@@ -10,13 +10,16 @@ from app.auth import AuthUser
 from app.checklist_tecnico import estado_tecnico
 from app.geo import service as geo_service
 from app.integrations.privada_sync import sync_gestion_privada
+from app.mi_lugar import valuacion_idecor
 from app.mi_lugar.models import (
     ConfigML,
     EstadoHistorialML,
     EstadoML,
     GeoPuntoML,
+    NomenclaturaML,
     PedidoML,
     ProyectoML,
+    ValuacionIdecorML,
 )
 from app.mi_lugar.schemas import (
     ConfigMLOut,
@@ -32,6 +35,7 @@ from app.mi_lugar.schemas import (
     ProyectoMLCreate,
     ProyectoMLOut,
     ProyectoMLUpdate,
+    ValuacionIdecorOut,
 )
 from app.mi_lugar.seed_data import CONFIG_SEED, ESTADOS_SEED, PROYECTOS_SEED
 
@@ -129,16 +133,81 @@ async def eliminar_estado_ml(db: AsyncSession, estado_id: int, actor: AuthUser) 
 # ─── Proyectos ────────────────────────────────────────────────────────────────
 
 def _proyecto_con_geo(
-    proy: ProyectoML, puntos: list[GeoPuntoML], etecnico: int | None, obra: dict | None = None
+    proy: ProyectoML,
+    puntos: list[GeoPuntoML],
+    etecnico: int | None,
+    obra: dict | None = None,
+    nomenclaturas: list[str] | None = None,
+    valuacion: ValuacionIdecorML | None = None,
 ) -> ProyectoMLOut:
     """`etecnico` no sale de la columna propia: es el estado del expediente del checklist
     (spec-estado-tecnico-desde-checklist.md §3.2). `obra` = avance + hitos de obra, también
-    del checklist (spec-checklist-tecnico-dgv.md v1.6.0 §6-bis)."""
+    del checklist (spec-checklist-tecnico-dgv.md v1.6.0 §6-bis). `valuacion` = referencia de
+    IDECOR (spec-mi-lugar-valor-fiscal-idecor.md §5.5), nunca reemplaza a `valor_fiscal`."""
     out = ProyectoMLOut.model_validate(proy)
     out.geo_puntos = [GeoPuntoOut.model_validate(p) for p in puntos]
     out.etecnico = etecnico
     estado_tecnico.aplicar_obra(out, obra)
+    out.nomenclaturas = nomenclaturas or []
+    out.valuacion_idecor = valuacion_idecor.a_salida(valuacion)
     return out
+
+
+async def _cargar_nomenclaturas(db: AsyncSession, proyecto_ids: list[str]) -> dict[str, list[str]]:
+    if not proyecto_ids:
+        return {}
+    filas = (await db.execute(
+        select(NomenclaturaML)
+        .where(NomenclaturaML.proyecto_id.in_(proyecto_ids), NomenclaturaML.deleted_at.is_(None))
+        .order_by(NomenclaturaML.created_at, NomenclaturaML.id)
+    )).scalars().all()
+    por_proyecto: dict[str, list[str]] = {}
+    for f in filas:
+        por_proyecto.setdefault(f.proyecto_id, []).append(f.nomenclatura)
+    return por_proyecto
+
+
+async def _cargar_valuaciones(db: AsyncSession, proyecto_ids: list[str]) -> dict[str, ValuacionIdecorML]:
+    if not proyecto_ids:
+        return {}
+    filas = (await db.execute(
+        select(ValuacionIdecorML).where(ValuacionIdecorML.proyecto_id.in_(proyecto_ids))
+    )).scalars().all()
+    return {f.proyecto_id: f for f in filas}
+
+
+async def _reconciliar_nomenclaturas(
+    db: AsyncSession, proyecto_id: str, nuevas: list[str], actor: AuthUser
+) -> None:
+    """Deja activas exactamente `nuevas` (ya normalizadas por el schema): soft
+    delete de las que salen, alta de las que entran (spec §5.2)."""
+    activas = (await db.execute(
+        select(NomenclaturaML)
+        .where(NomenclaturaML.proyecto_id == proyecto_id, NomenclaturaML.deleted_at.is_(None))
+    )).scalars().all()
+    ahora = datetime.now(timezone.utc)
+    existentes = set()
+    for fila in activas:
+        if fila.nomenclatura in nuevas:
+            existentes.add(fila.nomenclatura)
+        else:
+            fila.deleted_at = ahora
+    await db.flush()
+    for nomenclatura in nuevas:
+        if nomenclatura not in existentes:
+            db.add(NomenclaturaML(proyecto_id=proyecto_id, nomenclatura=nomenclatura, created_by=actor.email))
+    await db.flush()
+
+
+async def _salida_de(db: AsyncSession, proy: ProyectoML, puntos: list[GeoPuntoML]) -> ProyectoMLOut:
+    return _proyecto_con_geo(
+        proy,
+        puntos,
+        await estado_tecnico.estado_expediente_de(db, "ml", proy.id),
+        await estado_tecnico.avance_de_entidad(db, "ml", proy),
+        (await _cargar_nomenclaturas(db, [proy.id])).get(proy.id, []),
+        await db.get(ValuacionIdecorML, proy.id),
+    )
 
 
 async def _cargar_geo(db: AsyncSession, proyecto_id: str) -> list[GeoPuntoML]:
@@ -180,8 +249,14 @@ async def listar_proyectos_ml(
 
     tecnico = await estado_tecnico.estados_expediente_por_entidad(db, "ml")
     obra = await estado_tecnico.avance_por_entidades(db, "ml", proyectos)
+    ids = [p.id for p in proyectos]
+    nomenclaturas = await _cargar_nomenclaturas(db, ids)
+    valuaciones = await _cargar_valuaciones(db, ids)
     return [
-        _proyecto_con_geo(p, puntos_by_proyecto.get(p.id, []), tecnico.get(p.id), obra.get(p.id))
+        _proyecto_con_geo(
+            p, puntos_by_proyecto.get(p.id, []), tecnico.get(p.id), obra.get(p.id),
+            nomenclaturas.get(p.id, []), valuaciones.get(p.id),
+        )
         for p in proyectos
     ]
 
@@ -200,12 +275,7 @@ async def obtener_proyecto_ml(db: AsyncSession, proyecto_id: str) -> ProyectoMLO
             detail={"code": "RECURSO_NO_ENCONTRADO", "message": f"Proyecto {proyecto_id} no encontrado"},
         )
     puntos = await _cargar_geo(db, proyecto_id)
-    return _proyecto_con_geo(
-        proy,
-        puntos,
-        await estado_tecnico.estado_expediente_de(db, "ml", proy.id),
-        await estado_tecnico.avance_de_entidad(db, "ml", proy),
-    )
+    return await _salida_de(db, proy, puntos)
 
 
 async def crear_proyecto_ml(
@@ -247,6 +317,8 @@ async def crear_proyecto_ml(
         puntos.append(punto)
     if puntos:
         await db.flush()
+    if data.nomenclaturas:
+        await _reconciliar_nomenclaturas(db, proy.id, data.nomenclaturas, actor)
 
     await db.refresh(proy)
     await log_audit(db, actor=actor, action="CREATE", resource_type="ml_proyecto",
@@ -255,12 +327,7 @@ async def crear_proyecto_ml(
         db, caso_tipo="ml", caso_id=proy.id, nro_expediente=proy.expediente,
         localidad=proy.localidad_nombre, departamento=proy.departamento, ok_gob=proy.ok_gob,
     )
-    return _proyecto_con_geo(
-        proy,
-        puntos,
-        await estado_tecnico.estado_expediente_de(db, "ml", proy.id),
-        await estado_tecnico.avance_de_entidad(db, "ml", proy),
-    )
+    return await _salida_de(db, proy, puntos)
 
 
 async def actualizar_proyecto_ml(
@@ -282,6 +349,7 @@ async def actualizar_proyecto_ml(
     updates = data.model_dump(exclude_unset=True)
     fecha_cambio = updates.pop("fecha_cambio", None)
     geo_puntos_data: list[GeoPuntoIn] | None = updates.pop("geo_puntos", None)
+    nomenclaturas_data: list[str] | None = updates.pop("nomenclaturas", None)
     # localidad_id nunca se acepta del cliente — se resuelve siempre contra el
     # padrón, mismo criterio que cordon_cuneta/cordoba_hogar.
     updates.pop("localidad_id", None)
@@ -335,6 +403,8 @@ async def actualizar_proyecto_ml(
             puntos.append(punto)
     else:
         puntos = await _cargar_geo(db, proyecto_id)
+    if nomenclaturas_data is not None:
+        await _reconciliar_nomenclaturas(db, proyecto_id, nomenclaturas_data, actor)
 
     await db.flush()
     await db.refresh(proy)
@@ -344,12 +414,37 @@ async def actualizar_proyecto_ml(
         db, caso_tipo="ml", caso_id=proy.id, nro_expediente=proy.expediente,
         localidad=proy.localidad_nombre, departamento=proy.departamento, ok_gob=proy.ok_gob,
     )
-    return _proyecto_con_geo(
-        proy,
-        puntos,
-        await estado_tecnico.estado_expediente_de(db, "ml", proy.id),
-        await estado_tecnico.avance_de_entidad(db, "ml", proy),
-    )
+    return await _salida_de(db, proy, puntos)
+
+
+async def recalcular_valuacion_ml(
+    db: AsyncSession, proyecto_id: str, actor: AuthUser
+) -> ValuacionIdecorOut:
+    """Botón "Recalcular" (spec-mi-lugar-valor-fiscal-idecor.md §5.4). No toca
+    `valor_fiscal`. Si la fuente falla, devuelve el último resultado bueno con
+    `ultimo_error_at` seteado (fail-open)."""
+    if not valuacion_idecor.habilitada():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"code": "VALUACION_IDECOR_DESHABILITADA", "message": "La consulta a IDECOR no está habilitada"},
+        )
+    proy = (await db.execute(
+        select(ProyectoML).where(ProyectoML.id == proyecto_id, ProyectoML.deleted_at.is_(None))
+    )).scalar_one_or_none()
+    if not proy:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "RECURSO_NO_ENCONTRADO", "message": f"Proyecto {proyecto_id} no encontrado"},
+        )
+    if proy.tipo != "exp":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": "VALUACION_SOLO_EXP", "message": "La valuación IDECOR aplica solo a Expropiación"},
+        )
+    fila = await valuacion_idecor.recalcular(db, proyecto_id)
+    await log_audit(db, actor=actor, action="valuacion_idecor_recalcular", resource_type="ml_proyecto",
+                    resource_id=proyecto_id, payload={"estado": fila.estado, "valor_total": str(fila.valor_total)})
+    return valuacion_idecor.a_salida(fila)
 
 
 async def eliminar_proyecto_ml(db: AsyncSession, proyecto_id: str, actor: AuthUser) -> None:

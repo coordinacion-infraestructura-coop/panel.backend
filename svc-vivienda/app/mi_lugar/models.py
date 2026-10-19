@@ -2,7 +2,7 @@ import uuid
 from datetime import date, datetime, timezone
 from decimal import Decimal
 
-from sqlalchemy import BigInteger, Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String, Text, func
+from sqlalchemy import BigInteger, Boolean, Date, DateTime, ForeignKey, Index, Integer, Numeric, String, Text, func, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -122,3 +122,54 @@ class PedidoML(Base):
     editado_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     editado_por: Mapped[str | None] = mapped_column(String(200))
     editado_por_nombre: Mapped[str | None] = mapped_column(String(255))
+
+
+class NomenclaturaML(Base):
+    """Nomenclaturas catastrales que carga el área por proyecto, además de los
+    puntos (spec-mi-lugar-valor-fiscal-idecor.md §5.2, migración 0043)."""
+
+    __tablename__ = "viv_ml_nomenclaturas"
+    __table_args__ = (
+        Index(
+            "uq_ml_nomenclaturas_activas", "proyecto_id", "nomenclatura", unique=True,
+            postgresql_where=text("deleted_at IS NULL"), sqlite_where=text("deleted_at IS NULL"),
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    proyecto_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("viv_ml_proyectos.id", ondelete="CASCADE"), nullable=False
+    )
+    nomenclatura: Mapped[str] = mapped_column(String(30), nullable=False)  # solo dígitos
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_by: Mapped[str | None] = mapped_column(String(255))
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class ValuacionIdecorML(Base):
+    """Último resultado de la consulta a IDECOR por proyecto: valor fiscal
+    sugerido y valor de referencia de mercado. Solo referencia — nunca se copia
+    sola a `ProyectoML.valor_fiscal` (spec-mi-lugar-valor-fiscal-idecor.md §5.2,
+    ADR-031). Un error no pisa el último resultado bueno."""
+
+    __tablename__ = "viv_ml_valuacion_idecor"
+
+    proyecto_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("viv_ml_proyectos.id", ondelete="CASCADE"), primary_key=True
+    )
+    # ok | parcial | sin_datos | sin_parcelas | error
+    estado: Mapped[str] = mapped_column(String(20), nullable=False)
+    valor_total: Mapped[Decimal | None] = mapped_column(Numeric(18, 2))
+    valor_tierra: Mapped[Decimal | None] = mapped_column(Numeric(18, 2))
+    valor_mejoras: Mapped[Decimal | None] = mapped_column(Numeric(18, 2))
+    valor_mercado: Mapped[Decimal | None] = mapped_column(Numeric(18, 2))
+    mercado_anio: Mapped[int | None] = mapped_column(Integer)
+    mercado_parcelas_sin_valor: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    cant_parcelas: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    puntos_sin_parcela: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    nomenclaturas_no_encontradas: Mapped[str] = mapped_column(Text, nullable=False, server_default="[]")  # JSON
+    vigencia_desde: Mapped[date | None] = mapped_column(Date)
+    parcelas: Mapped[str] = mapped_column(Text, nullable=False, server_default="[]")  # JSON
+    consultado_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    ultimo_error: Mapped[str | None] = mapped_column(Text)
+    ultimo_error_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

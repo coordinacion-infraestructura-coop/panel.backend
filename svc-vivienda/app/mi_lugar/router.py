@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import (
@@ -10,7 +10,7 @@ from app.auth import (
     require_roles,
 )
 from app.database import get_db
-from app.mi_lugar import service
+from app.mi_lugar import service, valuacion_idecor
 from app.mi_lugar.schemas import (
     ConfigMLOut,
     ConfigMLUpdate,
@@ -23,6 +23,7 @@ from app.mi_lugar.schemas import (
     ProyectoMLCreate,
     ProyectoMLOut,
     ProyectoMLUpdate,
+    ValuacionIdecorOut,
 )
 
 router = APIRouter()
@@ -83,10 +84,15 @@ async def listar_proyectos(
 @router.post("/mi-lugar/proyectos", response_model=ProyectoMLOut, status_code=status.HTTP_201_CREATED)
 async def crear_proyecto(
     data: ProyectoMLCreate,
+    background: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     actor: AuthUser = Depends(require_roles(*ROLES_ESCRITURA)),
 ):
-    return await service.crear_proyecto_ml(db, data, actor)
+    proyecto = await service.crear_proyecto_ml(db, data, actor)
+    # Valuación IDECOR en segundo plano, después del commit (spec-mi-lugar-valor-fiscal-idecor.md §5.4)
+    if proyecto.tipo == "exp":
+        background.add_task(valuacion_idecor.recalcular_en_segundo_plano, proyecto.id)
+    return proyecto
 
 
 @router.get("/mi-lugar/proyectos/{proyecto_id}", response_model=ProyectoMLOut)
@@ -102,10 +108,25 @@ async def obtener_proyecto(
 async def actualizar_proyecto(
     proyecto_id: str,
     data: ProyectoMLUpdate,
+    background: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     actor: AuthUser = Depends(require_roles(*ROLES_ESCRITURA)),
 ):
-    return await service.actualizar_proyecto_ml(db, proyecto_id, data, actor)
+    proyecto = await service.actualizar_proyecto_ml(db, proyecto_id, data, actor)
+    cambio_ubicacion = bool({"geo_puntos", "nomenclaturas"} & data.model_fields_set)
+    if proyecto.tipo == "exp" and cambio_ubicacion:
+        background.add_task(valuacion_idecor.recalcular_en_segundo_plano, proyecto.id)
+    return proyecto
+
+
+@router.post("/mi-lugar/proyectos/{proyecto_id}/valuacion-idecor", response_model=ValuacionIdecorOut)
+async def recalcular_valuacion_idecor(
+    proyecto_id: str,
+    db: AsyncSession = Depends(get_db),
+    actor: AuthUser = Depends(require_roles(*ROLES_ESCRITURA)),
+):
+    """Botón "Recalcular": consulta IDECOR de nuevo. No modifica `valor_fiscal`."""
+    return await service.recalcular_valuacion_ml(db, proyecto_id, actor)
 
 
 @router.delete("/mi-lugar/proyectos/{proyecto_id}", status_code=status.HTTP_204_NO_CONTENT)

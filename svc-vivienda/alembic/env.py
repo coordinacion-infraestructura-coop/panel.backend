@@ -47,8 +47,10 @@ from app.mi_lugar.models import (
     EstadoHistorialML,
     EstadoML,
     GeoPuntoML,
+    NomenclaturaML,
     PedidoML,
     ProyectoML,
+    ValuacionIdecorML,
 )
 from app.portal.models import PortalUsuario, PortalUsuarioSecretaria
 from app.notificaciones.models import Notificacion, NotificacionLectura

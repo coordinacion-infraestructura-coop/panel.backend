@@ -17,6 +17,7 @@ from app.cordon_cuneta.checklist_schemas import SyncResultResponse
 from app.database import get_db
 from app.geo import service as geo_service
 from app.geo.schemas import ResolverRequest, ResolverResponse
+from app.mi_lugar import valuacion_idecor
 from app.notificaciones import service as notificaciones_service
 from app.notificaciones.schemas import NotificacionIn
 from app.portal.repository import get_portal_user
@@ -129,3 +130,17 @@ async def actualizar_resumen_territorial(db: AsyncSession = Depends(get_db)):
         "total_localidades": snapshot.payload.get("total_localidades"),
         "generado_para_areas": snapshot.payload.get("generado_para_areas"),
     }
+
+
+@router.post("/mi-lugar/valuacion-idecor/actualizar")
+async def actualizar_valuacion_idecor_ml(db: AsyncSession = Depends(get_db)):
+    """Cloud Scheduler semanal: recalcula el valor fiscal sugerido y el valor de
+    referencia de mercado de todos los proyectos de Expropiación
+    (spec-mi-lugar-valor-fiscal-idecor.md §5.4). Fail-open por proyecto; nunca
+    modifica `valor_fiscal`."""
+    if not valuacion_idecor.habilitada():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"code": "VALUACION_IDECOR_DESHABILITADA", "message": "VALUACION_IDECOR_ENABLED está apagado"},
+        )
+    return await valuacion_idecor.recalcular_todos(db)

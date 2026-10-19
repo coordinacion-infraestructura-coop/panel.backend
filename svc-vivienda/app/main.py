@@ -48,8 +48,10 @@ from app.mi_lugar.models import (  # noqa: F401 — ensures tables are registere
     EstadoHistorialML,
     EstadoML,
     GeoPuntoML,
+    NomenclaturaML,
     PedidoML,
     ProyectoML,
+    ValuacionIdecorML,
 )
 
 
