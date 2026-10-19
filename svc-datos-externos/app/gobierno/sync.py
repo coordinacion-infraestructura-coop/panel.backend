@@ -453,6 +453,11 @@ async def _cerrar_censo(db: AsyncSession, anomalias: list[dict]) -> int:
                 c.match_tipo = "nomenclador_gob"
                 ids_en_uso.add(loc.id_geo)
                 cerrados += 1
+        elif c.id_geo and loc.id_geo and c.id_geo != loc.id_geo:
+            # No se pisa (el Censo pudo vincularse a mano), pero se avisa: el
+            # nomenclador vincula por nombre y departamento, el Censo sólo por
+            # nombre. Caso real: 142672 (migración 0004).
+            anomalias.append({"tipo": "censo_id_geo_difiere_del_nomenclador", "codigo": c.codigo_indec})
         if (
             loc.poblacion_2022_gob is not None
             and c.poblacion_2022 is not None

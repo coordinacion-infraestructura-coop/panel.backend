@@ -280,6 +280,9 @@ async def test_cierre_del_censo_completa_nulos_y_no_pisa_resueltos(db_session: A
     assert {"tipo": "poblacion_difiere_del_censo", "codigo": "140002"} in log.anomalias
     assert {"tipo": "poblacion_difiere_del_censo", "codigo": "140001"} not in log.anomalias
     assert {"tipo": "nomenclador_sin_censo", "codigo": "140004"} in log.anomalias
+    # "b" está en el Censo con id_geo 5 y el nomenclador la resuelve a 88: no se pisa, se avisa.
+    assert {"tipo": "censo_id_geo_difiere_del_nomenclador", "codigo": "140002"} in log.anomalias
+    assert {"tipo": "censo_id_geo_difiere_del_nomenclador", "codigo": "140001"} not in log.anomalias
 
 
 # ── Rollup y endpoints ────────────────────────────────────────────────────────
