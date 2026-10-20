@@ -1,10 +1,11 @@
 """Tablero de Gobierno (spec-tablero-gobierno-panel.md §3.3, Etapa 0).
 
 `get_meta` arma lo que necesita la barra común del tablero: las localidades del nomenclador
-de Gobierno para los filtros, los años con datos y la frescura de cada fuente. Las secciones
-suman sus propias funciones en las etapas siguientes.
+de Gobierno para los filtros, los años con datos y la frescura de cada fuente. Cada sección
+suma su función (Etapa 1: Inicio y transferencias automáticas); los cálculos viven en
+`aggregations.py`.
 """
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,7 +13,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.geo_censo.models import ExtGeoCenso
 from app.gobierno import sync as gobierno_sync
 from app.gobierno.models import ExtGobLocalidad
-from app.tablero.schemas import FuenteFrescura, LocalidadFiltro, TableroMetaResponse
+from app.tablero import aggregations
+from app.tablero.schemas import (
+    ConceptoMonto,
+    FuenteFrescura,
+    InicioDepartamento,
+    InicioKpis,
+    InicioResponse,
+    LocalidadFiltro,
+    TableroMetaResponse,
+    TransferenciasResponse,
+)
 from app.transferencias.models import ExtTransferencia, ExtTransferenciaSyncLog
 
 _TIPOS = {"MU": "Municipio", "CO": "Comuna"}
@@ -102,4 +113,160 @@ async def get_meta(db: AsyncSession) -> TableroMetaResponse:
         localidades=await _localidades(db),
         anios=await _anios(db),
         frescura=await _frescura(db),
+    )
+
+
+# ── Filtro territorial ──────────────────────────────────────────────────────────
+# El tablero filtra por código INDEC (la clave del nomenclador de Gobierno, siempre presente);
+# las transferencias se cruzan por id_geo, así que se traduce acá.
+
+
+async def _nomenclador(db: AsyncSession, codigos: list[str] | None) -> list[ExtGobLocalidad]:
+    q = select(ExtGobLocalidad).where(ExtGobLocalidad.deleted_at.is_(None))
+    if codigos:
+        q = q.where(ExtGobLocalidad.codigo_indec.in_(codigos))
+    return list((await db.execute(q)).scalars())
+
+
+def _transferencias_filtradas(conceptos: list[str], ids_geo: set[str] | None, anios: tuple[int, ...]):
+    """Sin filtro (ids_geo None) se toma todo, también las filas sin vínculo al padrón, para
+    que el total provincial coincida con el PDF publicado."""
+    q = select(ExtTransferencia.periodo, ExtTransferencia.monto, ExtTransferencia.id_geo).where(
+        ExtTransferencia.concepto.in_(conceptos),
+        ExtTransferencia.periodo >= date(min(anios), 1, 1),
+        ExtTransferencia.periodo <= date(max(anios), 12, 31),
+    )
+    if ids_geo is not None:
+        q = q.where(ExtTransferencia.id_geo.in_(ids_geo or {"__ninguno__"}))
+    return q
+
+
+async def _poblacion_por_codigo(db: AsyncSession, locs: list[ExtGobLocalidad]) -> dict[str, int]:
+    """Población 2022 del Censo (INDEC) por código; si falta, la de la Vista de Gobierno."""
+    codigos = [loc.codigo_indec for loc in locs]
+    censo = dict(
+        (
+            await db.execute(
+                select(ExtGeoCenso.codigo_indec, ExtGeoCenso.poblacion_2022).where(
+                    ExtGeoCenso.codigo_indec.in_(codigos), ExtGeoCenso.deleted_at.is_(None)
+                )
+            )
+        ).all()
+    ) if codigos else {}
+    return {loc.codigo_indec: censo.get(loc.codigo_indec) or loc.poblacion_2022_gob or 0 for loc in locs}
+
+
+# ── Inicio ──────────────────────────────────────────────────────────────────────
+
+
+async def get_inicio(db: AsyncSession, anio: int, codigos: list[str] | None) -> InicioResponse:
+    locs = await _nomenclador(db, codigos)
+    poblacion = await _poblacion_por_codigo(db, locs)
+    ids_geo = {loc.id_geo for loc in locs if loc.id_geo} if codigos else None
+
+    filas = (await db.execute(_transferencias_filtradas(CONCEPTOS_SUMABLES, ids_geo, (anio,)))).all()
+    serie = aggregations.serie_mensual(((f.periodo, f.monto) for f in filas), anio)
+    mes = aggregations.ultimo_mes_con_dato(serie)
+    transferido = aggregations.acumulado(serie, mes)
+
+    # Por departamento: solo lo vinculado a una localidad del nomenclador.
+    depto_de = {loc.id_geo: loc.departamento_gob for loc in locs if loc.id_geo}
+    tr_depto: dict[str, float] = {}
+    for f in filas:
+        d = depto_de.get(f.id_geo)
+        if d:
+            tr_depto[d] = tr_depto.get(d, 0.0) + float(f.monto)
+    deptos: dict[str, list[ExtGobLocalidad]] = {}
+    for loc in locs:
+        deptos.setdefault(loc.departamento_gob, []).append(loc)
+    por_departamento = []
+    for d, ls in sorted(deptos.items()):
+        pob = sum(poblacion[loc.codigo_indec] for loc in ls)
+        monto = tr_depto.get(d, 0.0)
+        por_departamento.append(
+            InicioDepartamento(
+                departamento=d, localidades=len(ls), poblacion=pob, transferido=monto,
+                por_habitante=aggregations.por_habitante(monto, pob),
+            )
+        )
+
+    pob_total = sum(poblacion.values())
+    return InicioResponse(
+        anio=anio,
+        periodo_hasta=date(anio, mes + 1, 1) if mes is not None else None,
+        kpis=InicioKpis(
+            localidades=len(locs),
+            municipios=sum(1 for loc in locs if loc.tipo == "MU"),
+            comunas=sum(1 for loc in locs if loc.tipo == "CO"),
+            poblacion=pob_total,
+            transferido=transferido,
+            por_habitante=aggregations.por_habitante(transferido, pob_total),
+        ),
+        por_departamento=por_departamento,
+    )
+
+
+# ── Transferencias automáticas (Coparticipación, FOFINDES) ─────────────────────
+# Etapa 1: desde el scraping de Transparencia (montos brutos mensuales). La planilla de
+# Gobierno (quincenas, neto, retenciones, % a sueldos) llega en la Etapa 2.
+
+CONCEPTOS_SUMABLES = ["coparticipacion_ley_8663", "fasamu", "fofindes", "fondo_compensacion", "bono_consenso_fiscal"]
+ETIQUETA_CONCEPTO = {
+    "coparticipacion_ley_8663": "Coparticipación (Ley 8663)",
+    "fasamu": "FASAMU",
+    "fofindes": "FOFINDES",
+    "fondo_compensacion": "Fondo de Compensación",
+    "bono_consenso_fiscal": "Bono Consenso Fiscal",
+}
+SECCIONES_TRANSFERENCIAS = {
+    "coparticipacion": ("Coparticipación", ["coparticipacion_ley_8663"]),
+    "fofindes": ("FOFINDES", ["fofindes"]),
+}
+
+
+async def get_transferencias(
+    db: AsyncSession, seccion: str, anio: int, codigos: list[str] | None
+) -> TransferenciasResponse:
+    etiqueta, conceptos = SECCIONES_TRANSFERENCIAS[seccion]
+    ids_geo = {loc.id_geo for loc in await _nomenclador(db, codigos) if loc.id_geo} if codigos else None
+
+    filas_c = (await db.execute(_transferencias_filtradas(conceptos, ids_geo, (anio - 1, anio)))).all()
+    serie = aggregations.serie_mensual(((f.periodo, f.monto) for f in filas_c), anio)
+    serie_ant = aggregations.serie_mensual(((f.periodo, f.monto) for f in filas_c), anio - 1)
+    mes = aggregations.ultimo_mes_con_dato(serie)
+    total = aggregations.acumulado(serie, mes)
+    acum_ant = aggregations.acumulado(serie_ant, mes) if mes is not None else None
+
+    por_concepto_q = (
+        select(ExtTransferencia.concepto, func.sum(ExtTransferencia.monto))
+        .where(
+            ExtTransferencia.concepto.in_(CONCEPTOS_SUMABLES),
+            ExtTransferencia.periodo >= date(anio, 1, 1),
+            ExtTransferencia.periodo <= date(anio, 12, 31),
+        )
+        .group_by(ExtTransferencia.concepto)
+    )
+    if ids_geo is not None:
+        por_concepto_q = por_concepto_q.where(ExtTransferencia.id_geo.in_(ids_geo or {"__ninguno__"}))
+    por_concepto = sorted(
+        (
+            ConceptoMonto(concepto=c, etiqueta=ETIQUETA_CONCEPTO.get(c, c), monto=float(m or 0))
+            for c, m in (await db.execute(por_concepto_q)).all()
+        ),
+        key=lambda x: -x.monto,
+    )
+
+    return TransferenciasResponse(
+        concepto=seccion,
+        etiqueta=etiqueta,
+        anio=anio,
+        ultimo_periodo=date(anio, mes + 1, 1) if mes is not None else None,
+        total_anio=total,
+        acumulado_anterior=acum_ant or None,
+        variacion=aggregations.variacion(total, acum_ant),
+        ultimo_mes=serie[mes] if mes is not None else None,
+        mensual=serie,
+        mensual_anterior=serie_ant,
+        por_concepto=por_concepto,
+        localidades=len({f.id_geo for f in filas_c if f.id_geo and f.periodo.year == anio}),
     )

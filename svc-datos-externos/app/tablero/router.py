@@ -5,13 +5,13 @@ Todo el tablero es solo para `Admin` y `Autoridad` (decisión del usuario 2026-1
 chequeo de secretaría: es una vista transversal, como resumen_territorial. Cualquier otro rol
 recibe 403.
 """
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import AuthUser, require_roles
 from app.database import get_db
 from app.tablero import service
-from app.tablero.schemas import TableroMetaResponse
+from app.tablero.schemas import InicioResponse, TableroMetaResponse, TransferenciasResponse
 
 ROLES_TABLERO = ("Admin", "Autoridad")
 
@@ -25,3 +25,36 @@ async def tablero_meta(
 ) -> TableroMetaResponse:
     """Filtros (localidades, años) y frescura de cada fuente, para la barra común del tablero."""
     return await service.get_meta(db)
+
+
+_ANIO = Query(..., ge=2000, le=2100)
+_CODIGOS = Query(None, description="Códigos INDEC del filtro territorial (vacío = toda la provincia)")
+
+
+@router.get("/inicio", response_model=InicioResponse)
+async def tablero_inicio(
+    anio: int = _ANIO,
+    codigo_indec: list[str] | None = _CODIGOS,
+    db: AsyncSession = Depends(get_db),
+    _user: AuthUser = Depends(require_roles(*ROLES_TABLERO)),
+) -> InicioResponse:
+    """KPIs de la portada y transferido por habitante por departamento (Etapa 1)."""
+    return await service.get_inicio(db, anio, codigo_indec)
+
+
+@router.get("/transferencias/{seccion}", response_model=TransferenciasResponse)
+async def tablero_transferencias(
+    seccion: str,
+    anio: int = _ANIO,
+    codigo_indec: list[str] | None = _CODIGOS,
+    db: AsyncSession = Depends(get_db),
+    _user: AuthUser = Depends(require_roles(*ROLES_TABLERO)),
+) -> TransferenciasResponse:
+    """Coparticipación o FOFINDES: serie mensual del año y del anterior, acumulado y
+    variación (Etapa 1, desde Transparencia)."""
+    if seccion not in service.SECCIONES_TRANSFERENCIAS:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "SECCION_INEXISTENTE", "message": f"Sección de transferencias desconocida: {seccion}"},
+        )
+    return await service.get_transferencias(db, seccion, anio, codigo_indec)
