@@ -146,3 +146,25 @@ def require_gralgob(*roles: str):
 # (mismo criterio que svc-vivienda/svc-privada) — el chequeo de secretaría de
 # `require_gralgob` le aplica igual que al resto.
 ROLES_LECTURA = ("Admin", "Supervisor", "Operador", "Consulta", "Autoridad")
+
+
+def require_roles(*roles: str):
+    """Solo rol, sin mirar secretarías: para vistas transversales como el Tablero de
+    Gobierno (spec-tablero-gobierno-panel.md §3.3), que es solo de Admin y Autoridad."""
+
+    async def check(user: AuthUser = Depends(get_current_user)) -> AuthUser:
+        if user.role not in roles:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={
+                    "code": "PERMISO_INSUFICIENTE",
+                    "message": f"Se requiere uno de los roles: {', '.join(roles)}",
+                },
+            )
+        return user
+
+    return check
+
+
+# Tablero de Gobierno: todo el tablero es solo Admin y Autoridad (decisión del usuario 2026-10-19).
+ROLES_TABLERO = ("Admin", "Autoridad")
