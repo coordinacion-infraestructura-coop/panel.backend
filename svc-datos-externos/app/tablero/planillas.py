@@ -27,6 +27,7 @@ from app.tablero.schemas import (
     FodemeepKpis,
     FodemeepLocalidad,
     FodemeepResponse,
+    FommepAnio,
     FommepKpis,
     FommepLocalidad,
     FommepResponse,
@@ -128,10 +129,20 @@ async def _retenciones(db: AsyncSession, anio: int, mes_ref: int | None, codigos
     mensual, acumulado, mismo_mes = [], [], []
     for a in sorted(por_anio):
         meses = por_anio[a]
+        acum: list[tuple[float, float, float] | None] = []
+        corrido = (0.0, 0.0, 0.0)
+        for m in range(1, 13):
+            if m in meses:
+                corrido = tuple(x + y for x, y in zip(corrido, meses[m]))
+                acum.append(corrido)
+            else:
+                acum.append(None)
         mensual.append(RetencionMensual(
             anio=a,
             caja=[aggregations.proporcion(meses[m][1], meses[m][0]) if m in meses else None for m in range(1, 13)],
             apross=[aggregations.proporcion(meses[m][2], meses[m][0]) if m in meses else None for m in range(1, 13)],
+            acumulado_caja=[aggregations.proporcion(x[1], x[0]) if x else None for x in acum],
+            acumulado_apross=[aggregations.proporcion(x[2], x[0]) if x else None for x in acum],
         ))
         if mes_ref is None:
             continue
@@ -304,37 +315,38 @@ async def get_fodemeep(db: AsyncSession, anio: int, codigos: list[str] | None) -
 # ── FOMMEP ──────────────────────────────────────────────────────────────────────────
 
 
-async def get_fommep(db: AsyncSession, anio: int, codigos: list[str] | None) -> FommepResponse:
-    anios = sorted(set((await db.execute(select(ExtGobFommep.anio).distinct())).scalars()), reverse=True)
-    if not anios:
-        return FommepResponse(anio=anio, anios=[], kpis=None, por_localidad=[])
-    efectivo = anio if anio in anios else max((a for a in anios if a <= anio), default=anios[0])
-    filas = list((await db.execute(_filtrar(select(ExtGobFommep).where(ExtGobFommep.anio == efectivo), ExtGobFommep, codigos))).scalars())
-
+def _kpis_fommep(filas: list[ExtGobFommep]) -> FommepKpis:
     def grupo(cant: str, monto: str) -> Grupo:
         return Grupo(cantidad=sum(getattr(f, cant) or 0 for f in filas), monto=sum(_f(getattr(f, monto)) for f in filas))
 
     moviles = grupo("cant_moviles", "monto_moviles")
     edificios = grupo("cant_edificios_total", "monto_edificios_total")
     total = sum(_f(f.monto_total) for f in filas)
+    return FommepKpis(
+        localidades=len({f.codigo_indec for f in filas if _f(f.monto_total) > 0}),
+        monto_total=total,
+        moviles=moviles,
+        edificios_a=grupo("cant_edificios_a", "monto_edificios_a"),
+        edificios_b=grupo("cant_edificios_b", "monto_edificios_b"),
+        edificios_c=grupo("cant_edificios_c", "monto_edificios_c"),
+        edificios=edificios,
+        otros=total - moviles.monto - edificios.monto,
+    )
+
+
+async def get_fommep(db: AsyncSession, codigos: list[str] | None) -> FommepResponse:
+    """Todos los años y la gestión completa; el filtro de año es propio de la pantalla."""
+    filas = list((await db.execute(_filtrar(select(ExtGobFommep), ExtGobFommep, codigos))).scalars())
+    anios = sorted({f.anio for f in filas}, reverse=True)
     nombres = {loc.codigo_indec: loc for loc in await _nomenclador(db, codigos)}
     return FommepResponse(
-        anio=efectivo,
         anios=anios,
-        kpis=FommepKpis(
-            localidades=sum(1 for f in filas if _f(f.monto_total) > 0),
-            monto_total=total,
-            moviles=moviles,
-            edificios_a=grupo("cant_edificios_a", "monto_edificios_a"),
-            edificios_b=grupo("cant_edificios_b", "monto_edificios_b"),
-            edificios_c=grupo("cant_edificios_c", "monto_edificios_c"),
-            edificios=edificios,
-            otros=total - moviles.monto - edificios.monto,
-        ),
+        gestion=_kpis_fommep(filas) if filas else None,
+        por_anio=[FommepAnio(anio=a, kpis=_kpis_fommep([f for f in filas if f.anio == a])) for a in anios],
         por_localidad=sorted(
             (
                 FommepLocalidad(
-                    codigo_indec=f.codigo_indec, localidad=nombres[f.codigo_indec].nombre_gob,
+                    anio=f.anio, codigo_indec=f.codigo_indec, localidad=nombres[f.codigo_indec].nombre_gob,
                     departamento=nombres[f.codigo_indec].departamento_gob,
                     cant_moviles=f.cant_moviles or 0, monto_moviles=_f(f.monto_moviles),
                     cant_edificios=f.cant_edificios_total or 0, monto_edificios=_f(f.monto_edificios_total),
@@ -343,7 +355,7 @@ async def get_fommep(db: AsyncSession, anio: int, codigos: list[str] | None) -> 
                 for f in filas
                 if f.codigo_indec in nombres and _f(f.monto_total) > 0
             ),
-            key=lambda x: (x.departamento, x.localidad),
+            key=lambda x: (x.departamento, x.localidad, x.anio),
         ),
     )
 

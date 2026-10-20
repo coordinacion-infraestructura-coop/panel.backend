@@ -90,6 +90,8 @@ async def test_coparticipacion_desde_la_planilla(client: AsyncClient, db_session
     assert [r["anio"] for r in ret["mismo_mes"]] == [2025, 2026]
     assert ret["mismo_mes"][1]["caja"] == pytest.approx(280 / 2900)
     assert ret["mensual"][1]["caja"][1] == pytest.approx(0.1)
+    # Acumulado de 2026 a febrero: (100+100+40+40+120) / (2900+1200)
+    assert ret["mensual"][1]["acumulado_caja"][1] == pytest.approx(400 / 4100)
 
     # % a sueldos: masa 2026 de A (B no tiene) sobre COPA + FOFINDES de enero de A.
     s = d["pct_sueldos"]
@@ -149,11 +151,13 @@ async def test_fommep_usa_su_propio_anio(client: AsyncClient, db_session: AsyncS
     ])
     await db_session.commit()
     d = (await client.get(f"{URL}/fommep", params={"anio": 2026})).json()
-    assert d["anio"] == 2025 and d["anios"] == [2025, 2024]
-    k = d["kpis"]
+    assert d["anios"] == [2025, 2024]
+    k = d["por_anio"][0]["kpis"]
+    assert d["por_anio"][0]["anio"] == 2025
     assert k["localidades"] == 1 and k["monto_total"] == 40 and k["moviles"] == {"cantidad": 2, "monto": 20}
     assert k["otros"] == 15
-    assert [f["codigo_indec"] for f in d["por_localidad"]] == ["A"]
+    assert d["gestion"]["monto_total"] == 50 and d["gestion"]["localidades"] == 2
+    assert [(f["codigo_indec"], f["anio"]) for f in d["por_localidad"]] == [("A", 2025), ("B", 2024)]
 
 
 async def test_resumen(client: AsyncClient, db_session: AsyncSession):

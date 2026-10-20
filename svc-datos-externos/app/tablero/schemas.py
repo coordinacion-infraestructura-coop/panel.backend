@@ -74,8 +74,10 @@ class Retencion(BaseModel):
 
 class RetencionMensual(BaseModel):
     anio: int
-    caja: list[float | None]
+    caja: list[float | None]  # del mes ("mes de X de cada año")
     apross: list[float | None]
+    acumulado_caja: list[float | None]  # de enero a ese mes ("acumulado a X de cada año")
+    acumulado_apross: list[float | None]
 
 
 class Retenciones(BaseModel):
@@ -175,6 +177,7 @@ class FommepKpis(BaseModel):
 
 
 class FommepLocalidad(BaseModel):
+    anio: int
     codigo_indec: str
     localidad: str
     departamento: str
@@ -185,11 +188,18 @@ class FommepLocalidad(BaseModel):
     monto_total: float
 
 
+class FommepAnio(BaseModel):
+    anio: int
+    kpis: FommepKpis
+
+
 class FommepResponse(BaseModel):
+    """FOMMEP tiene años propios (spec-tablero-gobierno-panel.md §2.5 #6): la respuesta trae cada
+    año y la gestión completa, y la pantalla elige sin volver a pedir."""
     concepto: str = "fommep"
-    anio: int  # el año efectivamente mostrado (FOMMEP tiene años propios)
     anios: list[int]
-    kpis: FommepKpis | None
+    gestion: FommepKpis | None
+    por_anio: list[FommepAnio]
     por_localidad: list[FommepLocalidad]
 
 

@@ -304,6 +304,6 @@ async def get_seccion_planilla(
     if seccion == "fodemeep":
         return await planillas.get_fodemeep(db, anio, codigos)
     if seccion == "fommep":
-        return await planillas.get_fommep(db, anio, codigos)
+        return await planillas.get_fommep(db, codigos)
     poblacion = await _poblacion_por_codigo(db, await _nomenclador(db, codigos))
     return await planillas.get_resumen(db, anio, codigos, poblacion)
