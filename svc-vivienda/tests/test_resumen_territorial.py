@@ -890,6 +890,7 @@ _CENTINELAS = ("INTENDENTE-CENTINELA", "PARTIDO-CENTINELA", "LEGISLADOR-CENTINEL
 _EXTERNOS_FASE1 = [{
     "id_geo": "g1", "codigo_indec": "140001", "categoria": "MU", "poblacion_2022": 51000,
     "superficie_km2": 25.5, "poblacion_2010": 48000, "ficha_gobierno": _FICHA,
+    "indicadores": {"anio_censo": 2022, "nbi_pct": 4.4, "gas_red_pct": 66.2, "renabap_barrios": 3, "ips_nivel": "Medio alto"},
 }]
 
 
@@ -933,15 +934,15 @@ def test_ficha_gobierno_se_quita_para_cualquier_otro_rol(rol, secretarias):
 def test_normalizar_zonas_rurales_usa_la_grafia_del_padron():
     geo = [{"departamento": "Colón", "localidad": "Jesús María"}, {"departamento": "Santa María", "localidad": "Alta Gracia"}]
     zonas = [
-        {"departamento": "COLON", "poblacion_2022": 10, "poblacion_2010": 12},
+        {"departamento": "COLON", "poblacion_2022": 10, "poblacion_2010": 12, "fuente": "censo"},
         {"departamento": "SANTA MARÍA", "poblacion_2022": 5, "poblacion_2010": None},
         {"departamento": "INEXISTENTE", "poblacion_2022": 1, "poblacion_2010": 1},
         {"departamento": None, "poblacion_2022": 9, "poblacion_2010": 9},
     ]
     assert aggregations.normalizar_zonas_rurales(zonas, geo) == [
-        {"departamento": "Colón", "poblacion_2022": 10, "poblacion_2010": 12},
-        {"departamento": "Santa María", "poblacion_2022": 5, "poblacion_2010": None},
-        {"departamento": "INEXISTENTE", "poblacion_2022": 1, "poblacion_2010": 1},
+        {"departamento": "Colón", "poblacion_2022": 10, "poblacion_2010": 12, "fuente": "censo"},
+        {"departamento": "Santa María", "poblacion_2022": 5, "poblacion_2010": None, "fuente": None},
+        {"departamento": "INEXISTENTE", "poblacion_2022": 1, "poblacion_2010": 1, "fuente": None},
     ]
 
 
@@ -950,7 +951,7 @@ async def test_api_admin_recibe_ficha_gobierno_y_los_datos_publicos(
     client: AsyncClient, datos_vivienda: dict
 ):
     """`client` es Admin: ve todo, también la ficha de Gobierno."""
-    zonas = [{"departamento": "SANTA MARIA", "poblacion_2022": 3000, "poblacion_2010": 4000}]
+    zonas = [{"departamento": "SANTA MARIA", "poblacion_2022": 3000, "poblacion_2010": 4000, "fuente": "censo"}]
     with patch("app.resumen_territorial.service.fetch_datos_externos_lineas", new=AsyncMock(return_value=_EXTERNOS_FASE1)), \
          patch("app.resumen_territorial.service.fetch_zonas_rurales", new=AsyncMock(return_value=zonas)):
         post = await client.post(f"{BASE}/actualizar")
@@ -960,8 +961,10 @@ async def test_api_admin_recibe_ficha_gobierno_y_los_datos_publicos(
         ag = next(loc for loc in resp.json()["payload"]["localidades"] if loc["localidad"] == "Alta Gracia")
         assert ag["ficha_gobierno"] == _FICHA
         assert ag["superficie_km2"] == 25.5 and ag["poblacion_2010"] == 48000
+        assert ag["indicadores"]["gas_red_pct"] == 66.2 and ag["indicadores"]["renabap_barrios"] == 3
+        assert ag["indicadores"]["desocupacion_pct"] is None  # campo no enviado: queda en None
         assert resp.json()["payload"]["zonas_rurales"] == [
-            {"departamento": "Santa María", "poblacion_2022": 3000, "poblacion_2010": 4000}
+            {"departamento": "Santa María", "poblacion_2022": 3000, "poblacion_2010": 4000, "fuente": "censo"}
         ]
 
 

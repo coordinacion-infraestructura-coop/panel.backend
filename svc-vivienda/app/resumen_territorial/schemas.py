@@ -70,13 +70,45 @@ class FichaGobierno(BaseModel):
 
 
 class ZonaRural(BaseModel):
-    """Población sin gobierno local de un departamento. Es una estimación del
-    área de Gobierno (el Censo 2022 no la desagrega por departamento); no se
-    suma a ninguna localidad."""
+    """Población sin gobierno local de un departamento; no se suma a ninguna
+    localidad. `fuente = "censo"`: dato oficial (departamento − Σ gobiernos
+    locales, Estadística Córdoba); `"gobierno_estimacion"`: estimación del
+    área de Gobierno (spec-datos-externos-fuentes-oficiales.md §6)."""
 
     departamento: str
     poblacion_2022: int | None = None
     poblacion_2010: int | None = None
+    fuente: str | None = None
+
+
+class IndicadoresSociales(BaseModel):
+    """Subconjunto federado de fuentes oficiales públicas por gobierno local
+    (svc-datos-externos, spec-datos-externos-fuentes-oficiales.md §6). Datos
+    públicos; los ve cualquier rol que vea la localidad. Porcentajes en 0–100."""
+
+    anio_censo: int | None = None
+    nbi_pct: float | None = None
+    gas_red_pct: float | None = None
+    agua_red_pct: float | None = None
+    cloacas_pct: float | None = None
+    internet_pct: float | None = None
+    inquilinos_pct: float | None = None
+    nbi_hacinamiento_pct: float | None = None
+    calidad_iii_iv_pct: float | None = None
+    hogares_hacinamiento: int | None = None
+    hogares_calidad_iv: int | None = None
+    desocupacion_pct: float | None = None
+    cobertura_salud_pct: float | None = None
+    secundario_completo_pct: float | None = None
+    ips_valor: float | None = None
+    ips_nivel: str | None = None
+    renabap_barrios: int | None = None
+    renabap_familias: int | None = None
+    establecimientos_salud: int | None = None
+    establecimientos_educativos: int | None = None
+    vitales_anio: int | None = None
+    nacimientos: int | None = None
+    defunciones: int | None = None
 
 
 class ResumenLocalidad(BaseModel):
@@ -96,10 +128,12 @@ class ResumenLocalidad(BaseModel):
     transferencias_per_capita: float | None = None  # ver nota en aggregations.enriquecer_con_datos_externos
     atp_monto_per_capita: float | None = None
     # Fase 1 del Tablero de Gobierno (spec-datos-externos-fase1-nomenclador-demografia.md).
-    # Públicos: superficie del radio municipal (IDECOR) y población del Censo 2010.
+    # Públicos: superficie del gobierno local y población 2010 según el Censo
+    # (Estadística Córdoba, spec-datos-externos-fuentes-oficiales.md).
     superficie_km2: float | None = None
     poblacion_2010: int | None = None
     ficha_gobierno: FichaGobierno | None = None     # restringido — ver FichaGobierno
+    indicadores: IndicadoresSociales | None = None  # público — fuentes oficiales (Estadística, IDECOR, RENABAP)
     programas: list[ResumenPrograma]
 
 

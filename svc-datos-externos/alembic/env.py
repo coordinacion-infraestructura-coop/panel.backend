@@ -10,6 +10,15 @@ from app.database import Base
 
 # Importar todos los modelos para que Alembic los detecte
 from app.geo_censo.models import ExtGeoCenso
+from app.fuentes_oficiales.models import (
+    ExtEquipamiento,
+    ExtEstadisticaVital,
+    ExtEstDepartamento,
+    ExtEstGobiernoLocal,
+    ExtEstPoligono,
+    ExtFuentesOficialesSyncLog,
+    ExtRenabapBarrio,
+)
 from app.gobierno.models import ExtGobEnte, ExtGobLocalidad, ExtGobSyncLog
 from app.transferencias.models import ExtTransferencia, ExtTransferenciaSyncLog
 

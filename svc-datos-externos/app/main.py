@@ -9,6 +9,15 @@ from app.database import engine
 from app.internal.router import router as internal_router
 from app.tablero.router import router as tablero_router
 from app.geo_censo.models import ExtGeoCenso  # noqa: F401 — ensures tables are registered with Base
+from app.fuentes_oficiales.models import (  # noqa: F401
+    ExtEquipamiento,
+    ExtEstadisticaVital,
+    ExtEstDepartamento,
+    ExtEstGobiernoLocal,
+    ExtEstPoligono,
+    ExtFuentesOficialesSyncLog,
+    ExtRenabapBarrio,
+)
 from app.gobierno.models import ExtGobEnte, ExtGobLocalidad, ExtGobSyncLog  # noqa: F401
 from app.transferencias.models import ExtTransferencia, ExtTransferenciaSyncLog  # noqa: F401
 

@@ -46,5 +46,28 @@ class Settings(BaseSettings):
     idecor_wfs_url: str = "https://idecor-ws.mapascordoba.gob.ar/geoserver/idecor/wfs"
     idecor_timeout_segundos: float = 30
 
+    # Fuentes oficiales públicas por gobierno local
+    # (spec-datos-externos-fuentes-oficiales.md §2). Los nombres de capa van
+    # en configuración porque Estadística los publica con fecha
+    # (`IPS_23102025`): si cambian, se corrigen sin tocar código.
+    fuentes_oficiales_sync_enabled: bool = False
+    fuentes_oficiales_timeout_segundos: float = 120
+    estadistica_arcgis_base: str = "https://smart-geo-data.cba.gov.ar/server/rest/services"
+    est_capa_ficha: str = "Estadistica_Censos/Conoce_cordoba_Municipio_FichaGral_VP/FeatureServer/0"
+    est_capa_condvida: str = "Estadistica_Censos/MUN_CondVida_VP/FeatureServer/0"
+    est_capa_pobviv: str = "Sitio_Web_Estadistica/PobTotalViv_VP/FeatureServer/0"
+    est_capa_educacion: str = "Estadistica_Censos/MUN_Educacion_VP/FeatureServer/0"
+    est_capa_salud: str = "Estadistica_Censos/MUN_Salud_VP/FeatureServer/0"
+    est_capa_laboral: str = "Estadistica_Censos/MUN_MercadoLaboral_VP/FeatureServer/0"
+    est_capa_ips: str = "IPS/IPS_23102025/FeatureServer/0"
+    est_capa_departamentos: str = "Estadistica_Censos/Dpto_2022_VP/FeatureServer/0"
+    est_capa_poligonos: str = "Estadistica_Censos/MyC_2022_VP/FeatureServer/0"
+    # RENABAP 2023 desde el servidor de datos de Poblaciones (endpoint no
+    # documentado; dataset 383501 de la obra 191801).
+    renabap_csv_url: str = (
+        "https://datos-poblaciones.conicet.gov.ar/services/download/GetDatasetFile?t=c&d=383501&w=191801"
+    )
+    renabap_version: str = "2023"
+
 
 settings = Settings()
