@@ -12,7 +12,10 @@ from app.auth import AuthUser, require_roles
 from app.database import get_db
 from app.tablero import service
 from app.tablero.schemas import (
+    ComunidadesRegionalesResponse,
     FodemeepResponse,
+    FondoAmbientalResponse,
+    FondoPermanenteResponse,
     FommepResponse,
     InicioResponse,
     ResumenResponse,
@@ -51,7 +54,8 @@ async def tablero_inicio(
 
 @router.get(
     "/transferencias/{seccion}",
-    response_model=TransferenciasResponse | FodemeepResponse | FommepResponse | ResumenResponse,
+    response_model=TransferenciasResponse | FodemeepResponse | FommepResponse | ResumenResponse
+    | FondoPermanenteResponse | FondoAmbientalResponse | ComunidadesRegionalesResponse,
 )
 async def tablero_transferencias(
     seccion: str,
@@ -59,11 +63,12 @@ async def tablero_transferencias(
     codigo_indec: list[str] | None = _CODIGOS,
     db: AsyncSession = Depends(get_db),
     _user: AuthUser = Depends(require_roles(*ROLES_TABLERO)),
-) -> TransferenciasResponse | FodemeepResponse | FommepResponse | ResumenResponse:
+):
     """`coparticipacion` y `fofindes`: serie mensual, acumulado y variación; desde la planilla de
     Gobierno cuando tiene el año (quincenas, neto, descuentos, retenciones, % a sueldos) y si no
     desde Transparencia. `fodemeep`, `fommep` y `resumen`: solo planillas (Etapa 2,
-    spec-datos-externos-fase2-transferencias.md §5)."""
+    spec-datos-externos-fase2-transferencias.md §5). `fondo-permanente`, `fondo-ambiental` y
+    `comunidades-regionales`: planillas de fondos (Etapa 3, spec-datos-externos-fase3-fondos.md §4)."""
     if seccion in service.SECCIONES_TRANSFERENCIAS:
         return await service.get_transferencias(db, seccion, anio, codigo_indec)
     if seccion in service.SECCIONES_PLANILLAS:

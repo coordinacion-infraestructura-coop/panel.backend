@@ -212,6 +212,7 @@ class ResumenFila(BaseModel):
     poblacion: int
     copa: float
     fofindes: float
+    fondo_ambiental: float = 0.0  # Fase 3: pagado a localidades (sin comunidades regionales)
     total: float
     por_habitante: float | None
 
@@ -223,3 +224,165 @@ class ResumenResponse(BaseModel):
     total: ResumenFila
     por_departamento: list[ResumenFila]
     por_localidad: list[ResumenFila]
+
+
+# ── Etapa 3: fondos (spec-datos-externos-fase3-fondos.md §4) ──────────────────────────
+# Mismo criterio que FOMMEP: cada respuesta trae todos los años y la gestión completa, y la
+# pantalla elige el año sin volver a pedir.
+
+
+class EstadoMonto(BaseModel):
+    estado: str
+    cantidad: int
+    monto: float
+
+
+class PrestamosKpis(BaseModel):
+    monto: float
+    prestamos: int
+    localidades: int
+
+
+class FpermPrestamo(BaseModel):
+    anio: int | None  # año de la fecha; nulo = listo para pagar
+    codigo_indec: str | None
+    localidad: str | None
+    departamento: str | None
+    etapas: str | None
+    fecha: date | None
+    monto_total: float
+    cuota: float | None
+    plazo: int | None
+    mes_inicio_descuento: int | None
+    destino: str | None
+    ord_res: str | None
+
+
+class FpermLocalidad(BaseModel):
+    codigo_indec: str
+    localidad: str
+    departamento: str
+    ultima_etapa: int | None
+    recibio_ultima: bool
+    recibio_anteultima: bool
+    etapas_disponibles: list[int]
+    disponible: float
+
+
+class FpermAnio(BaseModel):
+    anio: int
+    otorgado: PrestamosKpis
+    mensual: list[float | None]
+
+
+class FondoPermanenteResponse(BaseModel):
+    concepto: str = "fondo-permanente"
+    # Foto de hoy, no depende del año.
+    ultima_etapa_habilitada: int | None
+    saldo_cuenta: float | None  # nulo con filtro territorial: es del fondo entero
+    localidades_adheridas: int
+    recibieron_ultima: int
+    recibieron_anteultima: int
+    disponible: float
+    localidades_con_disponible: int
+    listo_para_pagar: PrestamosKpis
+    # Préstamos otorgados.
+    anios: list[int]
+    gestion: PrestamosKpis
+    por_anio: list[FpermAnio]
+    prestamos: list[FpermPrestamo]
+    localidades: list[FpermLocalidad]
+
+
+class FondoAmbientalKpis(BaseModel):
+    localidades: int
+    entes: int
+    convenios: int
+    afectado: float
+    pagado: float
+    ingresos: float | None  # nulo con filtro territorial: el ingreso es del fondo entero
+    disponible: float | None
+    estados: list[EstadoMonto]
+
+
+class FondoAmbientalAnio(BaseModel):
+    anio: int
+    kpis: FondoAmbientalKpis
+
+
+class FondoAmbientalFila(BaseModel):
+    anio: int | None
+    codigo: str
+    es_ente: bool
+    localidad: str
+    departamento: str | None
+    expediente: str | None
+    convenio: str | None
+    fecha_convenio: date | None
+    resolucion: str | None
+    objeto: str | None
+    monto: float
+    estado: str | None
+    fecha_estado: date | None
+
+
+class ObjetoMonto(BaseModel):
+    objeto: str
+    cantidad: int
+    monto: float
+
+
+class FondoAmbientalResponse(BaseModel):
+    concepto: str = "fondo-ambiental"
+    anios: list[int]
+    gestion: FondoAmbientalKpis | None
+    por_anio: list[FondoAmbientalAnio]
+    objetos: list[ObjetoMonto]  # de la gestión; la pantalla recalcula por año desde las filas
+    convenios: list[FondoAmbientalFila]
+
+
+class CregTipo(BaseModel):
+    credito: float | None  # nulo con filtro territorial
+    cuotas: int  # sin anuladas
+    monto_cuotas: float
+    pagado: float
+    a_pagar: float
+    saldo: float | None
+
+
+class CregKpis(BaseModel):
+    funcionamiento: CregTipo
+    obras: CregTipo
+    total: CregTipo
+    comunidades: int
+    estados: list[EstadoMonto]
+
+
+class CregAnio(BaseModel):
+    anio: int
+    kpis: CregKpis
+
+
+class CregCuota(BaseModel):
+    anio: int | None
+    codigo_ente: str
+    comunidad: str
+    departamento: str | None
+    tipo: str | None
+    expediente: str | None
+    destino: str | None
+    monto: float | None
+    cuota: int | None
+    monto_cuota: float | None
+    estado: str | None
+    fecha_pago: date | None
+    fecha_rendicion: date | None
+
+
+class ComunidadesRegionalesResponse(BaseModel):
+    concepto: str = "comunidades-regionales"
+    departamentos: list[str] | None  # filtro aplicado; nulo = toda la provincia
+    anios: list[int]
+    gestion: CregKpis | None
+    por_anio: list[CregAnio]
+    cuotas: list[CregCuota]

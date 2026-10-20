@@ -15,7 +15,7 @@ from app.gob_transferencias import sync as gob_transferencias_sync
 from app.gob_transferencias.models import ExtGobCopa
 from app.gobierno import sync as gobierno_sync
 from app.gobierno.models import ExtGobLocalidad
-from app.tablero import aggregations, planillas
+from app.tablero import aggregations, fondos, planillas
 from app.tablero.schemas import (
     ConceptoMonto,
     FodemeepResponse,
@@ -295,12 +295,18 @@ async def get_transferencias(
 
 # ── Etapa 2: secciones que salen solo de las planillas de Gobierno ───────────────────
 
-SECCIONES_PLANILLAS = ("fodemeep", "fommep", "resumen")
+# Etapa 3 (spec-datos-externos-fase3-fondos.md §4): los fondos usan la misma ruta para no
+# cambiar el gateway.
+SECCIONES_PLANILLAS = ("fodemeep", "fommep", "resumen", "fondo-permanente", "fondo-ambiental", "comunidades-regionales")
 
 
-async def get_seccion_planilla(
-    db: AsyncSession, seccion: str, anio: int, codigos: list[str] | None
-) -> FodemeepResponse | FommepResponse | ResumenResponse:
+async def get_seccion_planilla(db: AsyncSession, seccion: str, anio: int, codigos: list[str] | None):
+    if seccion == "fondo-permanente":
+        return await fondos.get_fondo_permanente(db, codigos)
+    if seccion == "fondo-ambiental":
+        return await fondos.get_fondo_ambiental(db, codigos)
+    if seccion == "comunidades-regionales":
+        return await fondos.get_comunidades_regionales(db, codigos)
     if seccion == "fodemeep":
         return await planillas.get_fodemeep(db, anio, codigos)
     if seccion == "fommep":

@@ -49,6 +49,10 @@ class Settings(BaseSettings):
     google_sheet_gob_fodemep_id: str = ""
     google_sheet_gob_fommep_id: str = ""
     google_sheet_gob_empleados_id: str = ""
+    # Fase 3 (spec-datos-externos-fase3-fondos.md §3): mismas reglas, mismo sync y mismo flag.
+    google_sheet_gob_fondo_permanente_id: str = ""
+    google_sheet_gob_fondo_ambiental_id: str = ""
+    google_sheet_gob_comunidades_regionales_id: str = ""
     gob_transferencias_sync_enabled: bool = False
 
     # WFS público de IDECOR (Catastro) para la valuación de parcelas de Mi Lugar

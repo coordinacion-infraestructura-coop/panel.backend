@@ -55,3 +55,24 @@ async def get_values(
     aparte para no bloquear el event loop de FastAPI.
     """
     return await asyncio.to_thread(_get_values_sync, spreadsheet_id, range_name, value_render_option)
+
+
+def _batch_get_sync(spreadsheet_id: str, ranges: list[str], value_render_option: str) -> list[list[list[Any]]]:
+    service = _get_service()
+    result = (
+        service.spreadsheets()
+        .values()
+        .batchGet(spreadsheetId=spreadsheet_id, ranges=ranges, valueRenderOption=value_render_option)
+        .execute()
+    )
+    return [r.get("values", []) for r in result.get("valueRanges", [])]
+
+
+async def batch_get_values(
+    spreadsheet_id: str,
+    ranges: list[str],
+    value_render_option: str = "FORMATTED_VALUE",
+) -> list[list[list[Any]]]:
+    """Varios rangos en una sola llamada, en el mismo orden. Sirve para leer una pestaña
+    salteando columnas (spec-datos-externos-fase3-fondos.md §3)."""
+    return await asyncio.to_thread(_batch_get_sync, spreadsheet_id, ranges, value_render_option)

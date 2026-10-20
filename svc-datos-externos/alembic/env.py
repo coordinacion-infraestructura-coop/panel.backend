@@ -20,6 +20,14 @@ from app.fuentes_oficiales.models import (
     ExtRenabapBarrio,
 )
 from app.gobierno.models import ExtGobEnte, ExtGobLocalidad, ExtGobSyncLog
+from app.gob_fondos.models import (  # noqa: F401
+    ExtGobCregCuota,
+    ExtGobFondoAmbiental,
+    ExtGobFondoValor,
+    ExtGobFpermEtapa,
+    ExtGobFpermLocalidad,
+    ExtGobFpermPrestamo,
+)
 from app.gob_transferencias.models import (
     ExtGobCopa,
     ExtGobEmpleados,

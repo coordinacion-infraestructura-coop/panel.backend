@@ -219,7 +219,11 @@ async def test_sync_todas_las_fuentes(client: AsyncClient, db_session: AsyncSess
         r = await client.post("/internal/datos-externos/gobierno/transferencias/sync")
     assert r.status_code == 200, r.text
     logs = {x["fuente"]: x for x in r.json()}
-    assert set(logs) == {"copa", "fofindes", "fodemep", "fommep", "empleados"}
+    # Las planillas de fondos (Fase 3) no están configuradas acá: fallan solas, sin frenar al resto.
+    fondos = {"fondo_permanente", "fondo_ambiental", "comunidades_regionales"}
+    assert set(logs) == {"copa", "fofindes", "fodemep", "fommep", "empleados"} | fondos
+    assert all(logs[f]["estado"] == "fallido" for f in fondos)
+    logs = {f: x for f, x in logs.items() if f not in fondos}
     assert all(x["estado"] == "ok" for x in logs.values())
     # Solo las pestañas autorizadas (spec §0).
     assert sorted(p for _, p in leidas) == ["Activos MyC", "COPA", "ESTADO", "FODEMEP", "FOFINDES", "FROMMEP"]
@@ -305,7 +309,7 @@ async def test_sync_estado_y_conciliacion(client: AsyncClient, db_session: Async
         await client.post("/internal/datos-externos/gobierno/transferencias/sync")
 
     r = await client.get("/internal/datos-externos/gobierno/transferencias/sync-estado")
-    assert [x["fuente"] for x in r.json()] == ["copa", "fofindes", "fodemep", "fommep", "empleados"]
+    assert [x["fuente"] for x in r.json()][:5] == ["copa", "fofindes", "fodemep", "fommep", "empleados"]
 
     r = await client.get("/internal/datos-externos/gobierno/transferencias/conciliacion", params={"anio": 2025})
     ene = r.json()["transparencia"]["copa"][0]

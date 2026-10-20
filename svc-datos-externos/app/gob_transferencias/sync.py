@@ -12,6 +12,11 @@ personales de esas planillas (FODEMEP: `INFORME AUGUSTO`, `Copia de RESULTADOS C
 EMPLEADOS: `Búsqueda`) nunca se piden (spec §0).
 
 Regla de privacidad: ni `anomalias` ni los logs llevan valores de empleados o masa salarial.
+
+Fase 3 (spec-datos-externos-fase3-fondos.md §3): las planillas de fondos se suman como fuentes
+de este mismo sync. Sus pestañas tienen columnas de personas (`INTENDENTE`, `CUIT`,
+`OBSERVACIONES`); con `excluir=True` se lee primero el encabezado y después solo los rangos de
+columnas que no lo son, así que esos datos nunca llegan al servicio.
 """
 import logging
 from dataclasses import dataclass
@@ -22,6 +27,15 @@ from sqlalchemy import delete, func, insert, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.gob_fondos import parse as parse_fondos
+from app.gob_fondos.models import (
+    ExtGobCregCuota,
+    ExtGobFondoAmbiental,
+    ExtGobFondoValor,
+    ExtGobFpermEtapa,
+    ExtGobFpermLocalidad,
+    ExtGobFpermPrestamo,
+)
 from app.gob_transferencias import conciliacion, parse
 from app.gob_transferencias.models import (
     ExtGobCopa,
@@ -31,7 +45,7 @@ from app.gob_transferencias.models import (
     ExtGobFofindes,
     ExtGobFommep,
 )
-from app.gobierno.models import ExtGobLocalidad, ExtGobSyncLog
+from app.gobierno.models import ExtGobEnte, ExtGobLocalidad, ExtGobSyncLog
 from app.integrations import google_sheets
 
 logger = logging.getLogger(__name__)
@@ -48,6 +62,13 @@ class _Pestana:
     nombre: str
     parser: Callable[[list[list[Any]]], tuple[list[dict], list[dict]]]
     modelo: type
+    # Freno de seguridad: "localidades" (Fase 2: mínimo de localidades y 90 % de las filas
+    # previas), "proporcion" (90 % de las filas previas y al menos una) o "ninguno".
+    freno: str = "localidades"
+    # (columna, valor): la pestaña reemplaza solo esas filas del modelo (`ext_gob_fondo_valor`).
+    alcance: tuple[str, str] | None = None
+    # Saltear las columnas de personas al leer (Fase 3 §3).
+    excluir: bool = False
 
 
 @dataclass(frozen=True)
@@ -68,6 +89,33 @@ FUENTES: dict[str, _Fuente] = {
     ),
     "fommep": _Fuente("google_sheet_gob_fommep_id", (_Pestana("FROMMEP", parse.parsear_fommep, ExtGobFommep),)),
     "empleados": _Fuente("google_sheet_gob_empleados_id", (_Pestana("Activos MyC", parse.parsear_empleados, ExtGobEmpleados),)),
+    # Fase 3. Las pestañas de Fondo Permanente forman una sola fuente: se aplican juntas.
+    "fondo_permanente": _Fuente(
+        "google_sheet_gob_fondo_permanente_id",
+        (
+            _Pestana("FONDO PERM", parse_fondos.parsear_fperm_localidad, ExtGobFpermLocalidad),
+            _Pestana("FONDO PERM", parse_fondos.parsear_fperm_valores, ExtGobFondoValor, "ninguno", ("fondo", parse_fondos.FONDO_PERMANENTE)),
+            # Las etapas disponibles bajan cuando se otorgan préstamos: sin freno por cantidad.
+            _Pestana("FONDO PERM CUOTAS", parse_fondos.parsear_fperm_etapas, ExtGobFpermEtapa, "ninguno"),
+            _Pestana("IMPORT_Listo", parse_fondos.parsear_fperm_prestamos, ExtGobFpermPrestamo, "proporcion", excluir=True),
+        ),
+    ),
+    "fondo_ambiental": _Fuente(
+        "google_sheet_gob_fondo_ambiental_id",
+        (
+            _Pestana("Fondo", parse_fondos.parsear_fondo_ambiental, ExtGobFondoAmbiental, "proporcion", excluir=True),
+            _Pestana("Fondo", parse_fondos.parsear_fondo_ambiental_ingresos, ExtGobFondoValor, "ninguno",
+                     ("fondo", parse_fondos.FONDO_AMBIENTAL), excluir=True),
+        ),
+    ),
+    "comunidades_regionales": _Fuente(
+        "google_sheet_gob_comunidades_regionales_id",
+        (
+            _Pestana("Fondo", parse_fondos.parsear_comunidades_regionales, ExtGobCregCuota, "proporcion", excluir=True),
+            _Pestana("Control", parse_fondos.parsear_comunidades_regionales_credito, ExtGobFondoValor, "ninguno",
+                     ("fondo", parse_fondos.COMUNIDADES_REGIONALES)),
+        ),
+    ),
 }
 
 ETIQUETAS = {
@@ -76,9 +124,58 @@ ETIQUETAS = {
     "fodemep": "11.1 FODEMEP (Gobierno)",
     "fommep": "11.1 FOMMEP (Gobierno)",
     "empleados": "13. Empleados (Gobierno)",
+    "fondo_permanente": "7. Fondo Permanente (Gobierno)",
+    "fondo_ambiental": "9. Fondo Ambiental (Gobierno)",
+    "comunidades_regionales": "17. Comunidades Regionales (Gobierno)",
 }
 
 _DESCARTES = {"fila_sin_codigo", "fila_invalida", "fila_repetida"}
+
+
+async def _control_fondo_permanente(db: AsyncSession) -> list[dict]:
+    """Localidades cuya suma de etapas disponibles no cierra con `FONDO PERM` (spec Fase 3 §3)."""
+    suma = dict(
+        (await db.execute(
+            select(ExtGobFpermEtapa.codigo_indec, func.sum(ExtGobFpermEtapa.monto)).group_by(ExtGobFpermEtapa.codigo_indec)
+        )).all()
+    )
+    distintas = [
+        c for c, disponible in (await db.execute(select(ExtGobFpermLocalidad.codigo_indec, ExtGobFpermLocalidad.disponible))).all()
+        if abs(float(disponible or 0) - float(suma.get(c) or 0)) >= 1
+    ]
+    return [{"tipo": "control_etapas_vs_disponible", "localidades": sorted(distintas)}] if distintas else []
+
+
+async def _control_comunidades_regionales(db: AsyncSession) -> list[dict]:
+    """Años y tipos donde las cuotas no anuladas superan el crédito vigente (spec Fase 3 §3)."""
+    credito = {
+        (anio, concepto): float(m or 0)
+        for anio, concepto, m in (
+            await db.execute(
+                select(ExtGobFondoValor.anio, ExtGobFondoValor.concepto, ExtGobFondoValor.monto)
+                .where(ExtGobFondoValor.fondo == parse_fondos.COMUNIDADES_REGIONALES)
+            )
+        ).all()
+    }
+    usado = (
+        await db.execute(
+            select(ExtGobCregCuota.anio, ExtGobCregCuota.tipo, func.sum(ExtGobCregCuota.monto_cuota))
+            .where(func.coalesce(ExtGobCregCuota.estado, "") != "ANULADO")
+            .group_by(ExtGobCregCuota.anio, ExtGobCregCuota.tipo)
+        )
+    ).all()
+    excedidos = []
+    for anio, tipo, total in usado:
+        concepto = "credito_obras" if (tipo or "").lower().startswith("obra") else "credito_funcionamiento"
+        if (anio, concepto) in credito and float(total or 0) > credito[(anio, concepto)] + 1:
+            excedidos.append({"anio": anio, "tipo": tipo})
+    return [{"tipo": "control_cuotas_sobre_credito", "casos": excedidos}] if excedidos else []
+
+
+_CONTROLES_FONDOS = {
+    "fondo_permanente": _control_fondo_permanente,
+    "comunidades_regionales": _control_comunidades_regionales,
+}
 
 
 class SyncFallido(Exception):
@@ -99,33 +196,91 @@ def _recortar(anomalias: list[dict]) -> list[dict]:
     return anomalias[:_MAX_ANOMALIAS] + [{"tipo": "anomalias_recortadas", "total": len(anomalias)}]
 
 
+def columna_a1(i: int) -> str:
+    """0 -> `A`, 25 -> `Z`, 26 -> `AA`."""
+    letras = ""
+    i += 1
+    while i:
+        i, resto = divmod(i - 1, 26)
+        letras = chr(65 + resto) + letras
+    return letras
+
+
+def rangos_sin_sensibles(pestana: str, encabezado: list[Any]) -> tuple[list[str], list[list[int]]]:
+    """Rangos A1 de las columnas que no son de personas, agrupadas en tramos contiguos, y las
+    posiciones originales de cada tramo."""
+    tramos: list[list[int]] = []
+    for i, h in enumerate(encabezado):
+        if parse_fondos.es_sensible(h):
+            continue
+        if tramos and tramos[-1][-1] == i - 1:
+            tramos[-1].append(i)
+        else:
+            tramos.append([i])
+    return [f"'{pestana}'!{columna_a1(t[0])}1:{columna_a1(t[-1])}" for t in tramos], tramos
+
+
+async def _leer_sin_sensibles(sheet_id: str, pestana: str) -> list[list[Any]]:
+    encabezado = (await google_sheets.get_values(sheet_id, f"'{pestana}'!1:1", "UNFORMATTED_VALUE") or [[]])[0]
+    rangos, tramos = rangos_sin_sensibles(pestana, encabezado)
+    if not rangos:
+        return []
+    partes = await google_sheets.batch_get_values(sheet_id, rangos, "UNFORMATTED_VALUE")
+    alto = max((len(p) for p in partes), default=0)
+    filas: list[list[Any]] = [[None] * len(encabezado) for _ in range(alto)]
+    for parte, posiciones in zip(partes, tramos):
+        for r, valores in enumerate(parte):
+            for k, valor in enumerate(valores[: len(posiciones)]):
+                filas[r][posiciones[k]] = valor
+    # El encabezado se conserva completo: el parser ve las columnas sensibles, pero vacías.
+    if filas:
+        filas[0] = list(encabezado)
+    return filas
+
+
 async def _leer(sheet_id: str, pestana: _Pestana) -> list[list[Any]]:
     try:
+        if pestana.excluir:
+            return await _leer_sin_sensibles(sheet_id, pestana.nombre)
         return await google_sheets.get_values(sheet_id, _rango(pestana.nombre), "UNFORMATTED_VALUE")
     except Exception as exc:  # noqa: BLE001 — cualquier falla de la fuente externa
         raise _FuenteFallida(f"no se pudo leer la pestaña {pestana.nombre}: {type(exc).__name__}") from exc
 
 
-async def _reemplazar(db: AsyncSession, modelo: type, filas: list[dict]) -> None:
+def _acotar(q, pestana: _Pestana):
+    if pestana.alcance:
+        columna, valor = pestana.alcance
+        return q.where(getattr(pestana.modelo, columna) == valor)
+    return q
+
+
+async def _reemplazar(db: AsyncSession, pestana: _Pestana, filas: list[dict]) -> None:
     async with db.begin_nested():
-        await db.execute(delete(modelo))
+        await db.execute(_acotar(delete(pestana.modelo), pestana))
         for i in range(0, len(filas), _LOTE):
-            await db.execute(insert(modelo), filas[i : i + _LOTE])
+            await db.execute(insert(pestana.modelo), filas[i : i + _LOTE])
 
 
-def _frenar(pestana: str, filas: list[dict], previas: int) -> None:
-    localidades = len({f["codigo_indec"] for f in filas})
-    if localidades < MIN_LOCALIDADES:
-        raise _FuenteFallida(
-            f"la pestaña {pestana} trae {localidades} localidades (mínimo {MIN_LOCALIDADES}); no se tocó ningún dato"
-        )
+def _frenar(pestana: _Pestana, filas: list[dict], previas: int) -> None:
+    if pestana.freno == "ninguno":
+        return
+    if pestana.freno == "localidades":
+        localidades = len({f["codigo_indec"] for f in filas})
+        if localidades < MIN_LOCALIDADES:
+            raise _FuenteFallida(
+                f"la pestaña {pestana.nombre} trae {localidades} localidades (mínimo {MIN_LOCALIDADES}); no se tocó ningún dato"
+            )
+    elif not filas:
+        raise _FuenteFallida(f"la pestaña {pestana.nombre} no trae filas; no se tocó ningún dato")
     if previas and len(filas) < previas * MIN_PROPORCION_FILAS:
         raise _FuenteFallida(
-            f"la pestaña {pestana} trae {len(filas)} filas contra {previas} de la corrida anterior; no se tocó ningún dato"
+            f"la pestaña {pestana.nombre} trae {len(filas)} filas contra {previas} de la corrida anterior; no se tocó ningún dato"
         )
 
 
-async def _aplicar(db: AsyncSession, fuente: str, codigos_nomenclador: set[str]) -> tuple[int, int, int, list[dict]]:
+async def _aplicar(
+    db: AsyncSession, fuente: str, codigos_nomenclador: set[str], entes: frozenset[str] | set[str] = frozenset()
+) -> tuple[int, int, int, list[dict]]:
     """Lee, valida y reemplaza todas las pestañas de una fuente. Devuelve
     `(leidas, insertadas, descartadas, anomalias)`; lanza `_FuenteFallida` sin tocar datos."""
     definicion = FUENTES[fuente]
@@ -136,25 +291,32 @@ async def _aplicar(db: AsyncSession, fuente: str, codigos_nomenclador: set[str])
     parseadas: list[tuple[_Pestana, list[dict]]] = []
     anomalias: list[dict] = []
     leidas = 0
+    leidas_por_pestana: dict[str, list[list[Any]]] = {}
     for pestana in definicion.pestanas:
-        valores = await _leer(sheet_id, pestana)
+        # Una pestaña que alimenta dos tablas (p. ej. `Fondo` y sus ingresos) se lee una vez.
+        if pestana.nombre not in leidas_por_pestana:
+            leidas_por_pestana[pestana.nombre] = await _leer(sheet_id, pestana)
+            leidas += max(len(leidas_por_pestana[pestana.nombre]) - 1, 0)
+        valores = leidas_por_pestana[pestana.nombre]
         try:
             filas, anom = pestana.parser(valores)
         except parse.EstructuraInvalida as exc:
             raise _FuenteFallida(f"pestaña {pestana.nombre} con estructura inesperada: {exc}") from exc
-        previas = (await db.execute(select(func.count()).select_from(pestana.modelo))).scalar_one()
-        _frenar(pestana.nombre, filas, previas)
-        leidas += max(len(valores) - 1, 0)
+        previas = (await db.execute(_acotar(select(func.count()).select_from(pestana.modelo), pestana))).scalar_one()
+        _frenar(pestana, filas, previas)
         anomalias.extend(anom)
         parseadas.append((pestana, filas))
 
-    fuera = sorted({f["codigo_indec"] for _, filas in parseadas for f in filas} - codigos_nomenclador)
+    fuera = sorted({f["codigo_indec"] for _, filas in parseadas for f in filas if f.get("codigo_indec")} - codigos_nomenclador)
     anomalias.extend({"tipo": "codigo_fuera_del_nomenclador", "codigo": c} for c in fuera)
+    if entes:
+        sin_ente = sorted({f["codigo_ente"] for _, filas in parseadas for f in filas if f.get("codigo_ente")} - set(entes))
+        anomalias.extend({"tipo": "ente_fuera_del_nomenclador", "codigo": c} for c in sin_ente)
 
     try:
         async with db.begin_nested():
             for pestana, filas in parseadas:
-                await _reemplazar(db, pestana.modelo, filas)
+                await _reemplazar(db, pestana, filas)
     except Exception as exc:  # noqa: BLE001 — el SAVEPOINT ya revirtió esta fuente
         raise _FuenteFallida(f"no se pudo guardar: {type(exc).__name__}") from exc
 
@@ -205,10 +367,11 @@ async def sync_transferencias(db: AsyncSession, fuentes: list[str], disparado_po
     codigos = set(
         (await db.execute(select(ExtGobLocalidad.codigo_indec).where(ExtGobLocalidad.deleted_at.is_(None)))).scalars()
     )
+    entes = set((await db.execute(select(ExtGobEnte.codigo).where(ExtGobEnte.deleted_at.is_(None)))).scalars())
     logs: list[ExtGobSyncLog] = []
     for fuente in fuentes:
         try:
-            leidas, insertadas, descartadas, anomalias = await _aplicar(db, fuente, codigos)
+            leidas, insertadas, descartadas, anomalias = await _aplicar(db, fuente, codigos, entes)
         except _FuenteFallida as exc:
             logger.warning("sync transferencias de Gobierno: %s falló: %s", fuente, exc)
             logs.append(await _log(db, fuente, "fallido", disparado_por, [{"tipo": "corrida_fallida", "detalle": str(exc)}]))
@@ -217,6 +380,8 @@ async def sync_transferencias(db: AsyncSession, fuentes: list[str], disparado_po
             await _completar_ficha_empleados(db)
         if fuente in conciliacion.CONCEPTO_TRANSPARENCIA:
             anomalias.extend(conciliacion.resumen_para_log(await conciliacion.calcular_transparencia(db, fuente)))
+        if fuente in _CONTROLES_FONDOS:
+            anomalias.extend(await _CONTROLES_FONDOS[fuente](db))
         sin_match = sum(1 for a in anomalias if a.get("tipo") == "codigo_fuera_del_nomenclador")
         logs.append(await _log(
             db, fuente, "parcial" if descartadas else "ok", disparado_por, anomalias,

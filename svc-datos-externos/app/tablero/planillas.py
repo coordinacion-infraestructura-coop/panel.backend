@@ -11,6 +11,7 @@ from datetime import date
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.gob_fondos.models import ExtGobFondoAmbiental
 from app.gob_transferencias.models import (
     ExtGobCopa,
     ExtGobEmpleados,
@@ -360,7 +361,7 @@ async def get_fommep(db: AsyncSession, codigos: list[str] | None) -> FommepRespo
     )
 
 
-# ── Resumen general (COPA + FOFINDES, spec Fase 2 §5.2) ─────────────────────────────
+# ── Resumen general (COPA + FOFINDES, spec Fase 2 §5.2; + Fondo Ambiental, Fase 3 §4) ─────────────────────────────
 
 
 async def get_resumen(db: AsyncSession, anio: int, codigos: list[str] | None, poblacion: dict[str, int]) -> ResumenResponse:
@@ -370,30 +371,39 @@ async def get_resumen(db: AsyncSession, anio: int, codigos: list[str] | None, po
 
     copa = await neto_por_codigo(ExtGobCopa)
     fofindes = await neto_por_codigo(ExtGobFofindes)
+    # Fase 3 §4: Fondo Ambiental pagado a localidades; lo de comunidades regionales no entra.
+    q_fa = (
+        select(ExtGobFondoAmbiental.codigo_indec, func.sum(ExtGobFondoAmbiental.monto))
+        .where(ExtGobFondoAmbiental.anio == anio, ExtGobFondoAmbiental.estado == "PAGADO", ExtGobFondoAmbiental.codigo_indec.is_not(None))
+        .group_by(ExtGobFondoAmbiental.codigo_indec)
+    )
+    ambiental = {c: _f(m) for c, m in (await db.execute(_filtrar(q_fa, ExtGobFondoAmbiental, codigos))).all()}
     ultimo_mes = (await db.execute(_filtrar(select(func.max(ExtGobCopa.mes)).where(ExtGobCopa.anio == anio), ExtGobCopa, codigos))).scalar_one()
     locs = await _nomenclador(db, codigos)
 
-    def fila(clave: str, departamento: str, ls: list[ExtGobLocalidad], c: float, fo: float, **extra) -> ResumenFila:
+    def fila(clave: str, departamento: str, ls: list[ExtGobLocalidad], c: float, fo: float, fa: float, **extra) -> ResumenFila:
         pob = sum(poblacion.get(loc.codigo_indec, 0) for loc in ls)
+        total = c + fo + fa
         return ResumenFila(
             clave=clave, departamento=departamento, localidades=len(ls), poblacion=pob,
-            copa=c, fofindes=fo, total=c + fo, por_habitante=aggregations.por_habitante(c + fo, pob), **extra,
+            copa=c, fofindes=fo, fondo_ambiental=fa, total=total, por_habitante=aggregations.por_habitante(total, pob), **extra,
         )
 
     por_localidad = [
         fila(loc.codigo_indec, loc.departamento_gob, [loc], copa.get(loc.codigo_indec, 0.0), fofindes.get(loc.codigo_indec, 0.0),
-             localidad=loc.nombre_gob, tipo=_TIPOS.get(loc.tipo or ""))
+             ambiental.get(loc.codigo_indec, 0.0), localidad=loc.nombre_gob, tipo=_TIPOS.get(loc.tipo or ""))
         for loc in locs
     ]
     deptos: dict[str, list[ExtGobLocalidad]] = defaultdict(list)
     for loc in locs:
         deptos[loc.departamento_gob].append(loc)
     por_departamento = [
-        fila(d, d, ls, sum(copa.get(x.codigo_indec, 0.0) for x in ls), sum(fofindes.get(x.codigo_indec, 0.0) for x in ls))
+        fila(d, d, ls, sum(copa.get(x.codigo_indec, 0.0) for x in ls), sum(fofindes.get(x.codigo_indec, 0.0) for x in ls),
+             sum(ambiental.get(x.codigo_indec, 0.0) for x in ls))
         for d, ls in sorted(deptos.items())
     ]
     # Total: sin filtro suma todo lo de la planilla, también códigos fuera del nomenclador.
-    total = fila("total", "Total", locs, sum(copa.values()), sum(fofindes.values()))
+    total = fila("total", "Total", locs, sum(copa.values()), sum(fofindes.values()), sum(ambiental.values()))
     return ResumenResponse(
         anio=anio,
         periodo_hasta=date(anio, ultimo_mes, 1) if ultimo_mes else None,
