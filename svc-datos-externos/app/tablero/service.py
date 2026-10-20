@@ -11,16 +11,21 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.geo_censo.models import ExtGeoCenso
+from app.gob_transferencias import sync as gob_transferencias_sync
+from app.gob_transferencias.models import ExtGobCopa
 from app.gobierno import sync as gobierno_sync
 from app.gobierno.models import ExtGobLocalidad
-from app.tablero import aggregations
+from app.tablero import aggregations, planillas
 from app.tablero.schemas import (
     ConceptoMonto,
+    FodemeepResponse,
+    FommepResponse,
     FuenteFrescura,
     InicioDepartamento,
     InicioKpis,
     InicioResponse,
     LocalidadFiltro,
+    ResumenResponse,
     TableroMetaResponse,
     TransferenciasResponse,
 )
@@ -57,6 +62,7 @@ async def _anios(db: AsyncSession) -> list[int]:
     """Años con transferencias cargadas, más el año en curso; del más nuevo al más viejo."""
     periodos = (await db.execute(select(ExtTransferencia.periodo).distinct())).scalars()
     anios = {p.year for p in periodos if p is not None}
+    anios |= set((await db.execute(select(ExtGobCopa.anio).distinct())).scalars())
     anios.add(datetime.now(timezone.utc).year)
     return sorted(anios, reverse=True)
 
@@ -67,6 +73,19 @@ async def _frescura(db: AsyncSession) -> list[FuenteFrescura]:
     logs = {log.fuente: log for log in await gobierno_sync.get_sync_estado(db)}
     for fuente, etiqueta in _ETIQUETAS_GOB.items():
         log = logs.get(fuente)
+        fuentes.append(
+            FuenteFrescura(
+                fuente=fuente,
+                etiqueta=etiqueta,
+                estado=log.estado if log else "sin_datos",
+                ultima_corrida=log.corrida_en if log else None,
+                detalle=f"{log.filas_upsert} filas" if log else None,
+            )
+        )
+
+    logs_planillas = {log.fuente: log for log in await gob_transferencias_sync.get_sync_estado(db)}
+    for fuente, etiqueta in gob_transferencias_sync.ETIQUETAS.items():
+        log = logs_planillas.get(fuente)
         fuentes.append(
             FuenteFrescura(
                 fuente=fuente,
@@ -256,7 +275,7 @@ async def get_transferencias(
         key=lambda x: -x.monto,
     )
 
-    return TransferenciasResponse(
+    base = TransferenciasResponse(
         concepto=seccion,
         etiqueta=etiqueta,
         anio=anio,
@@ -270,3 +289,21 @@ async def get_transferencias(
         por_concepto=por_concepto,
         localidades=len({f.id_geo for f in filas_c if f.id_geo and f.periodo.year == anio}),
     )
+    # Etapa 2: la planilla de Gobierno manda cuando tiene el año (spec Fase 2 §5).
+    return await planillas.enriquecer_transferencias(db, seccion, anio, codigos, base)
+
+
+# ── Etapa 2: secciones que salen solo de las planillas de Gobierno ───────────────────
+
+SECCIONES_PLANILLAS = ("fodemeep", "fommep", "resumen")
+
+
+async def get_seccion_planilla(
+    db: AsyncSession, seccion: str, anio: int, codigos: list[str] | None
+) -> FodemeepResponse | FommepResponse | ResumenResponse:
+    if seccion == "fodemeep":
+        return await planillas.get_fodemeep(db, anio, codigos)
+    if seccion == "fommep":
+        return await planillas.get_fommep(db, codigos)
+    poblacion = await _poblacion_por_codigo(db, await _nomenclador(db, codigos))
+    return await planillas.get_resumen(db, anio, codigos, poblacion)

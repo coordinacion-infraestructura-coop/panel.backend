@@ -63,6 +63,13 @@ _COLS_VISTA: dict[str, tuple[str, str]] = {
     "PARTIDO": ("partido", "texto"),
 }
 
+# Columnas de control (Fase 2, spec-datos-externos-fase2-transferencias.md §4.2): opcionales,
+# para que un cambio de nombre no frene la lectura de población y partido.
+_COLS_VISTA_CONTROL: dict[str, tuple[str, str]] = {
+    "COPA": ("copa_vista_m", "decimal"),
+    "FOFINDES": ("fofindes_vista_m", "decimal"),
+}
+
 _LARGO_TEXTO = 150
 _LARGO_CONTACTO = 40
 
@@ -373,6 +380,14 @@ async def _upsert_nomenclador(
 async def _aplicar_vista(db: AsyncSession, valores: list[list[Any]], anomalias: list[dict]) -> tuple[int, int, int, int]:
     """Devuelve `(leidas, upsert, error, sin_match)`."""
     idx = _indices(valores, _FILA_ENCABEZADOS_VISTA, ["ID_LOC", *_COLS_VISTA])
+    encabezados = [_norm_header(h) for h in valores[_FILA_ENCABEZADOS_VISTA]]
+    columnas = dict(_COLS_VISTA)
+    for encabezado, destino in _COLS_VISTA_CONTROL.items():
+        if encabezado in encabezados:
+            idx[encabezado] = encabezados.index(encabezado)
+            columnas[encabezado] = destino
+        else:
+            anomalias.append({"tipo": "columna_control_ausente", "columna": encabezado})
 
     # Se vuelven a traer: un SAVEPOINT revertido en el paso anterior deja las
     # instancias expiradas, y en async no hay carga perezosa.
@@ -394,7 +409,7 @@ async def _aplicar_vista(db: AsyncSession, valores: list[list[Any]], anomalias: 
         leidas += 1
 
         convertidos: dict[str, Any] = {}
-        for encabezado, (campo, tipo) in _COLS_VISTA.items():
+        for encabezado, (campo, tipo) in columnas.items():
             valor, invalido = _convertir(_celda(fila, idx[encabezado]), tipo)
             convertidos[campo] = valor
             if invalido:

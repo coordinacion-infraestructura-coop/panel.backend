@@ -19,6 +19,14 @@ from app.fuentes_oficiales.models import (  # noqa: F401
     ExtRenabapBarrio,
 )
 from app.gobierno.models import ExtGobEnte, ExtGobLocalidad, ExtGobSyncLog  # noqa: F401
+from app.gob_transferencias.models import (  # noqa: F401
+    ExtGobCopa,
+    ExtGobEmpleados,
+    ExtGobFodemep,
+    ExtGobFodemepEstado,
+    ExtGobFofindes,
+    ExtGobFommep,
+)
 from app.transferencias.models import ExtTransferencia, ExtTransferenciaSyncLog  # noqa: F401
 
 

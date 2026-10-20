@@ -41,6 +41,16 @@ class Settings(BaseSettings):
     google_sheet_gob_resumen_vista_id: str = ""
     gob_localidades_sync_enabled: bool = False
 
+    # Planillas de transferencias de Gobierno (spec-datos-externos-fase2-transferencias.md §3):
+    # COPA, FOFINDES, FODEMEP, FOMMEP y EMPLEADOS. Mismo criterio: valores reales en
+    # services/cloudbuild.yaml, compartidas como Lector con svc-datos-externos@.
+    google_sheet_gob_copa_id: str = ""
+    google_sheet_gob_fofindes_id: str = ""
+    google_sheet_gob_fodemep_id: str = ""
+    google_sheet_gob_fommep_id: str = ""
+    google_sheet_gob_empleados_id: str = ""
+    gob_transferencias_sync_enabled: bool = False
+
     # WFS público de IDECOR (Catastro) para la valuación de parcelas de Mi Lugar
     # (spec-mi-lugar-valor-fiscal-idecor.md §4, ADR-031). Sin autenticación.
     idecor_wfs_url: str = "https://idecor-ws.mapascordoba.gob.ar/geoserver/idecor/wfs"

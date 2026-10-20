@@ -20,6 +20,14 @@ from app.fuentes_oficiales.models import (
     ExtRenabapBarrio,
 )
 from app.gobierno.models import ExtGobEnte, ExtGobLocalidad, ExtGobSyncLog
+from app.gob_transferencias.models import (
+    ExtGobCopa,
+    ExtGobEmpleados,
+    ExtGobFodemep,
+    ExtGobFodemepEstado,
+    ExtGobFofindes,
+    ExtGobFommep,
+)
 from app.transferencias.models import ExtTransferencia, ExtTransferenciaSyncLog
 
 config = context.config
