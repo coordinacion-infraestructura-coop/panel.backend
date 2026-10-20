@@ -53,6 +53,10 @@ class ExtGobLocalidad(Base):
     poblacion_2010: Mapped[int | None] = mapped_column(Integer)
     # Sólo control: la población que se muestra es la del Censo (ext_geo_censo).
     poblacion_2022_gob: Mapped[int | None] = mapped_column(Integer)
+    # Sólo control, nunca se exponen: totales de la Vista en millones de pesos, contra los que
+    # se concilia lo calculado desde las planillas base (spec-datos-externos-fase2-transferencias.md §4.2).
+    copa_vista_m: Mapped[float | None] = mapped_column(Numeric(18, 4))
+    fofindes_vista_m: Mapped[float | None] = mapped_column(Numeric(18, 4))
 
     # Restringidos (ver CAMPOS_RESTRINGIDOS)
     electores: Mapped[int | None] = mapped_column(Integer)

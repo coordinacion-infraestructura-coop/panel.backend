@@ -42,3 +42,11 @@ def por_habitante(monto: float, poblacion: int | None) -> float | None:
     if not poblacion:
         return None
     return monto / poblacion
+
+
+def proporcion(parte: float, total: float) -> float | None:
+    """`parte / total` (0.25 = 25 %); None si no hay total. Retenciones sobre la COPA bruta y
+    % a sueldos (spec-datos-externos-fase2-transferencias.md §5)."""
+    if not total:
+        return None
+    return parte / total

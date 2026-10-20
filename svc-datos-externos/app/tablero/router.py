@@ -11,7 +11,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth import AuthUser, require_roles
 from app.database import get_db
 from app.tablero import service
-from app.tablero.schemas import InicioResponse, TableroMetaResponse, TransferenciasResponse
+from app.tablero.schemas import (
+    FodemeepResponse,
+    FommepResponse,
+    InicioResponse,
+    ResumenResponse,
+    TableroMetaResponse,
+    TransferenciasResponse,
+)
 
 ROLES_TABLERO = ("Admin", "Autoridad")
 
@@ -42,19 +49,26 @@ async def tablero_inicio(
     return await service.get_inicio(db, anio, codigo_indec)
 
 
-@router.get("/transferencias/{seccion}", response_model=TransferenciasResponse)
+@router.get(
+    "/transferencias/{seccion}",
+    response_model=TransferenciasResponse | FodemeepResponse | FommepResponse | ResumenResponse,
+)
 async def tablero_transferencias(
     seccion: str,
     anio: int = _ANIO,
     codigo_indec: list[str] | None = _CODIGOS,
     db: AsyncSession = Depends(get_db),
     _user: AuthUser = Depends(require_roles(*ROLES_TABLERO)),
-) -> TransferenciasResponse:
-    """Coparticipación o FOFINDES: serie mensual del año y del anterior, acumulado y
-    variación (Etapa 1, desde Transparencia)."""
-    if seccion not in service.SECCIONES_TRANSFERENCIAS:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"code": "SECCION_INEXISTENTE", "message": f"Sección de transferencias desconocida: {seccion}"},
-        )
-    return await service.get_transferencias(db, seccion, anio, codigo_indec)
+) -> TransferenciasResponse | FodemeepResponse | FommepResponse | ResumenResponse:
+    """`coparticipacion` y `fofindes`: serie mensual, acumulado y variación; desde la planilla de
+    Gobierno cuando tiene el año (quincenas, neto, descuentos, retenciones, % a sueldos) y si no
+    desde Transparencia. `fodemeep`, `fommep` y `resumen`: solo planillas (Etapa 2,
+    spec-datos-externos-fase2-transferencias.md §5)."""
+    if seccion in service.SECCIONES_TRANSFERENCIAS:
+        return await service.get_transferencias(db, seccion, anio, codigo_indec)
+    if seccion in service.SECCIONES_PLANILLAS:
+        return await service.get_seccion_planilla(db, seccion, anio, codigo_indec)
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail={"code": "SECCION_INEXISTENTE", "message": f"Sección de transferencias desconocida: {seccion}"},
+    )

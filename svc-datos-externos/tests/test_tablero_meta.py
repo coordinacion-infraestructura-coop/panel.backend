@@ -51,7 +51,11 @@ async def test_meta_devuelve_localidades_anios_y_frescura(client: AsyncClient, d
     assert {2025, 2026} <= set(body["anios"])
 
     fr = {f["fuente"]: f for f in body["frescura"]}
-    assert list(fr) == ["nomenclador", "resumen_vista", "transferencias", "censo_2022"]
+    assert list(fr) == [
+        "nomenclador", "resumen_vista", "copa", "fofindes", "fodemep", "fommep", "empleados",
+        "transferencias", "censo_2022",
+    ]
+    assert fr["copa"]["estado"] == "sin_datos"
     # La última corrida manda, aunque haya fallado: el tablero tiene que mostrarlo.
     assert fr["nomenclador"]["estado"] == "fallido"
     assert fr["resumen_vista"]["estado"] == "sin_datos" and fr["resumen_vista"]["ultima_corrida"] is None

@@ -21,6 +21,7 @@ from app.catastro import service as catastro_service
 from app.catastro.schemas import ValuacionRequest, ValuacionResponse
 from app.config import settings
 from app.database import get_db
+from app.gob_transferencias import sync as gob_transferencias_sync
 from app.gobierno import sync as gobierno_sync
 from app.gobierno.schemas import GobSyncFuenteResponse, GobSyncResultResponse, ZonaRuralResponse
 from app.transferencias import sync as transferencias_sync
@@ -69,6 +70,48 @@ async def sync_gobierno_localidades(
 async def estado_sync_gobierno_localidades(db: AsyncSession = Depends(get_db)):
     """Última corrida de cada fuente (`nomenclador`, `resumen_vista`)."""
     return await gobierno_sync.get_sync_estado(db)
+
+
+@router.post("/datos-externos/gobierno/transferencias/sync", response_model=list[GobSyncFuenteResponse])
+async def sync_gobierno_transferencias(
+    fuente: str = "todas",
+    triggered_by: str = "cloud-scheduler",
+    db: AsyncSession = Depends(get_db),
+):
+    """Planillas de transferencias de Gobierno: COPA, FOFINDES, FODEMEP, FOMMEP y EMPLEADOS
+    (spec-datos-externos-fase2-transferencias.md §3). Disparado por Cloud Scheduler (diario) o
+    manualmente. Solo lee; nunca escribe en las planillas. `fuente` = `todas` o una de ellas."""
+    if not settings.gob_transferencias_sync_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"code": "GOB_SYNC_DESHABILITADO", "message": "GOB_TRANSFERENCIAS_SYNC_ENABLED está apagado"},
+        )
+    fuentes = list(gob_transferencias_sync.FUENTES) if fuente == "todas" else [fuente]
+    if any(f not in gob_transferencias_sync.FUENTES for f in fuentes):
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "FUENTE_INVALIDA", "message": f"fuente debe ser 'todas' o una de: {', '.join(gob_transferencias_sync.FUENTES)}"},
+        )
+    try:
+        return await gob_transferencias_sync.sync_transferencias(db, fuentes, disparado_por=triggered_by)
+    except gob_transferencias_sync.SyncFallido as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail={"code": "GOB_SYNC_FALLIDO", "message": str(exc)},
+        )
+
+
+@router.get("/datos-externos/gobierno/transferencias/sync-estado", response_model=list[GobSyncFuenteResponse])
+async def estado_sync_gobierno_transferencias(db: AsyncSession = Depends(get_db)):
+    """Última corrida de cada fuente (`copa`, `fofindes`, `fodemep`, `fommep`, `empleados`)."""
+    return await gob_transferencias_sync.get_sync_estado(db)
+
+
+@router.get("/datos-externos/gobierno/transferencias/conciliacion")
+async def conciliacion_gobierno_transferencias(anio: int | None = None, db: AsyncSession = Depends(get_db)):
+    """Planillas de Gobierno contra el scraping de Transparencia (por mes) y contra los totales
+    de la Vista (spec §4). Solo totales y códigos de localidad."""
+    return await gob_transferencias_sync.get_conciliacion(db, anio)
 
 
 @router.post("/datos-externos/transferencias/sync", response_model=SyncResultResponse)
