@@ -219,8 +219,10 @@ async def test_sync_todas_las_fuentes(client: AsyncClient, db_session: AsyncSess
         r = await client.post("/internal/datos-externos/gobierno/transferencias/sync")
     assert r.status_code == 200, r.text
     logs = {x["fuente"]: x for x in r.json()}
-    # Las planillas de fondos (Fase 3) no están configuradas acá: fallan solas, sin frenar al resto.
-    fondos = {"fondo_permanente", "fondo_ambiental", "comunidades_regionales"}
+    # Las planillas de fondos (Fase 3) y de gestión (Fase 5) no están configuradas acá: fallan
+    # solas, sin frenar al resto.
+    fondos = {"fondo_permanente", "fondo_ambiental", "comunidades_regionales",
+              "obras", "recorridos", "recorridos_ministro", "reuniones", "convenios"}
     assert set(logs) == {"copa", "fofindes", "fodemep", "fommep", "empleados"} | fondos
     assert all(logs[f]["estado"] == "fallido" for f in fondos)
     logs = {f: x for f, x in logs.items() if f not in fondos}

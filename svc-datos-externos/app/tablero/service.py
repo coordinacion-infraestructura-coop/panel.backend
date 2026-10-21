@@ -16,7 +16,7 @@ from app.gob_transferencias.models import ExtGobCopa
 from app.gobierno import sync as gobierno_sync
 from app.gobierno.models import ExtGobLocalidad
 from app.integrations import atp_interno
-from app.tablero import aggregations, fondos, planillas
+from app.tablero import aggregations, fondos, gestion, planillas
 from app.tablero.schemas import (
     ConceptoMonto,
     FodemeepResponse,
@@ -223,6 +223,7 @@ async def get_inicio(db: AsyncSession, anio: int, codigos: list[str] | None) -> 
             por_habitante=aggregations.por_habitante(transferido, pob_total),
         ),
         por_departamento=por_departamento,
+        gestion=await gestion.get_inicio_gestion(db, codigos),
     )
 
 

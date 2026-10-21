@@ -63,9 +63,9 @@ class _Enc(_Encabezados):
         return super().get(fila, clave) if clave else None
 
 
-def es_sensible(encabezado: Any) -> bool:
+def es_sensible(encabezado: Any, excluidas: tuple[str, ...] = COLUMNAS_SENSIBLES) -> bool:
     h = sin_tildes(_limpio(encabezado).upper())
-    return any(h.startswith(s) for s in COLUMNAS_SENSIBLES)
+    return any(h.startswith(s) for s in excluidas)
 
 
 def fecha_texto(raw: Any) -> date | None:

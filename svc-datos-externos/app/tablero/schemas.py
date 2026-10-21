@@ -48,6 +48,8 @@ class InicioResponse(BaseModel):
     periodo_hasta: date | None  # último mes con transferencias publicadas en el año
     kpis: InicioKpis
     por_departamento: list[InicioDepartamento]
+    # Etapa 5: visitas, reuniones y Gobernador en toda la gestión; None sin planillas de gestión.
+    gestion: "InicioGestion | None" = None
 
 
 class ConceptoMonto(BaseModel):
@@ -391,3 +393,219 @@ class ComunidadesRegionalesResponse(BaseModel):
     gestion: CregKpis | None
     por_anio: list[CregAnio]
     cuotas: list[CregCuota]
+
+
+# ── Etapa 5: gestión territorial (spec-datos-externos-fase5-gestion-territorial.md §4) ──────
+
+
+class Conteo(BaseModel):
+    clave: str
+    cantidad: int
+
+
+class Cobertura(BaseModel):
+    total: int
+    visitadas: int
+    municipios: int
+    municipios_visitados: int
+    comunas: int
+    comunas_visitadas: int
+
+
+class CoberturaDepartamento(Cobertura):
+    departamento: str
+
+
+class InicioGestion(BaseModel):
+    """Toda la gestión (no responde al año de la barra)."""
+    visitas: int
+    localidades_visitadas: int
+    reuniones: int
+    localidades_con_reunion: int
+    gobernador_visitadas: int
+    gobernador_total: int
+
+
+class VisitaFila(BaseModel):
+    fecha: date
+    origen: str  # funcionarios | ministro
+    funcionario: str | None
+    tipo: str | None
+    codigo_indec: str
+    localidad: str | None
+    departamento: str | None
+
+
+class VisitasFuncionario(BaseModel):
+    funcionario: str
+    actividades: int
+    localidades: int
+    municipios: int
+    comunas: int
+
+
+class VisitasPeriodo(BaseModel):
+    visitas: int
+    cobertura: Cobertura
+    por_departamento: list[CoberturaDepartamento]
+    por_funcionario: list[VisitasFuncionario]
+    por_tipo: list[Conteo]
+    mensual: list[int]  # 12 valores; vacío para la gestión
+
+
+class VisitasAnio(BaseModel):
+    anio: int
+    periodo: VisitasPeriodo
+
+
+class VisitasResponse(BaseModel):
+    concepto: str = "visitas"
+    anios: list[int]
+    gestion: VisitasPeriodo
+    por_anio: list[VisitasAnio]
+    visitas: list[VisitaFila]
+    ultima_fecha: dict[str, date | None]  # por origen: última visita cargada
+
+
+class VisitasGobernadorFila(BaseModel):
+    codigo_indec: str
+    localidad: str
+    departamento: str
+    tipo: str | None
+    visitada: bool
+    fecha_ultima: date | None
+    rango_habitantes: str
+
+
+class VisitasGobernadorRango(BaseModel):
+    rango: str
+    total: int
+    visitadas: int
+
+
+class VisitasGobernadorResponse(BaseModel):
+    concepto: str = "visitas-gobernador"
+    cobertura: Cobertura
+    por_departamento: list[CoberturaDepartamento]
+    por_rango: list[VisitasGobernadorRango]
+    localidades: list[VisitasGobernadorFila]
+    con_datos: bool
+
+
+class ReunionFila(BaseModel):
+    fecha: date
+    codigo: str
+    localidad: str | None
+    departamento: str | None
+    temas: list[str]
+    resolucion: str | None
+
+
+class ReunionesLocalidad(BaseModel):
+    codigo: str
+    localidad: str | None
+    departamento: str | None
+    reuniones: int
+    pendientes: int
+    ultima: date
+
+
+class ReunionesPeriodo(BaseModel):
+    reuniones: int
+    localidades: int
+    por_tema: list[Conteo]
+    por_resolucion: list[Conteo]
+    mensual: list[int]
+    por_localidad: list[ReunionesLocalidad]
+
+
+class ReunionesAnio(BaseModel):
+    anio: int
+    periodo: ReunionesPeriodo
+
+
+class ReunionesResponse(BaseModel):
+    concepto: str = "reuniones"
+    anios: list[int]
+    gestion: ReunionesPeriodo
+    por_anio: list[ReunionesAnio]
+    reuniones: list[ReunionFila]
+    ultima_fecha: date | None
+
+
+class ObraLocalidad(BaseModel):
+    codigo: str
+    nombre: str
+
+
+class ObraFila(BaseModel):
+    """Sin monto hasta que el área confirme la moneda (spec Fase 5 §0)."""
+    id_obra: str
+    nombre: str | None
+    ambito: str | None
+    division: str | None
+    estado: str | None
+    categoria: str | None
+    avance: float | None
+    fecha_inicio: date | None
+    fecha_fin: date | None
+    departamentos: list[str]
+    localidades: list[ObraLocalidad]
+
+
+class ObrasKpis(BaseModel):
+    obras: int
+    en_ejecucion: int
+    finalizadas: int
+    a_ejecutar: int
+    avance_promedio: float | None
+    localidades: int
+
+
+class ObrasDepartamento(BaseModel):
+    departamento: str
+    obras: int
+    en_ejecucion: int
+    finalizadas: int
+
+
+class ObrasResponse(BaseModel):
+    concepto: str = "obras"
+    kpis: ObrasKpis
+    por_estado: list[Conteo]
+    por_division: list[Conteo]
+    por_departamento: list[ObrasDepartamento]
+    obras: list[ObraFila]
+
+
+class ConvenioValor(BaseModel):
+    valor: str | None  # SI / NO / NC
+    cantidad: int | None
+    detalle: str | None
+
+
+class ConvenioLocalidad(BaseModel):
+    codigo_indec: str
+    localidad: str
+    departamento: str
+    tipo: str | None
+    valores: dict[str, ConvenioValor]
+
+
+class ConvenioResumen(BaseModel):
+    convenio: str
+    si: int
+    no: int
+    nc: int
+    sin_dato: int
+    cantidad: int | None  # suma, en las columnas de cantidad
+
+
+class ConveniosResponse(BaseModel):
+    concepto: str = "convenios"
+    convenios: list[str]
+    resumen: list[ConvenioResumen]
+    localidades: list[ConvenioLocalidad]
+
+
+InicioResponse.model_rebuild()

@@ -10,17 +10,22 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import AuthUser, require_roles
 from app.database import get_db
-from app.tablero import service
+from app.tablero import gestion, service
 from app.tablero.schemas import (
     ComunidadesRegionalesResponse,
+    ConveniosResponse,
     FodemeepResponse,
     FondoAmbientalResponse,
     FondoPermanenteResponse,
     FommepResponse,
     InicioResponse,
+    ObrasResponse,
+    ReunionesResponse,
     ResumenResponse,
     TableroMetaResponse,
     TransferenciasResponse,
+    VisitasGobernadorResponse,
+    VisitasResponse,
 )
 
 ROLES_TABLERO = ("Admin", "Autoridad")
@@ -77,3 +82,24 @@ async def tablero_transferencias(
         status_code=status.HTTP_404_NOT_FOUND,
         detail={"code": "SECCION_INEXISTENTE", "message": f"Sección de transferencias desconocida: {seccion}"},
     )
+
+
+@router.get(
+    "/gestion/{seccion}",
+    response_model=ObrasResponse | VisitasResponse | VisitasGobernadorResponse | ReunionesResponse | ConveniosResponse,
+)
+async def tablero_gestion(
+    seccion: str,
+    codigo_indec: list[str] | None = _CODIGOS,
+    db: AsyncSession = Depends(get_db),
+    _user: AuthUser = Depends(require_roles(*ROLES_TABLERO)),
+):
+    """Gestión territorial (Etapa 5, spec-datos-externos-fase5-gestion-territorial.md §4):
+    `obras` (sin montos), `visitas`, `visitas-gobernador`, `reuniones` y `convenios`. Cada
+    respuesta trae toda la gestión y cada año; la pantalla elige."""
+    if seccion not in gestion.SECCIONES_GESTION:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "SECCION_INEXISTENTE", "message": f"Sección de gestión desconocida: {seccion}"},
+        )
+    return await gestion.get_seccion(db, seccion, codigo_indec)

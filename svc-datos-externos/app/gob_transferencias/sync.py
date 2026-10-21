@@ -17,6 +17,10 @@ Fase 3 (spec-datos-externos-fase3-fondos.md §3): las planillas de fondos se sum
 de este mismo sync. Sus pestañas tienen columnas de personas (`INTENDENTE`, `CUIT`,
 `OBSERVACIONES`); con `excluir=True` se lee primero el encabezado y después solo los rangos de
 columnas que no lo son, así que esos datos nunca llegan al servicio.
+
+Fase 5 (spec-datos-externos-fase5-gestion-territorial.md §3): obras, recorridos, reuniones y
+convenios se suman igual. `excluir` también acepta la lista de columnas propia de la pestaña
+(intendente y partido, detalle de reuniones, tema e institución de las visitas).
 """
 import logging
 from dataclasses import dataclass
@@ -28,6 +32,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.gob_fondos import parse as parse_fondos
+from app.gob_gestion import parse as parse_gestion
+from app.gob_gestion.models import ExtGobConvenio, ExtGobObra, ExtGobReunion, ExtGobVisita, ExtGobVisitaGobernador
 from app.gob_fondos.models import (
     ExtGobCregCuota,
     ExtGobFondoAmbiental,
@@ -67,8 +73,15 @@ class _Pestana:
     freno: str = "localidades"
     # (columna, valor): la pestaña reemplaza solo esas filas del modelo (`ext_gob_fondo_valor`).
     alcance: tuple[str, str] | None = None
-    # Saltear las columnas de personas al leer (Fase 3 §3).
-    excluir: bool = False
+    # Saltear columnas al leer: True = las de personas de la Fase 3 (§3); una tupla = esos
+    # encabezados (sin tildes, por prefijo), Fase 5 §3.
+    excluir: bool | tuple[str, ...] = False
+
+    @property
+    def excluidas(self) -> tuple[str, ...]:
+        if self.excluir is True:
+            return parse_fondos.COLUMNAS_SENSIBLES
+        return self.excluir or ()
 
 
 @dataclass(frozen=True)
@@ -116,6 +129,29 @@ FUENTES: dict[str, _Fuente] = {
                      ("fondo", parse_fondos.COMUNIDADES_REGIONALES)),
         ),
     ),
+    # Fase 5. Los recorridos de las dos planillas van a la misma tabla, separados por `origen`.
+    "obras": _Fuente("google_sheet_gob_obras_id", (_Pestana("BD-TABLERO", parse_gestion.parsear_obras, ExtGobObra, "proporcion"),)),
+    "recorridos": _Fuente(
+        "google_sheet_gob_recorridos_id",
+        (
+            _Pestana("Recorrido", parse_gestion.parsear_recorrido(parse_gestion.ORIGEN_FUNCIONARIOS), ExtGobVisita, "proporcion",
+                     ("origen", parse_gestion.ORIGEN_FUNCIONARIOS), excluir=parse_gestion.COLUMNAS_EXCLUIDAS["Recorrido"]),
+            _Pestana("Visitas Gober", parse_gestion.parsear_visitas_gobernador, ExtGobVisitaGobernador,
+                     excluir=parse_gestion.COLUMNAS_EXCLUIDAS["Visitas Gober"]),
+        ),
+    ),
+    "recorridos_ministro": _Fuente(
+        "google_sheet_gob_recorridos_ministro_id",
+        (
+            _Pestana("Recorrido", parse_gestion.parsear_recorrido(parse_gestion.ORIGEN_MINISTRO), ExtGobVisita, "proporcion",
+                     ("origen", parse_gestion.ORIGEN_MINISTRO), excluir=parse_gestion.COLUMNAS_EXCLUIDAS["Recorrido"]),
+        ),
+    ),
+    "reuniones": _Fuente(
+        "google_sheet_gob_reuniones_id",
+        (_Pestana("Reuniones", parse_gestion.parsear_reuniones, ExtGobReunion, "proporcion", excluir=parse_gestion.COLUMNAS_EXCLUIDAS["Reuniones"]),),
+    ),
+    "convenios": _Fuente("google_sheet_gob_convenios_id", (_Pestana("Convenios", parse_gestion.parsear_convenios, ExtGobConvenio),)),
 }
 
 ETIQUETAS = {
@@ -127,6 +163,11 @@ ETIQUETAS = {
     "fondo_permanente": "7. Fondo Permanente (Gobierno)",
     "fondo_ambiental": "9. Fondo Ambiental (Gobierno)",
     "comunidades_regionales": "17. Comunidades Regionales (Gobierno)",
+    "obras": "12. Obras (Gobierno)",
+    "recorridos": "2. Recorrido y visitas (Gobierno)",
+    "recorridos_ministro": "2.1 Recorrido y visitas del ministro (Gobierno)",
+    "reuniones": "1. Registro de reuniones (Gobierno)",
+    "convenios": "6. Convenios firmados (Gobierno)",
 }
 
 _DESCARTES = {"fila_sin_codigo", "fila_invalida", "fila_repetida"}
@@ -206,12 +247,14 @@ def columna_a1(i: int) -> str:
     return letras
 
 
-def rangos_sin_sensibles(pestana: str, encabezado: list[Any]) -> tuple[list[str], list[list[int]]]:
-    """Rangos A1 de las columnas que no son de personas, agrupadas en tramos contiguos, y las
+def rangos_sin_sensibles(
+    pestana: str, encabezado: list[Any], excluidas: tuple[str, ...] = parse_fondos.COLUMNAS_SENSIBLES
+) -> tuple[list[str], list[list[int]]]:
+    """Rangos A1 de las columnas que no están excluidas, agrupadas en tramos contiguos, y las
     posiciones originales de cada tramo."""
     tramos: list[list[int]] = []
     for i, h in enumerate(encabezado):
-        if parse_fondos.es_sensible(h):
+        if parse_fondos.es_sensible(h, excluidas):
             continue
         if tramos and tramos[-1][-1] == i - 1:
             tramos[-1].append(i)
@@ -220,9 +263,9 @@ def rangos_sin_sensibles(pestana: str, encabezado: list[Any]) -> tuple[list[str]
     return [f"'{pestana}'!{columna_a1(t[0])}1:{columna_a1(t[-1])}" for t in tramos], tramos
 
 
-async def _leer_sin_sensibles(sheet_id: str, pestana: str) -> list[list[Any]]:
+async def _leer_sin_sensibles(sheet_id: str, pestana: str, excluidas: tuple[str, ...]) -> list[list[Any]]:
     encabezado = (await google_sheets.get_values(sheet_id, f"'{pestana}'!1:1", "UNFORMATTED_VALUE") or [[]])[0]
-    rangos, tramos = rangos_sin_sensibles(pestana, encabezado)
+    rangos, tramos = rangos_sin_sensibles(pestana, encabezado, excluidas)
     if not rangos:
         return []
     partes = await google_sheets.batch_get_values(sheet_id, rangos, "UNFORMATTED_VALUE")
@@ -240,8 +283,8 @@ async def _leer_sin_sensibles(sheet_id: str, pestana: str) -> list[list[Any]]:
 
 async def _leer(sheet_id: str, pestana: _Pestana) -> list[list[Any]]:
     try:
-        if pestana.excluir:
-            return await _leer_sin_sensibles(sheet_id, pestana.nombre)
+        if pestana.excluidas:
+            return await _leer_sin_sensibles(sheet_id, pestana.nombre, pestana.excluidas)
         return await google_sheets.get_values(sheet_id, _rango(pestana.nombre), "UNFORMATTED_VALUE")
     except Exception as exc:  # noqa: BLE001 — cualquier falla de la fuente externa
         raise _FuenteFallida(f"no se pudo leer la pestaña {pestana.nombre}: {type(exc).__name__}") from exc

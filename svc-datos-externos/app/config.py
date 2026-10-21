@@ -58,6 +58,12 @@ class Settings(BaseSettings):
     google_sheet_gob_fondo_permanente_id: str = ""
     google_sheet_gob_fondo_ambiental_id: str = ""
     google_sheet_gob_comunidades_regionales_id: str = ""
+    # Fase 5 (spec-datos-externos-fase5-gestion-territorial.md §3): planillas 12, 2, 2.1, 1 y 6.
+    google_sheet_gob_obras_id: str = ""
+    google_sheet_gob_recorridos_id: str = ""
+    google_sheet_gob_recorridos_ministro_id: str = ""
+    google_sheet_gob_reuniones_id: str = ""
+    google_sheet_gob_convenios_id: str = ""
     gob_transferencias_sync_enabled: bool = False
 
     # WFS público de IDECOR (Catastro) para la valuación de parcelas de Mi Lugar
