@@ -176,3 +176,48 @@ async def test_secciones_nuevas_solo_admin_y_autoridad(client: AsyncClient, as_u
     as_user(CONSULTA_USER)
     for s in ("fodemeep", "fommep", "resumen"):
         assert (await client.get(f"{URL}/{s}", params={"anio": 2026})).status_code == 403
+
+
+# ── Fase 4: ATP Interno en el Resumen (spec-atp-interno.md §4.3) ─────────────────────
+
+
+async def test_resumen_con_atp_interno(client: AsyncClient, db_session: AsyncSession, monkeypatch):
+    from app.integrations import atp_interno
+
+    async def fake(anio):
+        assert anio == 2026
+        return {"A": 54.0, "C": 10.0, "ZZ": 1.0}  # ZZ: fuera del nomenclador
+
+    monkeypatch.setattr(atp_interno, "atp_por_localidad", fake)
+    await _cargar(db_session)
+    d = (await client.get(f"{URL}/resumen", params={"anio": 2026})).json()
+    assert d["atp_disponible"] is True
+    # Como el Looker: ATP entra en el total; sin filtro suma también lo de fuera del nomenclador.
+    assert d["total"]["atp"] == 65 and d["total"]["total"] == 3490 + 65
+    a = next(f for f in d["por_localidad"] if f["clave"] == "A")
+    assert a["atp"] == 54 and a["atp_sobre_copa_fofin"] == pytest.approx(54 / 2690) and a["total"] == 2690 + 54
+    b = next(f for f in d["por_localidad"] if f["clave"] == "B")
+    assert b["atp"] == 0
+    d1 = next(f for f in d["por_departamento"] if f["clave"] == "D1")
+    assert d1["atp"] == 54
+
+    f = (await client.get(f"{URL}/resumen", params={"anio": 2026, "codigo_indec": ["A"]})).json()
+    assert f["total"]["atp"] == 54
+
+
+async def test_resumen_sin_atp_disponible(client: AsyncClient, db_session: AsyncSession):
+    # Federación apagada (default de config.py): se marca y el total no incluye ATP.
+    await _cargar(db_session)
+    d = (await client.get(f"{URL}/resumen", params={"anio": 2026})).json()
+    assert d["atp_disponible"] is False
+    assert d["total"]["atp"] is None and d["total"]["atp_sobre_copa_fofin"] is None and d["total"]["total"] == 3490
+
+
+async def test_atp_por_localidad_tolera_caida(monkeypatch):
+    from app.config import settings
+    from app.integrations import atp_interno
+
+    assert await atp_interno.atp_por_localidad(2026) is None  # apagado
+    monkeypatch.setattr(settings, "atp_interno_fetch_enabled", True)
+    monkeypatch.setattr(settings, "svc_gralgob_internal_url", "http://127.0.0.1:1")
+    assert await atp_interno.atp_por_localidad(2026) is None

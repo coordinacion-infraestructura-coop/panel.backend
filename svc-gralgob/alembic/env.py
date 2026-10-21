@@ -14,6 +14,7 @@ from app.atp.models import (
     AtpCronogramaPago,
     AtpSyncLog,
 )
+from app.atp_interno.models import AtpInternoPago, AtpInternoSyncLog  # noqa: F401
 
 config = context.config
 

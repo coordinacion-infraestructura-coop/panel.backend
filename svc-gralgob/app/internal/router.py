@@ -10,12 +10,15 @@ sync) no tiene ningún endpoint de negocio ni integración con portal_usuarios.
 
 Ver spec: docs/files/spec-sync-atp-compromiso-gobernador.md
 """
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.atp import rollup as atp_rollup
 from app.atp import sync as atp_sync
 from app.atp.schemas import SyncResultResponse, SyncStatusResponse
+from app.atp_interno import sync as interno_sync
+from app.atp_interno import tablero as interno_tablero
 from app.database import get_db
 
 router = APIRouter(prefix="/internal", tags=["internal"])
@@ -47,3 +50,33 @@ async def rollup_territorial(db: AsyncSession = Depends(get_db)):
     ADR-016 usó para svc-privada y ADR-021 para svc-gasifera). Sólo la SA de
     svc-vivienda tiene roles/run.invoker sobre este servicio para este flujo."""
     return await atp_rollup.rollup_territorial(db)
+
+
+# ── ATP Interno (spec-atp-interno.md §3 y §4.2) ──────────────────────────────
+
+
+@router.post("/sync/atp-interno", response_model=interno_sync.SyncInternoResponse)
+async def sync_atp_interno(
+    triggered_by: str = "cloud-scheduler",
+    db: AsyncSession = Depends(get_db),
+):
+    resultado = await interno_sync.sync_atp_interno(db, triggered_by=triggered_by)
+    if resultado.estado == "error":
+        # Se responde sin lanzar, para que get_db commitee el log de la corrida fallida.
+        return JSONResponse(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            content={"detail": {"code": "SHEET_SYNC_FALLIDO", "message": resultado.mensaje}},
+        )
+    return resultado
+
+
+@router.get("/sync/atp-interno/estado", response_model=interno_sync.SyncInternoEstado | None)
+async def estado_sync_atp_interno(db: AsyncSession = Depends(get_db)):
+    return await interno_sync.estado_sync(db)
+
+
+@router.get("/atp-interno/por-localidad", response_model=list[interno_tablero.LocalidadMonto])
+async def atp_interno_por_localidad(anio: int = Query(...), db: AsyncSession = Depends(get_db)):
+    """Para el Resumen general de svc-datos-externos (§4.3). Solo la SA de svc-datos-externos
+    tiene roles/run.invoker para este flujo. Sin referente."""
+    return interno_tablero.por_localidad(await interno_tablero.leer_pagos(db, anio=anio))

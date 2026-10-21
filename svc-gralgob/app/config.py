@@ -44,5 +44,12 @@ class Settings(BaseSettings):
     # svc_vivienda_internal_url (compartida con el auth lookup, ADR-015).
     resolver_localidades_enabled: bool = False
 
+    # ATP Interno de Gobierno (spec-atp-interno.md §3): pestaña "ATP ACUMULADO" de la planilla
+    # "4. ATP 2026", compartida (Lector) con svc-gralgob@. Vacío -> la corrida termina en error
+    # sin tocar datos. Al abrir la planilla de otro año se cambian el id y el año.
+    google_sheet_atp_interno_id: str = ""
+    google_sheet_atp_interno_rango: str = "'ATP ACUMULADO'!A1:F"
+    atp_interno_anio_planilla: int = 2026
+
 
 settings = Settings()

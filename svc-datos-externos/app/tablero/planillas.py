@@ -364,7 +364,11 @@ async def get_fommep(db: AsyncSession, codigos: list[str] | None) -> FommepRespo
 # ── Resumen general (COPA + FOFINDES, spec Fase 2 §5.2; + Fondo Ambiental, Fase 3 §4) ─────────────────────────────
 
 
-async def get_resumen(db: AsyncSession, anio: int, codigos: list[str] | None, poblacion: dict[str, int]) -> ResumenResponse:
+async def get_resumen(
+    db: AsyncSession, anio: int, codigos: list[str] | None, poblacion: dict[str, int], atp: dict[str, float] | None = None
+) -> ResumenResponse:
+    """`atp`: ATP Interno por código INDEC (spec-atp-interno.md §4.3), o None si no está
+    disponible; en ese caso las columnas de ATP vienen None y el total no lo incluye."""
     async def neto_por_codigo(modelo) -> dict[str, float]:
         q = select(modelo.codigo_indec, func.sum(modelo.neto_a_transferir)).where(modelo.anio == anio).group_by(modelo.codigo_indec)
         return {c: _f(s) for c, s in (await db.execute(_filtrar(q, modelo, codigos))).all()}
@@ -380,18 +384,25 @@ async def get_resumen(db: AsyncSession, anio: int, codigos: list[str] | None, po
     ambiental = {c: _f(m) for c, m in (await db.execute(_filtrar(q_fa, ExtGobFondoAmbiental, codigos))).all()}
     ultimo_mes = (await db.execute(_filtrar(select(func.max(ExtGobCopa.mes)).where(ExtGobCopa.anio == anio), ExtGobCopa, codigos))).scalar_one()
     locs = await _nomenclador(db, codigos)
+    if atp is not None and codigos:
+        atp = {c: m for c, m in atp.items() if c in codigos}
 
-    def fila(clave: str, departamento: str, ls: list[ExtGobLocalidad], c: float, fo: float, fa: float, **extra) -> ResumenFila:
+    def fila(clave: str, departamento: str, ls: list[ExtGobLocalidad], c: float, fo: float, fa: float, at: float | None, **extra) -> ResumenFila:
         pob = sum(poblacion.get(loc.codigo_indec, 0) for loc in ls)
-        total = c + fo + fa
+        total = c + fo + fa + (at or 0.0)
         return ResumenFila(
             clave=clave, departamento=departamento, localidades=len(ls), poblacion=pob,
-            copa=c, fofindes=fo, fondo_ambiental=fa, total=total, por_habitante=aggregations.por_habitante(total, pob), **extra,
+            copa=c, fofindes=fo, fondo_ambiental=fa, atp=at,
+            atp_sobre_copa_fofin=aggregations.proporcion(at, c + fo) if at is not None else None,
+            total=total, por_habitante=aggregations.por_habitante(total, pob), **extra,
         )
+
+    def atp_de(ls: list[ExtGobLocalidad]) -> float | None:
+        return None if atp is None else sum(atp.get(x.codigo_indec, 0.0) for x in ls)
 
     por_localidad = [
         fila(loc.codigo_indec, loc.departamento_gob, [loc], copa.get(loc.codigo_indec, 0.0), fofindes.get(loc.codigo_indec, 0.0),
-             ambiental.get(loc.codigo_indec, 0.0), localidad=loc.nombre_gob, tipo=_TIPOS.get(loc.tipo or ""))
+             ambiental.get(loc.codigo_indec, 0.0), atp_de([loc]), localidad=loc.nombre_gob, tipo=_TIPOS.get(loc.tipo or ""))
         for loc in locs
     ]
     deptos: dict[str, list[ExtGobLocalidad]] = defaultdict(list)
@@ -399,14 +410,16 @@ async def get_resumen(db: AsyncSession, anio: int, codigos: list[str] | None, po
         deptos[loc.departamento_gob].append(loc)
     por_departamento = [
         fila(d, d, ls, sum(copa.get(x.codigo_indec, 0.0) for x in ls), sum(fofindes.get(x.codigo_indec, 0.0) for x in ls),
-             sum(ambiental.get(x.codigo_indec, 0.0) for x in ls))
+             sum(ambiental.get(x.codigo_indec, 0.0) for x in ls), atp_de(ls))
         for d, ls in sorted(deptos.items())
     ]
     # Total: sin filtro suma todo lo de la planilla, también códigos fuera del nomenclador.
-    total = fila("total", "Total", locs, sum(copa.values()), sum(fofindes.values()), sum(ambiental.values()))
+    total = fila("total", "Total", locs, sum(copa.values()), sum(fofindes.values()), sum(ambiental.values()),
+                 None if atp is None else sum(atp.values()))
     return ResumenResponse(
         anio=anio,
         periodo_hasta=date(anio, ultimo_mes, 1) if ultimo_mes else None,
+        atp_disponible=atp is not None,
         total=total,
         por_departamento=por_departamento,
         por_localidad=por_localidad,

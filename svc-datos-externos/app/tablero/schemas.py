@@ -213,6 +213,10 @@ class ResumenFila(BaseModel):
     copa: float
     fofindes: float
     fondo_ambiental: float = 0.0  # Fase 3: pagado a localidades (sin comunidades regionales)
+    # Fase 4 (spec-atp-interno.md §4.3): ATP Interno pagado en el año, como en el Looker. None si
+    # svc-gralgob no respondió. Compromisos nunca entra.
+    atp: float | None = None
+    atp_sobre_copa_fofin: float | None = None  # ATP / (COPA + FOFINDES); 0.015 = 1,5 %
     total: float
     por_habitante: float | None
 
@@ -221,6 +225,7 @@ class ResumenResponse(BaseModel):
     concepto: str = "resumen"
     anio: int
     periodo_hasta: date | None  # último mes con COPA en el año
+    atp_disponible: bool = False  # False: el total no incluye ATP porque svc-gralgob no respondió
     total: ResumenFila
     por_departamento: list[ResumenFila]
     por_localidad: list[ResumenFila]

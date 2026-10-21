@@ -25,21 +25,29 @@ def _get_service():
     return _service
 
 
-def _get_values_sync(spreadsheet_id: str, range_name: str) -> list[list[Any]]:
+def _get_values_sync(spreadsheet_id: str, range_name: str, sin_formato: bool) -> list[list[Any]]:
     service = _get_service()
+    extra = (
+        {"valueRenderOption": "UNFORMATTED_VALUE", "dateTimeRenderOption": "SERIAL_NUMBER"}
+        if sin_formato
+        else {}
+    )
     result = (
         service.spreadsheets()
         .values()
-        .get(spreadsheetId=spreadsheet_id, range=range_name)
+        .get(spreadsheetId=spreadsheet_id, range=range_name, **extra)
         .execute()
     )
     return result.get("values", [])
 
 
-async def get_values(spreadsheet_id: str, range_name: str) -> list[list[Any]]:
+async def get_values(spreadsheet_id: str, range_name: str, sin_formato: bool = False) -> list[list[Any]]:
     """Lee un rango de celdas de un Google Sheet.
+
+    `sin_formato=True` pide valores sin formato y fechas como serial, para no depender de la
+    configuración regional de la planilla (ATP Interno, spec-atp-interno.md §3).
 
     El cliente googleapiclient es síncrono (httplib2); se corre en un thread
     aparte para no bloquear el event loop de FastAPI.
     """
-    return await asyncio.to_thread(_get_values_sync, spreadsheet_id, range_name)
+    return await asyncio.to_thread(_get_values_sync, spreadsheet_id, range_name, sin_formato)

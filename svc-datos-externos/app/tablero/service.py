@@ -15,6 +15,7 @@ from app.gob_transferencias import sync as gob_transferencias_sync
 from app.gob_transferencias.models import ExtGobCopa
 from app.gobierno import sync as gobierno_sync
 from app.gobierno.models import ExtGobLocalidad
+from app.integrations import atp_interno
 from app.tablero import aggregations, fondos, planillas
 from app.tablero.schemas import (
     ConceptoMonto,
@@ -312,4 +313,5 @@ async def get_seccion_planilla(db: AsyncSession, seccion: str, anio: int, codigo
     if seccion == "fommep":
         return await planillas.get_fommep(db, codigos)
     poblacion = await _poblacion_por_codigo(db, await _nomenclador(db, codigos))
-    return await planillas.get_resumen(db, anio, codigos, poblacion)
+    # Fase 4 (spec-atp-interno.md §4.3): ATP Interno desde svc-gralgob; None si no responde.
+    return await planillas.get_resumen(db, anio, codigos, poblacion, await atp_interno.atp_por_localidad(anio))

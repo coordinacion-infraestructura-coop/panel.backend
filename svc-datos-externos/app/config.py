@@ -16,6 +16,11 @@ class Settings(BaseSettings):
     svc_vivienda_internal_url: str = ""
     resolver_localidades_enabled: bool = False
 
+    # ATP Interno para el Resumen general del tablero (spec-atp-interno.md §4.2): endpoint
+    # IAM-only de svc-gralgob. Apagado por defecto; services/cloudbuild.yaml lo enciende.
+    svc_gralgob_internal_url: str = ""
+    atp_interno_fetch_enabled: bool = False
+
     # Auth de los paneles (ADR-028): JWT de Firebase validado contra las claves
     # públicas de Google; el rol sale de svc-vivienda por la URL de arriba (ADR-015).
     google_jwks_uri: str = (

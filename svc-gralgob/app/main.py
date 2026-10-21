@@ -9,8 +9,10 @@ from app.atp.models import (  # noqa: F401 — ensures tables are registered wit
     AtpCronogramaPago,
     AtpSyncLog,
 )
+from app.atp_interno.models import AtpInternoPago, AtpInternoSyncLog  # noqa: F401
 from app.atp.router import router as atp_router
 from app.atp.tablero import router as atp_tablero_router
+from app.atp_interno.tablero import router as atp_interno_tablero_router
 from app.config import settings
 from app.database import engine
 from app.internal.router import router as internal_router
@@ -72,6 +74,7 @@ async def health_check():
 
 app.include_router(atp_router, prefix="/api/v1/gralgob", tags=["gralgob"])
 app.include_router(atp_tablero_router, prefix="/api/v1/gralgob")
+app.include_router(atp_interno_tablero_router, prefix="/api/v1/gralgob")
 
 # Sin prefijo /api/v1 — no pasa por API Gateway, ver app/internal/router.py
 app.include_router(internal_router)
