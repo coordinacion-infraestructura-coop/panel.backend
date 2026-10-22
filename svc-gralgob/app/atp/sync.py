@@ -5,11 +5,13 @@ cronograma de pago mensual).
 Ver spec: docs/files/spec-sync-atp-compromiso-gobernador.md
 """
 import json
+import logging
 import re
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from sqlalchemy import delete, func, select
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.atp.models import AtpCompromiso, AtpCronogramaPago, AtpSyncLog
@@ -22,6 +24,8 @@ from app.atp.schemas import (
 )
 from app.config import settings
 from app.integrations import geo_resolver, google_sheets, notificaciones_vivienda
+
+logger = logging.getLogger(__name__)
 
 _MESES = {
     "enero": 1, "febrero": 2, "marzo": 3, "abril": 4, "mayo": 5, "junio": 6,
@@ -219,6 +223,11 @@ async def sync_from_sheet(db: AsyncSession, triggered_by: str = "manual") -> Syn
                     nuevos.append((localidad, departamento, _parse_date(r.get("Fecha de anuncio"))))
                 pendientes_geo.append((compromiso, departamento, localidad))
             except Exception as exc:  # una fila con error no debe frenar el resto del batch
+                logger.warning("sync ATP compromisos: fila %s falló: %r", sheet_row_number, exc)
+                # Si se perdió la conexión, la transacción entera quedó inválida: seguir solo
+                # posterga el error al final y pierde la causa (500 del 2026-10-22 13:33).
+                if isinstance(exc, DBAPIError) and exc.connection_invalidated:
+                    raise
                 errores.append({
                     "fila": sheet_row_number,
                     "motivo": f"'{localidad or departamento}': error al procesar la fila ({exc})",
