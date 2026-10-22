@@ -52,7 +52,13 @@ class TableroViviendaResponse(BaseModel):
 
 
 def _label_id(estados, label: str) -> int | None:
-    return next((e.id for e in estados if (e.label or "").strip().lower() == label), None)
+    """Id del estado del listado General con ese label: `en_obra` / `en_tc` cuentan por
+    `estado_general`, y desde la 0044 el mismo label existe en varios listados."""
+    return next(
+        (e.id for e in estados
+         if e.dimension == "general" and (e.label or "").strip().lower() == label),
+        None,
+    )
 
 
 async def get_tablero_vivienda(db: AsyncSession) -> TableroViviendaResponse:

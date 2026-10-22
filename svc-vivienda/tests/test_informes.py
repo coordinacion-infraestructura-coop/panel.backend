@@ -106,6 +106,10 @@ def test_puntos_mapa_sin_match_deja_lat_lon_en_none_sin_romper():
 @pytest_asyncio.fixture
 async def cc_con_geo(db_session: AsyncSession) -> str:
     db_session.add(EstadoCordonCuneta(id=1, label="Sin Iniciar", bg="#eee", text_color="#000", orden=0))
+    # Del listado Jurídico: no es un Estado General y no va en la distribución.
+    db_session.add(EstadoCordonCuneta(
+        id=2, label="Sin Iniciar", bg="#eee", text_color="#000", orden=0, dimension="juridico",
+    ))
     db_session.add(GeoLocalidad(
         id_geo="g1", departamento="Capital", localidad="Córdoba Capital",
         lat_centro=-31.4, lon_centro=-64.18, activo=True,
@@ -145,6 +149,7 @@ async def test_actualizar_informe_calcula_y_guarda_snapshot(client: AsyncClient,
     assert payload["departamentos_cubiertos"] == 1
     assert payload["puntos"][0]["lat"] == -31.4
     assert len(payload["evolucion_temporal"]) == 1
+    assert [e["estado_id"] for e in payload["por_estado_general"]] == [1]
     assert body["computed_by"] == "admin@test.com"
 
 

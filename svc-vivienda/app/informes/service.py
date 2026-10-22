@@ -65,7 +65,8 @@ async def compute_informe_cordon_cuneta(db: AsyncSession) -> InformePayload:
             select(MunicipioCordonCuneta).where(MunicipioCordonCuneta.deleted_at.is_(None))
         )
     ).scalars().all()
-    catalogo_rows = (await db.execute(select(EstadoCordonCuneta))).scalars().all()
+    # Solo el listado General: el informe agrupa por `estado_general` (spec-vivienda-estados-por-area.md).
+    catalogo_rows = (await db.execute(select(EstadoCordonCuneta).where(EstadoCordonCuneta.dimension == "general"))).scalars().all()
     historial_rows = (await db.execute(select(EstadoHistorialCC))).scalars().all()
     geo = await _geo_rows(db)
 
@@ -106,7 +107,8 @@ async def compute_informe_cordoba_hogar(db: AsyncSession) -> InformePayload:
             select(LocalidadCordobaHogar).where(LocalidadCordobaHogar.deleted_at.is_(None))
         )
     ).scalars().all()
-    catalogo_rows = (await db.execute(select(EstadoCordobaHogar))).scalars().all()
+    # Solo el listado General: el informe agrupa por `estado_general` (spec-vivienda-estados-por-area.md).
+    catalogo_rows = (await db.execute(select(EstadoCordobaHogar).where(EstadoCordobaHogar.dimension == "general"))).scalars().all()
     historial_rows = (await db.execute(select(EstadoHistorialCH))).scalars().all()
     geo = await _geo_rows(db)
     config = (

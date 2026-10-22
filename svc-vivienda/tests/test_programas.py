@@ -89,24 +89,29 @@ async def test_lectura_permitida_a_consulta(client_consulta: AsyncClient):
 
 @pytest.fixture
 async def _tablero_seed(db_session: AsyncSession) -> None:
+    # Como quedó tras la 0044: el id original en el listado Jurídico y una copia en el
+    # General (ids 11/12), que es a la que apunta `estado_general`.
     db_session.add_all([
-        EstadoCordonCuneta(id=1, label="TC", bg="#000", text_color="#fff", orden=0),
-        EstadoCordonCuneta(id=2, label="En Obra", bg="#000", text_color="#fff", orden=1),
-        EstadoCordobaHogar(id=1, label="TC", bg="#000", text_color="#fff", orden=0),
+        EstadoCordonCuneta(id=1, label="TC", bg="#000", text_color="#fff", orden=0, dimension="juridico"),
+        EstadoCordonCuneta(id=2, label="En Obra", bg="#000", text_color="#fff", orden=1, dimension="juridico"),
+        EstadoCordonCuneta(id=11, label="TC", bg="#000", text_color="#fff", orden=0, dimension="general"),
+        EstadoCordonCuneta(id=12, label="En Obra", bg="#000", text_color="#fff", orden=1, dimension="general"),
+        EstadoCordobaHogar(id=1, label="TC", bg="#000", text_color="#fff", orden=0, dimension="juridico"),
+        EstadoCordobaHogar(id=11, label="TC", bg="#000", text_color="#fff", orden=0, dimension="general"),
     ])
     db_session.add_all([
         MunicipioCordonCuneta(id=str(uuid.uuid4()), orden=1, municipio="A", expediente="E-1",
-                              monto=100, ok_gob="SI", estado_general=1),
+                              monto=100, ok_gob="SI", estado_general=11),
         MunicipioCordonCuneta(id=str(uuid.uuid4()), orden=2, municipio="B", expediente=None,
-                              monto=50, ok_gob="NO", estado_general=2),
+                              monto=50, ok_gob="NO", estado_general=12),
         # borrada -> no cuenta
         MunicipioCordonCuneta(id=str(uuid.uuid4()), orden=3, municipio="C", expediente="E-3",
-                              monto=999, ok_gob="SI", estado_general=1,
+                              monto=999, ok_gob="SI", estado_general=11,
                               deleted_at=datetime(2026, 1, 1, tzinfo=timezone.utc)),
     ])
     db_session.add_all([
         LocalidadCordobaHogar(id=str(uuid.uuid4()), orden=1, localidad="L1", expediente="E-1",
-                              monto=1000, cantidad_casas=40, ok_gob="SI", estado_general=1),
+                              monto=1000, cantidad_casas=40, ok_gob="SI", estado_general=11),
         LocalidadCordobaHogar(id=str(uuid.uuid4()), orden=2, localidad="L2", expediente=None,
                               monto=None, cantidad_casas=None, ok_gob="NO", estado_general=None),
     ])
