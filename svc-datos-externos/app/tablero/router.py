@@ -10,15 +10,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import AuthUser, require_roles
 from app.database import get_db
-from app.tablero import gestion, service
+from app.tablero import gestion, politico, service
 from app.tablero.schemas import (
     ComunidadesRegionalesResponse,
     ConveniosResponse,
+    EleccionesResponse,
     FodemeepResponse,
     FondoAmbientalResponse,
     FondoPermanenteResponse,
     FommepResponse,
     InicioResponse,
+    IntendentesResponse,
     ObrasResponse,
     ReunionesResponse,
     ResumenResponse,
@@ -103,3 +105,21 @@ async def tablero_gestion(
             detail={"code": "SECCION_INEXISTENTE", "message": f"Sección de gestión desconocida: {seccion}"},
         )
     return await gestion.get_seccion(db, seccion, codigo_indec)
+
+
+@router.get("/politico/{seccion}", response_model=IntendentesResponse | EleccionesResponse)
+async def tablero_politico(
+    seccion: str,
+    codigo_indec: list[str] | None = _CODIGOS,
+    db: AsyncSession = Depends(get_db),
+    _user: AuthUser = Depends(require_roles(*ROLES_TABLERO)),
+):
+    """Político (Etapa 6, spec-datos-externos-fase6-politico.md §4), solo `Admin` y `Autoridad`:
+    `intendentes` (padrón con contacto) y `elecciones` (recalculadas desde los circuitos, con las
+    diferencias contra las pestañas pegadas de la planilla)."""
+    if seccion not in politico.SECCIONES_POLITICO:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "SECCION_INEXISTENTE", "message": f"Sección política desconocida: {seccion}"},
+        )
+    return await politico.get_seccion(db, seccion, codigo_indec)

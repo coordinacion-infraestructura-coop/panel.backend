@@ -608,4 +608,149 @@ class ConveniosResponse(BaseModel):
     localidades: list[ConvenioLocalidad]
 
 
+# ── Etapa 6: Político (spec-datos-externos-fase6-politico.md §4) ─────────────────────
+# Solo Admin y Autoridad. `celular` es dato personal (spec §5).
+
+
+class IntendenteFila(BaseModel):
+    codigo_indec: str
+    localidad: str
+    departamento: str
+    tipo: str | None
+    intendente: str | None
+    reelecto: bool | None
+    partido: str | None
+    continuidad: bool | None
+    alineacion: str | None
+    celular: str | None
+    foto_url: str | None
+
+
+class IntendentesKpis(BaseModel):
+    gobiernos_locales: int
+    con_intendente: int
+    reelectos: int
+    continuidad: int
+    con_celular: int
+
+
+class IntendentesDepartamento(BaseModel):
+    departamento: str
+    total: int
+    por_alineacion: dict[str, int]
+    por_partido: dict[str, int]
+
+
+class IntendentesResponse(BaseModel):
+    concepto: str = "intendentes"
+    kpis: IntendentesKpis
+    por_partido: list[Conteo]
+    por_alineacion: list[Conteo]
+    por_departamento: list[IntendentesDepartamento]
+    intendentes: list[IntendenteFila]
+
+
+class EleccionFuerza(BaseModel):
+    fuerza: str
+    votos: int | None = None
+    pct: float | None = None
+
+
+class EleccionDepartamento(BaseModel):
+    departamento: str
+    padron: int | None = None
+    afirmativos: int | None = None
+    participacion: float | None = None
+    ganador: str | None
+    ganador_pct: float | None
+    segundo: str | None
+    segundo_pct: float | None
+    margen: float | None
+
+
+class EleccionLocalidad(BaseModel):
+    codigo_indec: str
+    localidad: str
+    departamento: str | None
+    padron: int | None = None
+    afirmativos: int | None = None
+    participacion: float | None = None
+    ganador: str | None
+    ganador_pct: float | None
+    segundo: str | None
+    segundo_pct: float | None
+    margen: float | None
+    pct: dict[str, float | None]  # fuerzas principales y "Otras"
+
+
+class EleccionResultado(BaseModel):
+    eleccion: str
+    titulo: str
+    fuente: str  # "circuitos" (recalculado) | "copia" (pegado en la planilla)
+    padron: int | None = None
+    total_votos: int | None = None
+    afirmativos: int | None = None
+    participacion: float | None = None
+    principales: list[str]
+    fuerzas: list[EleccionFuerza] = []
+    localidades_ganadas: list[Conteo]
+    por_departamento: list[EleccionDepartamento] = []
+    por_localidad: list[EleccionLocalidad]
+
+
+class MunicipalFila(BaseModel):
+    codigo_indec: str
+    localidad: str
+    departamento: str | None
+    tipo_gobierno: str | None
+    fecha: date | None
+    periodo: str | None
+    participacion: float | None
+    padron: int | None
+    afirmativos: int | None
+    ganador_partido: str | None
+    ganador_lista: str | None
+    ganador_nombre: str | None
+    ganador_pct: float | None
+    segundo_partido: str | None
+    segundo_nombre: str | None
+    segundo_pct: float | None
+    margen: float | None
+
+
+class MunicipalesResultado(BaseModel):
+    localidades_ganadas: list[Conteo]
+    sin_votos: int
+    por_localidad: list[MunicipalFila]
+
+
+class VariacionFila(BaseModel):
+    codigo_indec: str
+    localidad: str
+    departamento: str | None
+    lla_2023: float
+    lla_2025: float
+    variacion_lla: float
+    hxc_2023: float
+    pu_2025: float
+    variacion_pu_hxc: float
+
+
+class DiferenciaPlanilla(BaseModel):
+    localidad: str
+    pestana: str
+    campo: str
+    planilla: str
+    calculado: str
+
+
+class EleccionesResponse(BaseModel):
+    concepto: str = "elecciones"
+    elecciones: list[EleccionResultado]
+    municipales: MunicipalesResultado | None
+    variacion: list[VariacionFila]
+    diferencias: list[DiferenciaPlanilla]
+    circuitos_sin_localidad: int
+
+
 InicioResponse.model_rebuild()

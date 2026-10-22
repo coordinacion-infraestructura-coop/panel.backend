@@ -54,7 +54,7 @@ async def test_meta_devuelve_localidades_anios_y_frescura(client: AsyncClient, d
     assert list(fr) == [
         "nomenclador", "resumen_vista", "copa", "fofindes", "fodemep", "fommep", "empleados",
         "fondo_permanente", "fondo_ambiental", "comunidades_regionales",
-        "obras", "recorridos", "recorridos_ministro", "reuniones", "convenios", "transferencias", "censo_2022",
+        "obras", "recorridos", "recorridos_ministro", "reuniones", "convenios", "intendentes", "elecciones", "transferencias", "censo_2022",
     ]
     assert fr["copa"]["estado"] == "sin_datos"
     # La última corrida manda, aunque haya fallado: el tablero tiene que mostrarlo.

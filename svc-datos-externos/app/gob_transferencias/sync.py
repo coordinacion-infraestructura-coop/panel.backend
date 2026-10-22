@@ -21,6 +21,12 @@ columnas que no lo son, así que esos datos nunca llegan al servicio.
 Fase 5 (spec-datos-externos-fase5-gestion-territorial.md §3): obras, recorridos, reuniones y
 convenios se suman igual. `excluir` también acepta la lista de columnas propia de la pestaña
 (intendente y partido, detalle de reuniones, tema e institución de las visitas).
+
+Fase 6 (spec-datos-externos-fase6-politico.md §3): el padrón de intendentes y la planilla de
+elecciones. Algunas pestañas pegadas tienen una fila de títulos arriba del encabezado
+(`fila_encabezado = 2`). Las que nombran la localidad en vez de traer el código se resuelven
+contra el nomenclador después de guardarse (`_resolver_por_nombre`). Ni los logs ni `anomalias`
+llevan nombres de personas, partidos por localidad ni teléfonos.
 """
 import logging
 from dataclasses import dataclass
@@ -33,6 +39,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.gob_fondos import parse as parse_fondos
 from app.gob_gestion import parse as parse_gestion
+from app.gob_politico import parse as parse_politico
+from app.gob_politico.models import (
+    ExtGobCircuitoLocalidad,
+    ExtGobEleccionCircuito,
+    ExtGobEleccionCopia,
+    ExtGobEleccionMunicipal,
+    ExtGobIntendente,
+)
 from app.gob_gestion.models import ExtGobConvenio, ExtGobObra, ExtGobReunion, ExtGobVisita, ExtGobVisitaGobernador
 from app.gob_fondos.models import (
     ExtGobCregCuota,
@@ -76,6 +90,8 @@ class _Pestana:
     # Saltear columnas al leer: True = las de personas de la Fase 3 (§3); una tupla = esos
     # encabezados (sin tildes, por prefijo), Fase 5 §3.
     excluir: bool | tuple[str, ...] = False
+    # Fila del encabezado (1 = la primera). Las filas de arriba no llegan al parser.
+    fila_encabezado: int = 1
 
     @property
     def excluidas(self) -> tuple[str, ...]:
@@ -152,6 +168,28 @@ FUENTES: dict[str, _Fuente] = {
         (_Pestana("Reuniones", parse_gestion.parsear_reuniones, ExtGobReunion, "proporcion", excluir=parse_gestion.COLUMNAS_EXCLUIDAS["Reuniones"]),),
     ),
     "convenios": _Fuente("google_sheet_gob_convenios_id", (_Pestana("Convenios", parse_gestion.parsear_convenios, ExtGobConvenio),)),
+    # Fase 6. El padrón está en la planilla de reuniones; es otra fuente para tener su propio log.
+    "intendentes": _Fuente(
+        "google_sheet_gob_reuniones_id",
+        (_Pestana("Intendentes", parse_politico.parsear_intendentes, ExtGobIntendente, "proporcion"),),
+    ),
+    "elecciones": _Fuente(
+        "google_sheet_gob_elecciones_id",
+        (
+            *(
+                _Pestana(anio, parse_politico.parsear_circuitos(eleccion), ExtGobEleccionCircuito, "proporcion", ("eleccion", eleccion))
+                for anio, eleccion in parse_politico.ELECCIONES.items()
+            ),
+            _Pestana("RESUMEN_VOTOS_CIRCUITOS", parse_politico.parsear_circuito_localidad, ExtGobCircuitoLocalidad, "proporcion",
+                     excluir=parse_politico.COLUMNAS_EXCLUIDAS, fila_encabezado=2),
+            _Pestana("Municipales - 2023", parse_politico.parsear_municipales, ExtGobEleccionMunicipal, "proporcion"),
+            *(
+                _Pestana(p, parse_politico.parsear_copia(p), ExtGobEleccionCopia, "proporcion", ("pestana", p),
+                         excluir=parse_politico.COLUMNAS_EXCLUIDAS, fila_encabezado=2)
+                for p in parse_politico.COPIAS
+            ),
+        ),
+    ),
 }
 
 ETIQUETAS = {
@@ -168,6 +206,8 @@ ETIQUETAS = {
     "recorridos_ministro": "2.1 Recorrido y visitas del ministro (Gobierno)",
     "reuniones": "1. Registro de reuniones (Gobierno)",
     "convenios": "6. Convenios firmados (Gobierno)",
+    "intendentes": "1. Registro de reuniones — Intendentes (Gobierno)",
+    "elecciones": "18. Resultados elecciones 21-25 (Gobierno)",
 }
 
 _DESCARTES = {"fila_sin_codigo", "fila_invalida", "fila_repetida"}
@@ -263,8 +303,9 @@ def rangos_sin_sensibles(
     return [f"'{pestana}'!{columna_a1(t[0])}1:{columna_a1(t[-1])}" for t in tramos], tramos
 
 
-async def _leer_sin_sensibles(sheet_id: str, pestana: str, excluidas: tuple[str, ...]) -> list[list[Any]]:
-    encabezado = (await google_sheets.get_values(sheet_id, f"'{pestana}'!1:1", "UNFORMATTED_VALUE") or [[]])[0]
+async def _leer_sin_sensibles(sheet_id: str, pestana: str, excluidas: tuple[str, ...], fila_encabezado: int = 1) -> list[list[Any]]:
+    f = fila_encabezado
+    encabezado = (await google_sheets.get_values(sheet_id, f"'{pestana}'!{f}:{f}", "UNFORMATTED_VALUE") or [[]])[0]
     rangos, tramos = rangos_sin_sensibles(pestana, encabezado, excluidas)
     if not rangos:
         return []
@@ -276,15 +317,15 @@ async def _leer_sin_sensibles(sheet_id: str, pestana: str, excluidas: tuple[str,
             for k, valor in enumerate(valores[: len(posiciones)]):
                 filas[r][posiciones[k]] = valor
     # El encabezado se conserva completo: el parser ve las columnas sensibles, pero vacías.
-    if filas:
-        filas[0] = list(encabezado)
+    if len(filas) >= f:
+        filas[f - 1] = list(encabezado)
     return filas
 
 
 async def _leer(sheet_id: str, pestana: _Pestana) -> list[list[Any]]:
     try:
         if pestana.excluidas:
-            return await _leer_sin_sensibles(sheet_id, pestana.nombre, pestana.excluidas)
+            return await _leer_sin_sensibles(sheet_id, pestana.nombre, pestana.excluidas, pestana.fila_encabezado)
         return await google_sheets.get_values(sheet_id, _rango(pestana.nombre), "UNFORMATTED_VALUE")
     except Exception as exc:  # noqa: BLE001 — cualquier falla de la fuente externa
         raise _FuenteFallida(f"no se pudo leer la pestaña {pestana.nombre}: {type(exc).__name__}") from exc
@@ -340,7 +381,7 @@ async def _aplicar(
         if pestana.nombre not in leidas_por_pestana:
             leidas_por_pestana[pestana.nombre] = await _leer(sheet_id, pestana)
             leidas += max(len(leidas_por_pestana[pestana.nombre]) - 1, 0)
-        valores = leidas_por_pestana[pestana.nombre]
+        valores = leidas_por_pestana[pestana.nombre][pestana.fila_encabezado - 1:]
         try:
             filas, anom = pestana.parser(valores)
         except parse.EstructuraInvalida as exc:
@@ -386,6 +427,26 @@ async def _completar_ficha_empleados(db: AsyncSession) -> None:
     await db.flush()
 
 
+async def _resolver_por_nombre(db: AsyncSession) -> list[dict]:
+    """Código INDEC de las filas de la planilla 18 que nombran la localidad (Fase 6 §1.3), por
+    nombre normalizado contra el nomenclador. Devuelve las que no resolvieron (son topónimos,
+    no datos de personas)."""
+    codigos = {
+        parse_politico.clave_nombre(nombre): codigo
+        for codigo, nombre in (
+            await db.execute(select(ExtGobLocalidad.codigo_indec, ExtGobLocalidad.nombre_gob).where(ExtGobLocalidad.deleted_at.is_(None)))
+        ).all()
+    }
+    sin_codigo: set[str] = set()
+    for modelo in (ExtGobCircuitoLocalidad, ExtGobEleccionCopia):
+        for fila in (await db.execute(select(modelo))).scalars():
+            fila.codigo_indec = codigos.get(parse_politico.clave_nombre(fila.localidad))
+            if fila.codigo_indec is None:
+                sin_codigo.add(fila.localidad)
+    await db.flush()
+    return [{"tipo": "localidad_sin_codigo", "localidades": sorted(sin_codigo)}] if sin_codigo else []
+
+
 async def _log(db: AsyncSession, fuente: str, estado: str, disparado_por: str, anomalias: list[dict], **conteos: int) -> ExtGobSyncLog:
     log = ExtGobSyncLog(
         fuente=fuente,
@@ -425,6 +486,8 @@ async def sync_transferencias(db: AsyncSession, fuentes: list[str], disparado_po
             anomalias.extend(conciliacion.resumen_para_log(await conciliacion.calcular_transparencia(db, fuente)))
         if fuente in _CONTROLES_FONDOS:
             anomalias.extend(await _CONTROLES_FONDOS[fuente](db))
+        if fuente == "elecciones":
+            anomalias.extend(await _resolver_por_nombre(db))
         sin_match = sum(1 for a in anomalias if a.get("tipo") == "codigo_fuera_del_nomenclador")
         logs.append(await _log(
             db, fuente, "parcial" if descartadas else "ok", disparado_por, anomalias,

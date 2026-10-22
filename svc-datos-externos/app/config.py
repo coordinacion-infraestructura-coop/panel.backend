@@ -64,6 +64,9 @@ class Settings(BaseSettings):
     google_sheet_gob_recorridos_ministro_id: str = ""
     google_sheet_gob_reuniones_id: str = ""
     google_sheet_gob_convenios_id: str = ""
+    # Fase 6 (spec-datos-externos-fase6-politico.md §3): planilla 18. El padrón de intendentes
+    # sale de la planilla de reuniones (`google_sheet_gob_reuniones_id`).
+    google_sheet_gob_elecciones_id: str = ""
     gob_transferencias_sync_enabled: bool = False
 
     # WFS público de IDECOR (Catastro) para la valuación de parcelas de Mi Lugar
