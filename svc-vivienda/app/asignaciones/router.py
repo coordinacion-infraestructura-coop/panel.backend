@@ -3,10 +3,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.asignaciones import service
 from app.asignaciones.schemas import AsignacionCreate, AsignacionResponse, AsignacionUpdate
-from app.auth import AuthUser, require_roles, ROLES_ESCRITURA, ROLES_LECTURA, ROLES_TRANSICION
+from app.auth import AuthUser, require_roles, ROLES_ESCRITURA, ROLES_LECTURA, ROLES_TRANSICION, require_area
 from app.database import get_db
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_area())])
 
 
 @router.get("/asignaciones", response_model=list[AsignacionResponse])

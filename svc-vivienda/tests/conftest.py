@@ -30,6 +30,10 @@ TestSession = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_com
 
 # ── Usuarios de prueba ─────────────────────────────────────────────────────────
 
+# Áreas de acceso de Vivienda (spec-portal-areas-de-acceso.md): igual que las deja la migración 0045.
+AREAS_VIVIENDA_EDICION = {"vivienda": {a: "edicion" for a in ("cc", "ch", "ml", "checklist")}}
+AREAS_VIVIENDA_LECTURA = {"vivienda": {a: "lectura" for a in ("cc", "ch", "ml", "checklist")}}
+
 ADMIN_USER = AuthUser(
     uid="admin-uid",
     email="admin@test.com",
@@ -41,12 +45,14 @@ OPERADOR_USER = AuthUser(
     email="operador@test.com",
     role="Operador",
     secretarias=["vivienda"],
+    areas=AREAS_VIVIENDA_EDICION,
 )
 CONSULTA_USER = AuthUser(
     uid="cons-uid",
     email="consulta@test.com",
     role="Consulta",
     secretarias=["vivienda"],
+    areas=AREAS_VIVIENDA_LECTURA,
 )
 INVITADO_USER = AuthUser(
     uid="inv-uid",
@@ -66,11 +72,13 @@ SUPERVISION_USER = AuthUser(
     role="Operador",
     secretarias=["supervision"],
 )
+# Ex-rol TecnicoDGV: Operador con solo el área "checklist" (migración 0045).
 TECNICO_DGV_USER = AuthUser(
     uid="tecnico-dgv-uid",
     email="tecnico.dgv@test.com",
-    role="TecnicoDGV",
+    role="Operador",
     secretarias=["vivienda"],
+    areas={"vivienda": {"checklist": "edicion"}},
 )
 AUTORIDAD_USER = AuthUser(
     uid="autoridad-uid",
@@ -100,6 +108,7 @@ _AUDIT_PATCH_TARGETS = [
     "app.resumen_territorial.service.log_audit",
     "app.notificaciones.service.log_audit",
     "app.geo.asignacion.log_audit",
+    "app.portal.router.log_audit",
 ]
 
 

@@ -17,6 +17,8 @@ class AuthUser(BaseModel):
     role: str                     # kept as 'role' — audit.py uses actor.role
     secretarias: list[str] = []
     nombre: str | None = None
+    # {secretaria: {area: "lectura" | "edicion"}} — spec-portal-areas-de-acceso.md
+    areas: dict[str, dict[str, str]] = {}
 
 
 @lru_cache(maxsize=1)
@@ -88,16 +90,21 @@ async def get_current_user(
             role = portal_user.rol
             secretarias = [s.secretaria for s in portal_user.secretarias]
             nombre = portal_user.nombre
+            areas: dict[str, dict[str, str]] = {}
+            for a in portal_user.areas:
+                areas.setdefault(a.secretaria, {})[a.area] = a.nivel
         else:
             role = "invitado"
             secretarias = []
             nombre = None
+            areas = {}
     except Exception:
         role = "invitado"
         secretarias = []
         nombre = None
+        areas = {}
 
-    return AuthUser(uid=uid, email=email, role=role, secretarias=secretarias, nombre=nombre)
+    return AuthUser(uid=uid, email=email, role=role, secretarias=secretarias, nombre=nombre, areas=areas)
 
 
 def require_roles(*roles: str):
@@ -122,6 +129,68 @@ ROLES_ADMIN = ("Admin",)
 
 
 SECRETARIAS_COMUNICACIONES = frozenset({"infraestructura", "supervision"})
+
+
+def nivel_de_area(user: AuthUser, secretaria: str, areas: tuple[str, ...]) -> str | None:
+    """Mejor nivel ("edicion" > "lectura") que tiene el usuario en alguna de `areas`
+    (todas las de la secretaría si `areas` está vacío). Admin: siempre "edicion"."""
+    if user.role == "Admin":
+        return "edicion"
+    if secretaria not in user.secretarias:
+        return None
+    propias = user.areas.get(secretaria, {})
+    niveles = [nivel for area, nivel in propias.items() if not areas or area in areas]
+    if "edicion" in niveles:
+        return "edicion"
+    return "lectura" if niveles else None
+
+
+def _sin_area(areas: tuple[str, ...], nivel: str) -> HTTPException:
+    que = ", ".join(areas) if areas else "alguna área"
+    return HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail={
+            "code": "AREA_SIN_ACCESO",
+            "message": f"Se requiere acceso de {nivel} a {que} de la secretaría.",
+        },
+    )
+
+
+def require_area(
+    *areas: str,
+    secretaria: str = "vivienda",
+    lectura_comunicaciones: bool = False,
+    abierto_a_autoridad: bool = False,
+):
+    """Lectura de un módulo: el usuario tiene que tener la secretaría y alguna de `areas`
+    (cualquiera de la secretaría si no se pasa ninguna). Se usa como dependencia del router
+    entero (spec-portal-areas-de-acceso.md §5).
+
+    `lectura_comunicaciones`: los paneles CC/CH/ML siguen abiertos en lectura a Infraestructura y
+    Supervisión, que cargan comunicaciones en ellos (`require_comunicaciones_write`).
+    `abierto_a_autoridad`: tableros transversales que `Autoridad` ve sin tener la secretaría
+    (spec-vivienda-tablero-analitico.md)."""
+    async def check(user: AuthUser = Depends(get_current_user)) -> AuthUser:
+        if nivel_de_area(user, secretaria, areas):
+            return user
+        if abierto_a_autoridad and user.role == "Autoridad":
+            return user
+        if lectura_comunicaciones and SECRETARIAS_COMUNICACIONES & set(user.secretarias):
+            return user
+        raise _sin_area(areas, "lectura")
+    return check
+
+
+def require_edicion(areas: tuple[str, ...], *roles: str, secretaria: str = "vivienda"):
+    """Escritura: rol en `roles` y nivel "edicion" en alguna de `areas`. El permiso efectivo es
+    el menor de los dos (un Consulta con un área en edición sigue sin escribir)."""
+    check_rol = require_roles(*roles)
+
+    async def check(user: AuthUser = Depends(check_rol)) -> AuthUser:
+        if nivel_de_area(user, secretaria, areas) != "edicion":
+            raise _sin_area(areas, "edición")
+        return user
+    return check
 
 
 def require_comunicaciones_write():

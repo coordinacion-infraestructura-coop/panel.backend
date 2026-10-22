@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import AuthUser, ROLES_ADMIN, ROLES_ESCRITURA, ROLES_LECTURA, require_roles
+from app.auth import AuthUser, ROLES_ADMIN, ROLES_ESCRITURA, ROLES_LECTURA, require_area, require_edicion, require_roles
 from app.checklist_tecnico import service
 from app.checklist_tecnico.catalog import Programa, TipoHito
 from app.checklist_tecnico.schemas import (
@@ -31,20 +31,18 @@ from app.checklist_tecnico.schemas import (
 )
 from app.database import get_db
 
-# Constantes LOCALES a este módulo — NO se agregan a app/auth.py ni se tocan los routers
-# de cordon_cuneta/cordoba_hogar/mi_lugar. Si "TecnicoDGV" se agregara a las constantes
-# compartidas de app.auth, se filtraría automáticamente a esos 3 paneles completos, que es
-# exactamente lo que el área NO quiere (ver spec-checklist-tecnico-dgv.md §8).
-ROLES_LECTURA_CHECKLIST = ROLES_LECTURA + ("TecnicoDGV",)
-ROLES_ESCRITURA_CHECKLIST = ROLES_ESCRITURA + ("TecnicoDGV",)
+# Lectura: cualquiera que tenga el Checklist o uno de los paneles (la pestaña "Checklist Técnico"
+# de CC y el Estado Técnico de los paneles leen de acá). Escritura: área "checklist" en edición
+# (spec-portal-areas-de-acceso.md §5; reemplaza al rol TecnicoDGV).
+ESCRITURA_CHECKLIST = require_edicion(("checklist",), *ROLES_ESCRITURA)
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_area("checklist", "cc", "ch", "ml"))])
 
 
 @router.get("/checklist-tecnico/catalogos", response_model=CatalogosResponse)
 async def get_catalogos(
     db: AsyncSession = Depends(get_db),
-    _: AuthUser = Depends(require_roles(*ROLES_LECTURA_CHECKLIST)),
+    _: AuthUser = Depends(require_roles(*ROLES_LECTURA)),
 ):
     return await service.get_catalogos(db)
 
@@ -52,10 +50,11 @@ async def get_catalogos(
 @router.get("/checklist-tecnico/entidades", response_model=list[EntidadListItem])
 async def listar_entidades(
     db: AsyncSession = Depends(get_db),
-    _: AuthUser = Depends(require_roles(*ROLES_LECTURA_CHECKLIST)),
+    _: AuthUser = Depends(require_roles(*ROLES_LECTURA)),
 ):
     """Selector de localidad/programa. Reemplaza el uso de los GET de panel completo
-    de cordon_cuneta/cordoba_hogar/mi_lugar, vedados a TecnicoDGV (spec §6, enmienda 1.1.0)."""
+    de cordon_cuneta/cordoba_hogar/mi_lugar, vedados a quien solo tiene el área
+    "checklist" (spec §6, enmienda 1.1.0; spec-portal-areas-de-acceso.md)."""
     return await service.listar_entidades(db)
 
 
@@ -64,7 +63,7 @@ async def get_checklist(
     programa: Programa,
     entidad_id: str,
     db: AsyncSession = Depends(get_db),
-    _: AuthUser = Depends(require_roles(*ROLES_LECTURA_CHECKLIST)),
+    _: AuthUser = Depends(require_roles(*ROLES_LECTURA)),
 ):
     return await service.get_checklist(db, programa, entidad_id)
 
@@ -77,7 +76,7 @@ async def listar_pedidos(
     programa: Programa,
     entidad_id: str,
     db: AsyncSession = Depends(get_db),
-    actor: AuthUser = Depends(require_roles(*ROLES_LECTURA_CHECKLIST)),
+    actor: AuthUser = Depends(require_roles(*ROLES_LECTURA)),
 ):
     return await service.listar_pedidos(db, programa, entidad_id, actor)
 
@@ -92,7 +91,7 @@ async def crear_pedido(
     entidad_id: str,
     data: ChecklistPedidoCreate,
     db: AsyncSession = Depends(get_db),
-    actor: AuthUser = Depends(require_roles(*ROLES_ESCRITURA_CHECKLIST)),
+    actor: AuthUser = Depends(ESCRITURA_CHECKLIST),
 ):
     return await service.crear_pedido(db, programa, entidad_id, data, actor)
 
@@ -107,7 +106,7 @@ async def corregir_pedido(
     pedido_id: str,
     data: ChecklistPedidoUpdate,
     db: AsyncSession = Depends(get_db),
-    actor: AuthUser = Depends(require_roles(*ROLES_ESCRITURA_CHECKLIST)),
+    actor: AuthUser = Depends(ESCRITURA_CHECKLIST),
 ):
     """Corrige una observación del expediente ya cargada (spec v1.7.0 §6-ter.2)."""
     return await service.corregir_pedido(db, programa, entidad_id, pedido_id, data, actor)
@@ -121,7 +120,7 @@ async def listar_obs_obra(
     programa: Programa,
     entidad_id: str,
     db: AsyncSession = Depends(get_db),
-    _: AuthUser = Depends(require_roles(*ROLES_LECTURA_CHECKLIST)),
+    _: AuthUser = Depends(require_roles(*ROLES_LECTURA)),
 ):
     return await service.listar_obs_obra(db, programa, entidad_id)
 
@@ -136,7 +135,7 @@ async def crear_obs_obra(
     entidad_id: str,
     data: ObraObsCreate,
     db: AsyncSession = Depends(get_db),
-    actor: AuthUser = Depends(require_roles(*ROLES_ESCRITURA_CHECKLIST)),
+    actor: AuthUser = Depends(ESCRITURA_CHECKLIST),
 ):
     return await service.crear_obs_obra(db, programa, entidad_id, data, actor)
 
@@ -151,7 +150,7 @@ async def corregir_obs_obra(
     obs_id: str,
     data: ObraObsUpdate,
     db: AsyncSession = Depends(get_db),
-    actor: AuthUser = Depends(require_roles(*ROLES_ESCRITURA_CHECKLIST)),
+    actor: AuthUser = Depends(ESCRITURA_CHECKLIST),
 ):
     """Corrige una observación de obra ya cargada (spec v1.7.0 §6-ter.2)."""
     return await service.corregir_obs_obra(db, programa, entidad_id, obs_id, data, actor)
@@ -165,7 +164,7 @@ async def listar_avance(
     programa: Programa,
     entidad_id: str,
     db: AsyncSession = Depends(get_db),
-    _: AuthUser = Depends(require_roles(*ROLES_LECTURA_CHECKLIST)),
+    _: AuthUser = Depends(require_roles(*ROLES_LECTURA)),
 ):
     return await service.listar_avance(db, programa, entidad_id)
 
@@ -180,7 +179,7 @@ async def crear_avance(
     entidad_id: str,
     data: AvanceMedicionCreate,
     db: AsyncSession = Depends(get_db),
-    actor: AuthUser = Depends(require_roles(*ROLES_ESCRITURA_CHECKLIST)),
+    actor: AuthUser = Depends(ESCRITURA_CHECKLIST),
 ):
     return await service.crear_avance(db, programa, entidad_id, data, actor)
 
@@ -191,7 +190,7 @@ async def eliminar_avance(
     entidad_id: str,
     medicion_id: str,
     db: AsyncSession = Depends(get_db),
-    actor: AuthUser = Depends(require_roles(*ROLES_ESCRITURA_CHECKLIST)),
+    actor: AuthUser = Depends(ESCRITURA_CHECKLIST),
 ):
     await service.eliminar_avance(db, programa, entidad_id, medicion_id, actor)
 
@@ -202,7 +201,7 @@ async def actualizar_checklist(
     entidad_id: str,
     data: ChecklistTecnicoUpdate,
     db: AsyncSession = Depends(get_db),
-    actor: AuthUser = Depends(require_roles(*ROLES_ESCRITURA_CHECKLIST)),
+    actor: AuthUser = Depends(ESCRITURA_CHECKLIST),
 ):
     return await service.actualizar_checklist(db, programa, entidad_id, data, actor)
 
@@ -214,7 +213,7 @@ async def actualizar_item(
     item_num: int,
     data: ChecklistItemUpdate,
     db: AsyncSession = Depends(get_db),
-    actor: AuthUser = Depends(require_roles(*ROLES_ESCRITURA_CHECKLIST)),
+    actor: AuthUser = Depends(ESCRITURA_CHECKLIST),
 ):
     return await service.actualizar_item(db, programa, entidad_id, item_num, data, actor)
 
@@ -226,12 +225,12 @@ async def actualizar_hito(
     tipo: TipoHito,
     data: HitoUpdate,
     db: AsyncSession = Depends(get_db),
-    actor: AuthUser = Depends(require_roles(*ROLES_ESCRITURA_CHECKLIST)),
+    actor: AuthUser = Depends(ESCRITURA_CHECKLIST),
 ):
     return await service.actualizar_hito(db, programa, entidad_id, tipo, data, actor)
 
 
-# ── Admin de catálogos (sin TecnicoDGV — coincide con la respuesta del área) ──────────
+# ── Admin de catálogos (solo Admin — coincide con la respuesta del área) ──────────
 
 @router.post(
     "/checklist-tecnico/admin/estado-expediente",

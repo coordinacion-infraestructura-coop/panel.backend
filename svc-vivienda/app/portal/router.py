@@ -1,15 +1,20 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.audit import log_audit
 from app.auth import AuthUser, get_current_user
 from app.database import get_db
 from app.portal import repository
 from app.portal.schemas import (
+    AREAS_POR_SECRETARIA,
     ROLES_VALIDOS,
+    AreaAcceso,
+    AreaCatalogo,
     PortalMeResponse,
     PortalUsuarioCreate,
     PortalUsuarioResponse,
     PortalUsuarioUpdate,
+    areas_invalidas,
 )
 
 router = APIRouter(prefix="/portal", tags=["portal"])
@@ -34,7 +39,26 @@ async def get_me(
         nombre=usuario.nombre,
         rol=usuario.rol,
         secretarias=[s.secretaria for s in usuario.secretarias],
+        areas=[AreaAcceso.model_validate(a) for a in usuario.areas],
     )
+
+
+@router.get("/areas", response_model=dict[str, list[AreaCatalogo]])
+async def catalogo_areas(_: AuthUser = Depends(get_current_user)):
+    """Áreas de acceso de cada secretaría (spec-portal-areas-de-acceso.md §4)."""
+    return {
+        sec: [AreaCatalogo(area=area, label=label) for area, label in areas.items()]
+        for sec, areas in AREAS_POR_SECRETARIA.items()
+    }
+
+
+def _validar_areas(areas: list[AreaAcceso], secretarias: list[str]) -> None:
+    errores = areas_invalidas(areas, secretarias)
+    if errores:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": "AREA_INVALIDA", "message": "; ".join(errores)},
+        )
 
 
 def _require_admin(current_user: AuthUser = Depends(get_current_user)) -> AuthUser:
@@ -52,6 +76,7 @@ def _to_response(u: object) -> PortalUsuarioResponse:
         nombre=u.nombre,
         rol=u.rol,
         secretarias=[s.secretaria for s in u.secretarias],
+        areas=[AreaAcceso.model_validate(a) for a in u.areas],
         activo=u.activo,
         created_at=u.created_at,
     )
@@ -86,8 +111,14 @@ async def create_usuario(
             status_code=status.HTTP_409_CONFLICT,
             detail={"code": "EMAIL_DUPLICADO", "message": "Ya existe un usuario con ese email"},
         )
+    _validar_areas(payload.areas, payload.secretarias)
     usuario = await repository.create_usuario(
-        db, str(payload.email), payload.nombre, payload.rol, payload.secretarias, current_user.email
+        db, str(payload.email), payload.nombre, payload.rol, payload.secretarias, current_user.email,
+        areas=[a.model_dump() for a in payload.areas],
+    )
+    await log_audit(
+        db, actor=current_user, action="CREATE", resource_type="portal_usuario",
+        resource_id=usuario.email[:36], payload=payload.model_dump(mode="json"),
     )
     return _to_response(usuario)
 
@@ -117,9 +148,17 @@ async def update_usuario(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail={"code": "ROL_INVALIDO", "message": f"Roles válidos: {', '.join(ROLES_VALIDOS)}"},
         )
-    usuario = await repository.update_usuario(db, email, updates, current_user.email)
-    if not usuario:
+    actual = await repository.get_portal_user_any_status(db, email)
+    if not actual:
         raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Usuario no encontrado"})
+    if payload.areas is not None:
+        secretarias = payload.secretarias if payload.secretarias is not None else [s.secretaria for s in actual.secretarias]
+        _validar_areas(payload.areas, secretarias)
+    usuario = await repository.update_usuario(db, email, updates, current_user.email)
+    await log_audit(
+        db, actor=current_user, action="UPDATE", resource_type="portal_usuario",
+        resource_id=usuario.email[:36], payload=payload.model_dump(mode="json", exclude_none=True),
+    )
     return _to_response(usuario)
 
 

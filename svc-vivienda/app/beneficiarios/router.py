@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import AuthUser, get_current_user, require_roles, ROLES_ELIMINACION, ROLES_ESCRITURA, ROLES_LECTURA
+from app.auth import AuthUser, get_current_user, require_roles, ROLES_ELIMINACION, ROLES_ESCRITURA, ROLES_LECTURA, require_area
 from app.database import get_db
 from app.beneficiarios import service
 from app.beneficiarios.schemas import (
@@ -11,7 +11,7 @@ from app.beneficiarios.schemas import (
     BeneficiarioUpdate,
 )
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_area())])
 
 
 @router.get("/beneficiarios", response_model=BeneficiariosListResponse)

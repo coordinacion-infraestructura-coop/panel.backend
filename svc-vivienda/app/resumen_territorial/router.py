@@ -7,8 +7,8 @@ from app.resumen_territorial import service
 from app.resumen_territorial.schemas import ResumenSnapshotResponse, ResumenTerritorialPayload
 
 # Tuplas locales — `Autoridad` NO se agrega a las constantes compartidas de app.auth
-# (mismo criterio que `TecnicoDGV`, ver spec-checklist-tecnico-dgv.md §8 / spec §7.1).
-ROLES_LECTURA_RESUMEN = ROLES_LECTURA + ("Autoridad", "TecnicoDGV")
+# (spec §7.1).
+ROLES_LECTURA_RESUMEN = ROLES_LECTURA + ("Autoridad",)
 ROLES_ESCRITURA_RESUMEN = ROLES_ESCRITURA + ("Autoridad",)
 
 router = APIRouter()

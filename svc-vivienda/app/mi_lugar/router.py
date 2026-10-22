@@ -2,6 +2,8 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import (
+    require_area,
+    require_edicion,
     AuthUser,
     ROLES_ESCRITURA,
     ROLES_LECTURA,
@@ -26,7 +28,7 @@ from app.mi_lugar.schemas import (
     ValuacionIdecorOut,
 )
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_area("ml", lectura_comunicaciones=True))])
 
 
 # ─── Catálogo de estados ──────────────────────────────────────────────────────
@@ -44,7 +46,7 @@ async def listar_estados(
 async def crear_estado(
     data: EstadoMLCreate,
     db: AsyncSession = Depends(get_db),
-    actor: AuthUser = Depends(require_roles(*ROLES_TRANSICION)),
+    actor: AuthUser = Depends(require_edicion(("ml",), *ROLES_TRANSICION)),
 ):
     return await service.crear_estado_ml(db, data, actor)
 
@@ -54,7 +56,7 @@ async def actualizar_estado(
     estado_id: int,
     data: EstadoMLUpdate,
     db: AsyncSession = Depends(get_db),
-    actor: AuthUser = Depends(require_roles(*ROLES_TRANSICION)),
+    actor: AuthUser = Depends(require_edicion(("ml",), *ROLES_TRANSICION)),
 ):
     return await service.actualizar_estado_ml(db, estado_id, data, actor)
 
@@ -63,7 +65,7 @@ async def actualizar_estado(
 async def eliminar_estado(
     estado_id: int,
     db: AsyncSession = Depends(get_db),
-    actor: AuthUser = Depends(require_roles(*ROLES_TRANSICION)),
+    actor: AuthUser = Depends(require_edicion(("ml",), *ROLES_TRANSICION)),
 ):
     await service.eliminar_estado_ml(db, estado_id, actor)
 
@@ -86,7 +88,7 @@ async def crear_proyecto(
     data: ProyectoMLCreate,
     background: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
-    actor: AuthUser = Depends(require_roles(*ROLES_ESCRITURA)),
+    actor: AuthUser = Depends(require_edicion(("ml",), *ROLES_ESCRITURA)),
 ):
     proyecto = await service.crear_proyecto_ml(db, data, actor)
     # Valuación IDECOR en segundo plano, después del commit (spec-mi-lugar-valor-fiscal-idecor.md §5.4)
@@ -110,7 +112,7 @@ async def actualizar_proyecto(
     data: ProyectoMLUpdate,
     background: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
-    actor: AuthUser = Depends(require_roles(*ROLES_ESCRITURA)),
+    actor: AuthUser = Depends(require_edicion(("ml",), *ROLES_ESCRITURA)),
 ):
     proyecto = await service.actualizar_proyecto_ml(db, proyecto_id, data, actor)
     cambio_ubicacion = bool({"geo_puntos", "nomenclaturas"} & data.model_fields_set)
@@ -123,7 +125,7 @@ async def actualizar_proyecto(
 async def recalcular_valuacion_idecor(
     proyecto_id: str,
     db: AsyncSession = Depends(get_db),
-    actor: AuthUser = Depends(require_roles(*ROLES_ESCRITURA)),
+    actor: AuthUser = Depends(require_edicion(("ml",), *ROLES_ESCRITURA)),
 ):
     """Botón "Recalcular": consulta IDECOR de nuevo. No modifica `valor_fiscal`."""
     return await service.recalcular_valuacion_ml(db, proyecto_id, actor)
@@ -133,7 +135,7 @@ async def recalcular_valuacion_idecor(
 async def eliminar_proyecto(
     proyecto_id: str,
     db: AsyncSession = Depends(get_db),
-    actor: AuthUser = Depends(require_roles(*ROLES_TRANSICION)),
+    actor: AuthUser = Depends(require_edicion(("ml",), *ROLES_TRANSICION)),
 ):
     await service.eliminar_proyecto_ml(db, proyecto_id, actor)
 
@@ -182,7 +184,7 @@ async def eliminar_pedido(
     proyecto_id: str,
     pedido_id: str,
     db: AsyncSession = Depends(get_db),
-    actor: AuthUser = Depends(require_roles(*ROLES_ESCRITURA)),
+    actor: AuthUser = Depends(require_edicion(("ml",), *ROLES_ESCRITURA)),
 ):
     await service.eliminar_pedido_ml(db, proyecto_id, pedido_id, actor)
 
@@ -201,6 +203,6 @@ async def obtener_config(
 async def actualizar_config(
     data: ConfigMLUpdate,
     db: AsyncSession = Depends(get_db),
-    actor: AuthUser = Depends(require_roles(*ROLES_ESCRITURA)),
+    actor: AuthUser = Depends(require_edicion(("ml",), *ROLES_ESCRITURA)),
 ):
     return await service.actualizar_config_ml(db, data, actor)

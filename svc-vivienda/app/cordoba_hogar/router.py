@@ -1,7 +1,10 @@
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import AuthUser, require_roles, require_comunicaciones_write, ROLES_ESCRITURA, ROLES_LECTURA, ROLES_TRANSICION
+from app.auth import (
+    AuthUser, require_area, require_comunicaciones_write, require_edicion, require_roles,
+    ROLES_ESCRITURA, ROLES_LECTURA, ROLES_TRANSICION,
+)
 from app.database import get_db
 from app.cordoba_hogar import service
 from app.cordoba_hogar.schemas import (
@@ -22,7 +25,7 @@ from app.cordoba_hogar.schemas import (
 from app.informes import service as informes_service
 from app.informes.schemas import InformeSnapshotResponse
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_area("ch", lectura_comunicaciones=True))])
 
 
 @router.get("/cordoba-hogar", response_model=CordobaHogarFullResponse)
@@ -45,7 +48,7 @@ async def listar_estados(
 async def crear_estado(
     data: EstadoCreate,
     db: AsyncSession = Depends(get_db),
-    actor: AuthUser = Depends(require_roles(*ROLES_TRANSICION)),
+    actor: AuthUser = Depends(require_edicion(("ch",), *ROLES_TRANSICION)),
 ):
     return await service.crear_estado(db, data, actor)
 
@@ -55,7 +58,7 @@ async def actualizar_estado(
     estado_id: int,
     data: EstadoUpdate,
     db: AsyncSession = Depends(get_db),
-    actor: AuthUser = Depends(require_roles(*ROLES_TRANSICION)),
+    actor: AuthUser = Depends(require_edicion(("ch",), *ROLES_TRANSICION)),
 ):
     return await service.actualizar_estado(db, estado_id, data, actor)
 
@@ -64,7 +67,7 @@ async def actualizar_estado(
 async def eliminar_estado(
     estado_id: int,
     db: AsyncSession = Depends(get_db),
-    actor: AuthUser = Depends(require_roles(*ROLES_TRANSICION)),
+    actor: AuthUser = Depends(require_edicion(("ch",), *ROLES_TRANSICION)),
 ):
     await service.eliminar_estado(db, estado_id, actor)
 
@@ -81,7 +84,7 @@ async def listar_geo(
 async def crear_localidad(
     data: LocalidadCreate,
     db: AsyncSession = Depends(get_db),
-    actor: AuthUser = Depends(require_roles(*ROLES_ESCRITURA)),
+    actor: AuthUser = Depends(require_edicion(("ch",), *ROLES_ESCRITURA)),
 ):
     return await service.crear_localidad(db, data, actor)
 
@@ -91,7 +94,7 @@ async def actualizar_localidad(
     localidad_id: str,
     data: LocalidadUpdate,
     db: AsyncSession = Depends(get_db),
-    actor: AuthUser = Depends(require_roles(*ROLES_ESCRITURA)),
+    actor: AuthUser = Depends(require_edicion(("ch",), *ROLES_ESCRITURA)),
 ):
     return await service.actualizar_localidad(db, localidad_id, data, actor)
 
@@ -100,7 +103,7 @@ async def actualizar_localidad(
 async def eliminar_localidad(
     localidad_id: str,
     db: AsyncSession = Depends(get_db),
-    actor: AuthUser = Depends(require_roles(*ROLES_TRANSICION)),
+    actor: AuthUser = Depends(require_edicion(("ch",), *ROLES_TRANSICION)),
 ):
     await service.eliminar_localidad(db, localidad_id, actor)
 
@@ -145,7 +148,7 @@ async def delete_pedido(
     localidad_id: str,
     pedido_id: str,
     db: AsyncSession = Depends(get_db),
-    actor: AuthUser = Depends(require_roles(*ROLES_ESCRITURA)),
+    actor: AuthUser = Depends(require_edicion(("ch",), *ROLES_ESCRITURA)),
 ):
     await service.delete_pedido(db, localidad_id, pedido_id, actor)
 
@@ -164,7 +167,7 @@ async def get_informe(
 @router.post("/cordoba-hogar/informe/actualizar", response_model=InformeSnapshotResponse)
 async def actualizar_informe(
     db: AsyncSession = Depends(get_db),
-    actor: AuthUser = Depends(require_roles(*ROLES_ESCRITURA)),
+    actor: AuthUser = Depends(require_edicion(("ch",), *ROLES_ESCRITURA)),
 ):
     """Recalcula el informe ahora mismo y guarda un snapshot nuevo (no se
     sobreescribe el anterior, queda historizado)."""
@@ -175,7 +178,7 @@ async def actualizar_informe(
 async def actualizar_presupuesto(
     data: PresupuestoUpdate,
     db: AsyncSession = Depends(get_db),
-    actor: AuthUser = Depends(require_roles(*ROLES_ESCRITURA)),
+    actor: AuthUser = Depends(require_edicion(("ch",), *ROLES_ESCRITURA)),
 ):
     presupuesto = await service.actualizar_presupuesto(db, data, actor)
     return {"presupuesto": presupuesto}
@@ -185,7 +188,7 @@ async def actualizar_presupuesto(
 async def actualizar_monto_por_casa(
     data: MontoPorCasaUpdate,
     db: AsyncSession = Depends(get_db),
-    actor: AuthUser = Depends(require_roles(*ROLES_ESCRITURA)),
+    actor: AuthUser = Depends(require_edicion(("ch",), *ROLES_ESCRITURA)),
 ):
     monto = await service.actualizar_monto_por_casa(db, data, actor)
     return {"monto_por_casa": monto}

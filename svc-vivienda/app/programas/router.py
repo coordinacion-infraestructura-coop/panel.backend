@@ -1,25 +1,21 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import AuthUser, ROLES_LECTURA, require_roles
+from app.auth import AuthUser, ROLES_LECTURA, require_area, require_roles
 from app.database import get_db
 from app.programas import service
 from app.programas.schemas import ProgramaEstadisticas, ProgramaResponse
 from app.programas.tablero import TableroViviendaResponse, get_tablero_vivienda
 
-router = APIRouter()
+# Visible con cualquier área de Vivienda (spec-portal-areas-de-acceso.md, B3).
+router = APIRouter(dependencies=[Depends(require_area(abierto_a_autoridad=True))])
 
-# Constante LOCAL a este router — no se agrega "TecnicoDGV" a app.auth.ROLES_LECTURA porque
-# esa constante la comparten cordon_cuneta/cordoba_hogar/mi_lugar, y ese rol solo debe ver el
-# Tablero (este router) + Checklist Técnico, nunca los 3 paneles completos (ver
-# docs/files/spec-checklist-tecnico-dgv.md §8).
-ROLES_LECTURA_TABLERO = ROLES_LECTURA + ("TecnicoDGV",)
 
 
 @router.get("/programas", response_model=list[ProgramaResponse])
 async def listar_programas(
     db: AsyncSession = Depends(get_db),
-    _: AuthUser = Depends(require_roles(*ROLES_LECTURA_TABLERO)),
+    _: AuthUser = Depends(require_roles(*ROLES_LECTURA)),
 ):
     """Catálogo de programas habitacionales activos."""
     return await service.listar_programas(db)
@@ -31,10 +27,10 @@ async def listar_programas(
 @router.get("/programas-tablero", response_model=TableroViviendaResponse)
 async def tablero_vivienda(
     db: AsyncSession = Depends(get_db),
-    _: AuthUser = Depends(require_roles(*ROLES_LECTURA_TABLERO)),
+    _: AuthUser = Depends(require_roles(*ROLES_LECTURA)),
 ):
     """KPIs agregados de CC/CH/ML para el Tablero de Programas — sin exponer los
-    paneles completos (accesible a TecnicoDGV, spec-checklist-tecnico-dgv.md §8/§9)."""
+    paneles completos (accesible con cualquier área de Vivienda, spec-portal-areas-de-acceso.md B3)."""
     return await get_tablero_vivienda(db)
 
 
@@ -42,7 +38,7 @@ async def tablero_vivienda(
 async def get_programa(
     programa_id: str,
     db: AsyncSession = Depends(get_db),
-    _: AuthUser = Depends(require_roles(*ROLES_LECTURA_TABLERO)),
+    _: AuthUser = Depends(require_roles(*ROLES_LECTURA)),
 ):
     return await service.get_programa(db, programa_id)
 
@@ -51,7 +47,7 @@ async def get_programa(
 async def estadisticas_programa(
     programa_id: str,
     db: AsyncSession = Depends(get_db),
-    _: AuthUser = Depends(require_roles(*ROLES_LECTURA_TABLERO)),
+    _: AuthUser = Depends(require_roles(*ROLES_LECTURA)),
 ):
     """Distribución de expedientes por estado para un programa."""
     return await service.get_estadisticas(db, programa_id)

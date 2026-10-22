@@ -63,6 +63,8 @@ async def portal_usuario_por_email(email: str, db: AsyncSession = Depends(get_db
         "rol": usuario.rol,
         "nombre": usuario.nombre,
         "secretarias": [s.secretaria for s in usuario.secretarias],
+        # Aditivo (spec-portal-areas-de-acceso.md §5): los servicios que no tienen áreas lo ignoran.
+        "areas": [{"secretaria": a.secretaria, "area": a.area, "nivel": a.nivel} for a in usuario.areas],
         "activo": usuario.activo,
     }
 

@@ -7,9 +7,7 @@ from app.notificaciones import service
 from app.notificaciones.schemas import NotificacionesListResponse
 
 # Tupla local — todos los roles reales del portal ven sus notificaciones.
-# `Autoridad`/`TecnicoDGV` NO se agregan a las constantes de `app.auth` (misma
-# convención que resumen_territorial / spec-checklist-tecnico-dgv.md §8).
-ROLES_NOTIF = ROLES_LECTURA + ("Autoridad", "TecnicoDGV")
+ROLES_NOTIF = ROLES_LECTURA
 
 router = APIRouter(tags=["notificaciones"])
 

@@ -21,6 +21,11 @@ class PortalUsuario(Base):
         back_populates="usuario",
         cascade="all, delete-orphan",
     )
+    areas = relationship(
+        "PortalUsuarioArea",
+        back_populates="usuario",
+        cascade="all, delete-orphan",
+    )
 
 
 class PortalUsuarioSecretaria(Base):
@@ -34,3 +39,21 @@ class PortalUsuarioSecretaria(Base):
     secretaria = Column(String(100), primary_key=True)
 
     usuario = relationship("PortalUsuario", back_populates="secretarias")
+
+
+class PortalUsuarioArea(Base):
+    """Área de acceso dentro de una secretaría, con nivel `lectura` o `edicion`
+    (spec-portal-areas-de-acceso.md §4). La secretaría tiene que estar asignada al usuario:
+    lo valida el router y `repository.update_usuario` borra las áreas de una secretaría quitada."""
+    __tablename__ = "portal_usuario_areas"
+
+    email = Column(
+        String(255),
+        ForeignKey("portal_usuarios.email", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    secretaria = Column(String(100), primary_key=True)
+    area = Column(String(50), primary_key=True)
+    nivel = Column(String(10), nullable=False)
+
+    usuario = relationship("PortalUsuario", back_populates="areas")
