@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.audit import log_audit
 from app.auth import AuthUser
 from app.checklist_tecnico import estado_tecnico
+from app.estados_dimension import validar_dimensiones
 from app.geo import service as geo_service
 from app.integrations.privada_sync import sync_gestion_privada
 from app.mi_lugar import valuacion_idecor
@@ -60,9 +61,7 @@ async def crear_estado_ml(db: AsyncSession, data: EstadoMLCreate, actor: AuthUse
         text_color=data.text_color,
         orden=data.orden,
         tipo=data.tipo,
-        aplica_juridico=data.aplica_juridico,
-        aplica_tecnico=data.aplica_tecnico,
-        aplica_financiero=data.aplica_financiero,
+        dimension=data.dimension,
         area_responsable=data.area_responsable,
     )
     db.add(estado)
@@ -281,6 +280,7 @@ async def obtener_proyecto_ml(db: AsyncSession, proyecto_id: str) -> ProyectoMLO
 async def crear_proyecto_ml(
     db: AsyncSession, data: ProyectoMLCreate, actor: AuthUser
 ) -> ProyectoMLOut:
+    await validar_dimensiones(db, EstadoML, data.model_dump())
     resuelto = await geo_service.resolver_uno(db, data.departamento, data.localidad_nombre, origen="mi_lugar")
 
     proy = ProyectoML(
@@ -348,6 +348,7 @@ async def actualizar_proyecto_ml(
 
     updates = data.model_dump(exclude_unset=True)
     fecha_cambio = updates.pop("fecha_cambio", None)
+    await validar_dimensiones(db, EstadoML, updates)
     geo_puntos_data: list[GeoPuntoIn] | None = updates.pop("geo_puntos", None)
     nomenclaturas_data: list[str] | None = updates.pop("nomenclaturas", None)
     # localidad_id nunca se acepta del cliente — se resuelve siempre contra el

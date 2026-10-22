@@ -44,7 +44,7 @@ async def listar_estados(
 async def crear_estado(
     data: EstadoMLCreate,
     db: AsyncSession = Depends(get_db),
-    actor: AuthUser = Depends(require_roles(*ROLES_TRANSICION)),
+    actor: AuthUser = Depends(require_roles(*ROLES_ESCRITURA)),
 ):
     return await service.crear_estado_ml(db, data, actor)
 
@@ -54,7 +54,7 @@ async def actualizar_estado(
     estado_id: int,
     data: EstadoMLUpdate,
     db: AsyncSession = Depends(get_db),
-    actor: AuthUser = Depends(require_roles(*ROLES_TRANSICION)),
+    actor: AuthUser = Depends(require_roles(*ROLES_ESCRITURA)),
 ):
     return await service.actualizar_estado_ml(db, estado_id, data, actor)
 

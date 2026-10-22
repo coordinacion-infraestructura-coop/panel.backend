@@ -3,6 +3,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
+from app.estados_dimension import Dimension, DimensionEditable
+
 from app.checklist_tecnico.schemas import HitoObraPanel
 
 
@@ -16,9 +18,7 @@ class EstadoResponse(BaseModel):
     bg: str
     text_color: str
     orden: int
-    aplica_juridico: bool
-    aplica_tecnico: bool
-    aplica_financiero: bool
+    dimension: Dimension
     area_responsable: AreaResponsable | None = None
 
 
@@ -27,9 +27,7 @@ class EstadoCreate(BaseModel):
     bg: str
     text_color: str
     orden: int
-    aplica_juridico: bool = True
-    aplica_tecnico: bool = True
-    aplica_financiero: bool = True
+    dimension: DimensionEditable
     area_responsable: AreaResponsable | None = None
 
 
@@ -38,9 +36,6 @@ class EstadoUpdate(BaseModel):
     bg: str | None = None
     text_color: str | None = None
     orden: int | None = None
-    aplica_juridico: bool | None = None
-    aplica_tecnico: bool | None = None
-    aplica_financiero: bool | None = None
     area_responsable: AreaResponsable | None = None
 
 

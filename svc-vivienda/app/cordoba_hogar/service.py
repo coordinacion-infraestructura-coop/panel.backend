@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.audit import log_audit
 from app.auth import AuthUser
 from app.checklist_tecnico import estado_tecnico
+from app.estados_dimension import validar_dimensiones
 from app.integrations.privada_sync import sync_gestion_privada
 from app.cordoba_hogar.models import (
     ConfigCordobaHogar,
@@ -86,9 +87,7 @@ async def crear_estado(db: AsyncSession, data: EstadoCreate, actor: AuthUser) ->
         bg=data.bg,
         text_color=data.text_color,
         orden=data.orden,
-        aplica_juridico=data.aplica_juridico,
-        aplica_tecnico=data.aplica_tecnico,
-        aplica_financiero=data.aplica_financiero,
+        dimension=data.dimension,
         area_responsable=data.area_responsable,
     )
     db.add(estado)
@@ -185,6 +184,7 @@ async def actualizar_localidad(
 
     updates = data.model_dump(exclude_unset=True)
     fecha_cambio = updates.pop("fecha_cambio", None)
+    await validar_dimensiones(db, EstadoCordobaHogar, updates)
 
     historial = []
     for campo in ("ejuridico", "efinanciero"):
@@ -267,6 +267,7 @@ async def _buscar_duplicado_ch(
 async def crear_localidad(
     db: AsyncSession, data: LocalidadCreate, actor: AuthUser
 ) -> LocalidadResponse:
+    await validar_dimensiones(db, EstadoCordobaHogar, data.model_dump())
     resuelto = await geo_service.resolver_uno(db, data.departamento, data.localidad, origen="cordoba_hogar")
 
     existing = await _buscar_duplicado_ch(db, data.localidad, data.departamento, resuelto.id_geo)

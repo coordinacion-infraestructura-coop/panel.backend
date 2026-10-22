@@ -18,6 +18,9 @@ class EstadoCordonCuneta(Base):
     aplica_juridico: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
     aplica_tecnico: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
     aplica_financiero: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
+    # Listado al que pertenece el estado (spec-vivienda-estados-por-area §2). Los `aplica_*`
+    # quedan congelados desde la migración 0044: no se leen ni se escriben.
+    dimension: Mapped[str] = mapped_column(String(16), nullable=False, default="general", server_default="general")
     # juridica | tecnica | financiera | externa — qué área lleva el estado (spec-vivienda-tablero-analitico §4.4)
     area_responsable: Mapped[str | None] = mapped_column(String(20), nullable=True)
 

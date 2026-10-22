@@ -9,6 +9,7 @@ import re
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.checklist_tecnico.schemas import HitoObraPanel
+from app.estados_dimension import Dimension, DimensionEditable
 
 
 # ─── Estado ───────────────────────────────────────────────────────────────────
@@ -25,9 +26,7 @@ class EstadoMLOut(BaseModel):
     text_color: str
     orden: int
     tipo: str
-    aplica_juridico: bool
-    aplica_tecnico: bool
-    aplica_financiero: bool
+    dimension: Dimension
     area_responsable: AreaResponsable | None = None
 
 
@@ -37,9 +36,7 @@ class EstadoMLCreate(BaseModel):
     text_color: str
     orden: int
     tipo: str = "exp"
-    aplica_juridico: bool = True
-    aplica_tecnico: bool = True
-    aplica_financiero: bool = True
+    dimension: DimensionEditable
     area_responsable: AreaResponsable | None = None
 
 
@@ -48,9 +45,6 @@ class EstadoMLUpdate(BaseModel):
     bg: str | None = None
     text_color: str | None = None
     orden: int | None = None
-    aplica_juridico: bool | None = None
-    aplica_tecnico: bool | None = None
-    aplica_financiero: bool | None = None
     area_responsable: AreaResponsable | None = None
 
 

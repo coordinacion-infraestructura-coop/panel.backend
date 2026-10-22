@@ -253,7 +253,7 @@ async def test_area_responsable_alta_edicion_y_valor_invalido(client: AsyncClien
     for base in (CC_BASE, CH_BASE, "/api/v1/vivienda/mi-lugar"):
         r = await client.post(f"{base}/estados", json={
             "label": "En corrección", "bg": "#fff", "text_color": "#000", "orden": 1,
-            "area_responsable": "tecnica",
+            "dimension": "general", "area_responsable": "tecnica",
         })
         assert r.status_code == 201, (base, r.text)
         assert r.json()["area_responsable"] == "tecnica"

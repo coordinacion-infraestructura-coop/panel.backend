@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.audit import log_audit
 from app.auth import AuthUser
 from app.checklist_tecnico import estado_tecnico
+from app.estados_dimension import validar_dimensiones
 from app.integrations.privada_sync import sync_gestion_privada
 from app.cordon_cuneta.models import (
     ConfigCordonCuneta,
@@ -83,9 +84,7 @@ async def crear_estado(db: AsyncSession, data: EstadoCreate, actor: AuthUser) ->
         bg=data.bg,
         text_color=data.text_color,
         orden=data.orden,
-        aplica_juridico=data.aplica_juridico,
-        aplica_tecnico=data.aplica_tecnico,
-        aplica_financiero=data.aplica_financiero,
+        dimension=data.dimension,
         area_responsable=data.area_responsable,
     )
     db.add(estado)
@@ -182,6 +181,7 @@ async def actualizar_municipio(
 
     updates = data.model_dump(exclude_unset=True)
     fecha_cambio = updates.pop("fecha_cambio", None)
+    await validar_dimensiones(db, EstadoCordonCuneta, updates)
 
     historial = []
     for campo in ("ejuridico", "efinanciero"):
@@ -264,6 +264,7 @@ async def _buscar_duplicado_cc(
 async def crear_municipio(
     db: AsyncSession, data: MunicipioCreate, actor: AuthUser
 ) -> MunicipioResponse:
+    await validar_dimensiones(db, EstadoCordonCuneta, data.model_dump())
     resuelto = await geo_service.resolver_uno(db, data.departamento, data.municipio, origen="cordon_cuneta")
 
     existing = await _buscar_duplicado_cc(db, data.municipio, data.departamento, resuelto.id_geo)

@@ -271,14 +271,16 @@ async def test_listar_pedidos_admin_ve_todo(client: AsyncClient, pedidos_multi_s
 
 @pytest_asyncio.fixture
 async def dos_estados(db_session: AsyncSession) -> tuple[int, int]:
-    """Dos estados con ordenes distintos para simular una transición."""
+    """Dos estados jurídicos (id_a, id_b) con ordenes distintos para simular una transición, y su
+    par presupuestario (id_a + 1, id_b + 1): cada listado tiene sus propios estados."""
     id_a, id_b = 100, 200
-    db_session.add(EstadoCordonCuneta(
-        id=id_a, label="En proceso", bg="#ffe", text_color="#333", orden=10,
-    ))
-    db_session.add(EstadoCordonCuneta(
-        id=id_b, label="Completado",  bg="#dfd", text_color="#060", orden=20,
-    ))
+    for dimension, delta in (("juridico", 0), ("financiero", 1)):
+        db_session.add(EstadoCordonCuneta(
+            id=id_a + delta, label="En proceso", bg="#ffe", text_color="#333", orden=10, dimension=dimension,
+        ))
+        db_session.add(EstadoCordonCuneta(
+            id=id_b + delta, label="Completado",  bg="#dfd", text_color="#060", orden=20, dimension=dimension,
+        ))
     await db_session.flush()
     return id_a, id_b
 
@@ -297,7 +299,7 @@ async def municipio_con_estado(
         departamento="Test",
         ejuridico=id_a,
         etecnico=id_a,
-        efinanciero=id_a,
+        efinanciero=id_a + 1,
         estado_general=id_a,
     ))
     await db_session.flush()
@@ -326,12 +328,12 @@ async def test_cambio_estado_registra_anterior_nuevo_y_actor(
 ):
     """La entrada registra estado_anterior, estado_nuevo y el email del actor."""
     mid, id_a, id_b = municipio_con_estado
-    await client.patch(f"{BASE}/{mid}", json={"efinanciero": id_b})
+    await client.patch(f"{BASE}/{mid}", json={"efinanciero": id_b + 1})
 
     entry = (await client.get(f"{BASE}/{mid}/historial")).json()[0]
     assert entry["campo"] == "efinanciero"
-    assert entry["estado_anterior_id"] == id_a
-    assert entry["estado_nuevo_id"] == id_b
+    assert entry["estado_anterior_id"] == id_a + 1
+    assert entry["estado_nuevo_id"] == id_b + 1
     assert entry["created_by"] == "admin@test.com"
 
 
@@ -353,7 +355,7 @@ async def test_multiples_campos_generan_multiples_entradas(
 ):
     """Cambiar ejuridico + efinanciero en un solo PATCH produce dos entradas."""
     mid, id_a, id_b = municipio_con_estado
-    r = await client.patch(f"{BASE}/{mid}", json={"ejuridico": id_b, "efinanciero": id_b})
+    r = await client.patch(f"{BASE}/{mid}", json={"ejuridico": id_b, "efinanciero": id_b + 1})
     assert r.status_code == 200
 
     hist = (await client.get(f"{BASE}/{mid}/historial")).json()
@@ -368,7 +370,7 @@ async def test_historial_retorna_entradas_mas_recientes_primero(
     """El endpoint /historial ordena de más reciente a más antiguo."""
     mid, id_a, id_b = municipio_con_estado
     await client.patch(f"{BASE}/{mid}", json={"ejuridico": id_b})
-    await client.patch(f"{BASE}/{mid}", json={"efinanciero": id_b})
+    await client.patch(f"{BASE}/{mid}", json={"efinanciero": id_b + 1})
 
     hist = (await client.get(f"{BASE}/{mid}/historial")).json()
     assert len(hist) == 2

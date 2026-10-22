@@ -145,7 +145,7 @@ async def test_historial_del_panel_incluye_cambios_del_checklist(
 async def test_historial_mezcla_cambios_del_panel_y_del_checklist(
     client: AsyncClient, db_session: AsyncSession, entidades: dict[str, str]
 ):
-    db_session.add(EstadoCordonCuneta(id=901, label="Otro", bg="#fff", text_color="#000", orden=2))
+    db_session.add(EstadoCordonCuneta(id=901, label="Otro", bg="#fff", text_color="#000", orden=2, dimension="juridico"))
     await db_session.flush()
     mid = entidades["cc"]
     await client.patch(f"{CC_BASE}/{mid}", json={"ejuridico": 901})
