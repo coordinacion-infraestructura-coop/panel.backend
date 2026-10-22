@@ -200,7 +200,10 @@ async def sync_periodo_automatico(
     except pdf_source.DescubrimientoError as exc:
         if registrar_falla:
             await _log_falla(db, periodo, tipo, disparado_por, str(exc))
-        raise PdfNoEncontrado(str(exc)) from exc
+        # Solo "la página no tiene el PDF" es no publicado; un 403 o una caída es una falla.
+        if isinstance(exc, pdf_source.SinLinkDelPeriodo):
+            raise PdfNoEncontrado(str(exc)) from exc
+        raise ExtraccionFallida(str(exc)) from exc
     except Exception as exc:  # noqa: BLE001 — red/HTTP inesperado, tratar igual que descubrimiento fallido
         if registrar_falla:
             await _log_falla(db, periodo, tipo, disparado_por, f"Fallo al descargar el PDF: {exc}")

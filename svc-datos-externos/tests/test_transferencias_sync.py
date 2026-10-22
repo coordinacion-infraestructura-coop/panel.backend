@@ -131,7 +131,7 @@ async def test_sync_recientes_no_marca_falla_el_mes_sin_publicar(db_session, mon
     from app.transferencias.models import ExtTransferenciaSyncLog
     from sqlalchemy import select
 
-    monkeypatch.setattr(pdf_source, "descubrir_links", AsyncMock(side_effect=pdf_source.DescubrimientoError("no está")))
+    monkeypatch.setattr(pdf_source, "descubrir_links", AsyncMock(side_effect=pdf_source.SinLinkDelPeriodo("no está")))
     r = await transferencias_sync.sync_recientes(db_session, hoy=date(2026, 3, 3))
     assert [(x["tipo"], x["periodo"], x["estado"]) for x in r] == [
         ("municipio", date(2026, 1, 1), "fallido"), ("municipio", date(2026, 2, 1), "no_publicado"),
@@ -146,3 +146,15 @@ def test_mes_anterior():
 
     assert transferencias_sync.mes_anterior(date(2026, 1, 15), 1) == date(2025, 12, 1)
     assert transferencias_sync.mes_anterior(date(2026, 3, 1), 2) == date(2026, 1, 1)
+
+
+
+async def test_sync_recientes_un_bloqueo_es_falla_aunque_sea_el_mes_pasado(db_session, monkeypatch):
+    from datetime import date
+    from unittest.mock import AsyncMock
+
+    from app.transferencias import pdf_source
+
+    monkeypatch.setattr(pdf_source, "descubrir_links", AsyncMock(side_effect=pdf_source.DescubrimientoError("devolvió 403")))
+    r = await transferencias_sync.sync_recientes(db_session, hoy=date(2026, 3, 3))
+    assert {x["estado"] for x in r} == {"fallido"}
