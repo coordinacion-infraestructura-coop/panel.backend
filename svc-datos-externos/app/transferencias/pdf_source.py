@@ -19,6 +19,10 @@ class DescubrimientoError(Exception):
     manual, nunca inventar una URL."""
 
 
+class SinLinkDelPeriodo(DescubrimientoError):
+    """La página se leyó bien pero todavía no tiene el PDF del período (no es un bloqueo)."""
+
+
 async def descubrir_links(tipo: str, periodo_label: str) -> list[str]:
     """`tipo`: "municipio" | "comuna". `periodo_label`: fragmento tal como
     aparece en el nombre del archivo (ej. "Julio-2026"), usado solo para
@@ -36,7 +40,7 @@ async def descubrir_links(tipo: str, periodo_label: str) -> list[str]:
         if prefijo.lower() in link.lower() and periodo_label.lower() in link.lower()
     ]
     if not candidatos:
-        raise DescubrimientoError(
+        raise SinLinkDelPeriodo(
             f"No se encontró ningún link de {prefijo}-*{periodo_label}*.pdf en la página."
         )
     return candidatos
