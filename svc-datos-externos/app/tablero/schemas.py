@@ -624,6 +624,9 @@ class IntendenteFila(BaseModel):
     alineacion: str | None
     celular: str | None
     foto_url: str | None
+    # "gobierno" | "privada" (spec-padron-politico-gobierno-privada.md §4)
+    origen_intendente: str | None = None
+    origen_partido: str | None = None
 
 
 class IntendentesKpis(BaseModel):
@@ -641,6 +644,22 @@ class IntendentesDepartamento(BaseModel):
     por_partido: dict[str, int]
 
 
+class CruceFila(BaseModel):
+    localidad: str
+    departamento: str
+    campo: str  # intendente | partido
+    estado: str  # parecido | distinto | solo_gobierno | solo_privada
+    gobierno: str | None
+    privada: str | None
+
+
+class CrucePrivada(BaseModel):
+    disponible: bool
+    leido_en: datetime | None
+    por_campo: dict[str, dict[str, int]]
+    diferencias: list[CruceFila]
+
+
 class IntendentesResponse(BaseModel):
     concepto: str = "intendentes"
     kpis: IntendentesKpis
@@ -648,6 +667,7 @@ class IntendentesResponse(BaseModel):
     por_alineacion: list[Conteo]
     por_departamento: list[IntendentesDepartamento]
     intendentes: list[IntendenteFila]
+    cruce: CrucePrivada | None = None
 
 
 class EleccionFuerza(BaseModel):

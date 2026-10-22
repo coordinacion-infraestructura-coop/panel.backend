@@ -26,5 +26,11 @@ class Settings(BaseSettings):
     # consume resumen_territorial). Mismo criterio que Gasífera/Gralgob.
     resolver_localidades_enabled: bool = False
 
+    # ADR-027 — padrón político único (spec-padron-politico-gobierno-privada.md): el
+    # intendente y el partido salen de Gobierno vía el endpoint IAM-only de
+    # svc-datos-externos. Apagado por defecto; services/cloudbuild.yaml lo enciende.
+    svc_datos_externos_internal_url: str = ""
+    padron_politico_sync_enabled: bool = False
+
 
 settings = Settings()

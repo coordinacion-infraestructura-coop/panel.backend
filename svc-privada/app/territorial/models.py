@@ -34,6 +34,21 @@ class LocalidadInfo(Base):
     updated_by: Mapped[str | None] = mapped_column(String(200))
 
 
+class LocalidadInfoRespaldo(Base):
+    """Valor original de Privada de intendente y partido, copiado antes de que el padrón de
+    Gobierno lo reemplace (ADR-027, spec-padron-politico-gobierno-privada.md §2.3). Una fila por
+    fila de `priv_localidades_info`, escrita una sola vez y nunca pisada."""
+
+    __tablename__ = "priv_localidades_info_respaldo"
+
+    departamento: Mapped[str] = mapped_column(String(120), primary_key=True)
+    localidad: Mapped[str] = mapped_column(String(160), primary_key=True)
+    id_geo: Mapped[str | None] = mapped_column(String(30))
+    intendente_jefe_comunal: Mapped[str | None] = mapped_column(String(200))
+    partido_politico: Mapped[str | None] = mapped_column(String(200))
+    respaldado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class DepartamentoInfo(Base):
     __tablename__ = "priv_departamentos_info"
 

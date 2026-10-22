@@ -26,6 +26,7 @@ from app.gob_politico.models import (  # noqa: F401
     ExtGobEleccionCopia,
     ExtGobEleccionMunicipal,
     ExtGobIntendente,
+    ExtPrivPadronPolitico,
 )
 from app.gob_gestion.models import (  # noqa: F401
     ExtGobConvenio,

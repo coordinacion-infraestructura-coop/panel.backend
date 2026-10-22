@@ -23,11 +23,15 @@ from app.gob_politico.models import (
     ExtGobEleccionCopia,
     ExtGobEleccionMunicipal,
     ExtGobIntendente,
+    ExtPrivPadronPolitico,
 )
+from app.gob_politico import padron
 from app.gob_politico.parse import ELECCIONES, OTROS
 from app.gobierno.models import ExtGobLocalidad
 from app.tablero.schemas import (
     Conteo,
+    CruceFila,
+    CrucePrivada,
     DiferenciaPlanilla,
     EleccionDepartamento,
     EleccionFuerza,
@@ -98,24 +102,33 @@ def _ratio(a: float | None, b: float | None) -> float | None:
 
 
 def armar_intendentes(
-    intendentes: list[ExtGobIntendente], universo: list[ExtGobLocalidad], alineacion: dict[str, str]
+    intendentes: list[ExtGobIntendente],
+    universo: list[ExtGobLocalidad],
+    alineacion: dict[str, str],
+    combinado: dict[str, dict] | None = None,
 ) -> IntendentesResponse:
+    """Intendente y partido son el valor combinado (Gobierno, o Privada si Gobierno no tiene
+    dato; spec-padron-politico-gobierno-privada.md §4). El resto, solo Gobierno."""
     por_codigo = {i.codigo_indec: i for i in intendentes}
+    combinado = combinado or {}
     filas: list[IntendenteFila] = []
     for loc in sorted(universo, key=lambda x: (x.departamento_gob, x.nombre_gob)):
         i = por_codigo.get(loc.codigo_indec)
+        c = combinado.get(loc.codigo_indec, {})
         filas.append(IntendenteFila(
             codigo_indec=loc.codigo_indec,
             localidad=loc.nombre_gob,
             departamento=loc.departamento_gob,
             tipo=loc.tipo,
-            intendente=i.intendente if i else None,
+            intendente=c.get("intendente", i.intendente if i else None),
             reelecto=i.reelecto if i else None,
-            partido=i.partido if i else None,
+            partido=c.get("partido", i.partido if i else None),
             continuidad=i.continuidad if i else None,
             alineacion=alineacion.get(loc.codigo_indec),
             celular=i.celular if i else None,
             foto_url=i.foto_url if i else None,
+            origen_intendente=c.get("origen_intendente", padron.GOBIERNO if i and i.intendente else None),
+            origen_partido=c.get("origen_partido", padron.GOBIERNO if i and i.partido else None),
         ))
     con_dato = [f for f in filas if f.intendente]
     deptos: dict[str, list[IntendenteFila]] = defaultdict(list)
@@ -413,13 +426,24 @@ async def get_intendentes(db: AsyncSession, codigos: list[str] | None) -> Intend
     universo = await _universo(db)
     elegidos = [loc for c, loc in universo.items() if not codigos or c in codigos]
     intendentes = list((await db.execute(select(ExtGobIntendente))).scalars())
+    gobierno = {i.codigo_indec: i for i in intendentes}
+    filas_privada = list((await db.execute(select(ExtPrivPadronPolitico))).scalars())
+    privada = padron.privada_por_id_geo(filas_privada)
+    combinado = {f["codigo_indec"]: f for f in padron.combinar(elegidos, gobierno, privada)}
+    por_campo, diferencias = padron.cruzar(elegidos, gobierno, privada)
+    cruce = CrucePrivada(
+        disponible=bool(filas_privada),
+        leido_en=max((f.updated_at for f in filas_privada), default=None),
+        por_campo=por_campo if filas_privada else {},
+        diferencias=[CruceFila(**d) for d in diferencias] if filas_privada else [],
+    )
     # La planilla numera las categorías para ordenarlas (`1.PURO`): se quita el número.
     alineacion = {
         c.codigo_indec: re.sub(r"^\d+\.\s*", "", c.datos.get("alineacion"))
         for c in (await db.execute(select(ExtGobEleccionCopia).where(ExtGobEleccionCopia.pestana == "GANADORES"))).scalars()
         if c.codigo_indec and c.datos.get("alineacion")
     }
-    return armar_intendentes(intendentes, elegidos, alineacion)
+    return armar_intendentes(intendentes, elegidos, alineacion, combinado).model_copy(update={"cruce": cruce})
 
 
 async def get_elecciones(db: AsyncSession, codigos: list[str] | None) -> EleccionesResponse:

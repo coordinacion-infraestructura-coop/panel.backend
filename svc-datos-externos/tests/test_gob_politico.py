@@ -1,7 +1,7 @@
 """Fase 6: Político — padrón de intendentes y elecciones (spec-datos-externos-fase6-politico.md §8).
 
 Datos sintéticos: ningún nombre, partido ni teléfono real."""
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from httpx import AsyncClient
 import pytest
@@ -16,6 +16,7 @@ from app.gob_politico.models import (
     ExtGobEleccionCopia,
     ExtGobEleccionMunicipal,
     ExtGobIntendente,
+    ExtPrivPadronPolitico,
 )
 from app.gob_transferencias import sync as gsync
 from app.gobierno.models import ExtGobLocalidad, ExtGobSyncLog
@@ -295,3 +296,61 @@ async def test_politico_solo_admin_y_autoridad_y_seccion_inexistente(client: Asy
     as_user(CONSULTA_USER)
     for s in ("intendentes", "elecciones"):
         assert (await client.get(f"{URL}/{s}")).status_code == 403
+
+
+# ── Padrón único con Privada (spec-padron-politico-gobierno-privada.md) ─────────────
+
+PRIVADA = [
+    # L1: actual ya adoptó el de Gobierno; el respaldo tiene el original, en otro orden.
+    {"departamento": "D1", "localidad": "L1", "id_geo": "g1", "intendente": "INT A", "partido": "PARTIDO X",
+     "intendente_respaldo": "A INT", "partido_respaldo": "LISTA OTRA"},
+    # L2: dos filas con el mismo id_geo; la primera sin dato.
+    {"departamento": "D1", "localidad": "L2 VIEJO", "id_geo": "g2", "intendente": None, "partido": None,
+     "intendente_respaldo": None, "partido_respaldo": None},
+    {"departamento": "D1", "localidad": "L2", "id_geo": "g2", "intendente": "INT B SEGUNDO", "partido": "PARTIDO PRIV",
+     "intendente_respaldo": "INT B SEGUNDO", "partido_respaldo": "PARTIDO PRIV"},
+    {"departamento": "D9", "localidad": "SIN GEO", "id_geo": None, "intendente": "Z", "partido": "Z",
+     "intendente_respaldo": "Z", "partido_respaldo": "Z"},
+]
+
+
+async def test_padron_combinado_y_cruce_con_privada(client: AsyncClient, db_session: AsyncSession, monkeypatch):
+    monkeypatch.setattr("app.integrations.privada_padron.padron_privada", AsyncMock(return_value=PRIVADA))
+    await _nomenclador(db_session)
+    resultados, _ = await _sync(client)
+    log = resultados["intendentes"].json()[0]
+    cruce = next(a for a in log["anomalias"] if a["tipo"] == "cruce_privada")
+    assert cruce["filas_privada"] == 4
+    assert "INT A" not in str(log["anomalias"])  # el log lleva conteos, no nombres
+
+    # Gobierno sin partido en L2: el combinado toma el de Privada.
+    i2 = (await db_session.execute(select(ExtGobIntendente).where(ExtGobIntendente.codigo_indec == "140002"))).scalar_one()
+    i2.partido = None
+    await db_session.commit()
+
+    combinado = {f["codigo_indec"]: f for f in (await client.get("/internal/datos-externos/padron-politico")).json()}
+    assert set(combinado) == {"140001", "140002", "140003"}
+    assert (combinado["140002"]["partido"], combinado["140002"]["origen_partido"]) == ("PARTIDO PRIV", "privada")
+    assert (combinado["140002"]["intendente"], combinado["140002"]["origen_intendente"]) == ("INT B", "gobierno")
+    assert "celular" not in str(combinado)
+
+    d = (await client.get(f"{URL}/intendentes")).json()
+    l2 = next(f for f in d["intendentes"] if f["codigo_indec"] == "140002")
+    assert (l2["partido"], l2["origen_partido"]) == ("PARTIDO PRIV", "privada")
+    c = d["cruce"]
+    assert c["disponible"] is True
+    assert c["por_campo"]["intendente"] == {"igual_otro_orden": 1, "parecido": 1, "solo_gobierno": 1}
+    assert c["por_campo"]["partido"] == {"distinto": 1, "solo_privada": 1, "solo_gobierno": 1}
+    estados = {(f["localidad"], f["campo"]): f["estado"] for f in c["diferencias"]}
+    assert estados[("L1", "partido")] == "distinto" and ("L1", "intendente") not in estados
+
+
+async def test_privada_caida_deja_lo_anterior(client: AsyncClient, db_session: AsyncSession, monkeypatch):
+    monkeypatch.setattr("app.integrations.privada_padron.padron_privada", AsyncMock(return_value=PRIVADA))
+    await _nomenclador(db_session)
+    await _sync(client)
+    monkeypatch.setattr("app.integrations.privada_padron.padron_privada", AsyncMock(return_value=None))
+    resultados, _ = await _sync(client)
+    log = resultados["intendentes"].json()[0]
+    assert log["estado"] == "ok" and {"tipo": "privada_no_disponible"} in log["anomalias"]
+    assert await _count(db_session, ExtPrivPadronPolitico) == 4

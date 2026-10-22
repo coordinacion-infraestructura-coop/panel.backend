@@ -39,6 +39,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.gob_fondos import parse as parse_fondos
 from app.gob_gestion import parse as parse_gestion
+from app.gob_politico import padron as padron_politico
 from app.gob_politico import parse as parse_politico
 from app.gob_politico.models import (
     ExtGobCircuitoLocalidad,
@@ -46,6 +47,7 @@ from app.gob_politico.models import (
     ExtGobEleccionCopia,
     ExtGobEleccionMunicipal,
     ExtGobIntendente,
+    ExtPrivPadronPolitico,
 )
 from app.gob_gestion.models import ExtGobConvenio, ExtGobObra, ExtGobReunion, ExtGobVisita, ExtGobVisitaGobernador
 from app.gob_fondos.models import (
@@ -66,7 +68,7 @@ from app.gob_transferencias.models import (
     ExtGobFommep,
 )
 from app.gobierno.models import ExtGobEnte, ExtGobLocalidad, ExtGobSyncLog
-from app.integrations import google_sheets
+from app.integrations import google_sheets, privada_padron
 
 logger = logging.getLogger(__name__)
 
@@ -447,6 +449,20 @@ async def _resolver_por_nombre(db: AsyncSession) -> list[dict]:
     return [{"tipo": "localidad_sin_codigo", "localidades": sorted(sin_codigo)}] if sin_codigo else []
 
 
+async def _leer_padron_privada(db: AsyncSession) -> list[dict]:
+    """Después del padrón de Gobierno: trae el de Privada (actual y respaldo) para el valor
+    combinado y el cruce (spec-padron-politico-gobierno-privada.md §3). Si Privada no responde
+    queda lo último leído. Al log van solo los conteos del cruce."""
+    filas = await privada_padron.padron_privada()
+    if not filas:
+        return [{"tipo": "privada_no_disponible"}]
+    columnas = ("departamento", "localidad", "id_geo", "intendente", "partido", "intendente_respaldo", "partido_respaldo")
+    await _reemplazar(db, _Pestana("privada", lambda v: ([], []), ExtPrivPadronPolitico, "ninguno"),
+                      [{c: f.get(c) for c in columnas} for f in filas if f.get("departamento") and f.get("localidad")])
+    resumen, _ = padron_politico.cruzar(*await padron_politico.leer(db))
+    return [{"tipo": "cruce_privada", "filas_privada": len(filas), **{campo: conteo for campo, conteo in resumen.items()}}]
+
+
 async def _log(db: AsyncSession, fuente: str, estado: str, disparado_por: str, anomalias: list[dict], **conteos: int) -> ExtGobSyncLog:
     log = ExtGobSyncLog(
         fuente=fuente,
@@ -488,6 +504,8 @@ async def sync_transferencias(db: AsyncSession, fuentes: list[str], disparado_po
             anomalias.extend(await _CONTROLES_FONDOS[fuente](db))
         if fuente == "elecciones":
             anomalias.extend(await _resolver_por_nombre(db))
+        if fuente == "intendentes":
+            anomalias.extend(await _leer_padron_privada(db))
         sin_match = sum(1 for a in anomalias if a.get("tipo") == "codigo_fuera_del_nomenclador")
         logs.append(await _log(
             db, fuente, "parcial" if descartadas else "ok", disparado_por, anomalias,

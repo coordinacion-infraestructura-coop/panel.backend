@@ -104,3 +104,20 @@ class ExtGobEleccionCopia(_Timestamps, Base):
     localidad: Mapped[str] = mapped_column(String(150), nullable=False)
     codigo_indec: Mapped[str | None] = mapped_column(String(20), index=True)
     datos: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+
+
+class ExtPrivPadronPolitico(_Timestamps, Base):
+    """Intendente y partido que tiene svc-privada por fila de `priv_localidades_info`, actuales y
+    de respaldo (el valor original de Privada). Se reemplaza completo cada vez que Privada
+    responde; si no responde, queda lo anterior (spec-padron-politico-gobierno-privada.md §3)."""
+
+    __tablename__ = "ext_priv_padron_politico"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    departamento: Mapped[str] = mapped_column(String(120), nullable=False)
+    localidad: Mapped[str] = mapped_column(String(160), nullable=False)
+    id_geo: Mapped[str | None] = mapped_column(String(30), index=True)
+    intendente: Mapped[str | None] = mapped_column(String(200))
+    partido: Mapped[str | None] = mapped_column(String(200))
+    intendente_respaldo: Mapped[str | None] = mapped_column(String(200))
+    partido_respaldo: Mapped[str | None] = mapped_column(String(200))

@@ -21,6 +21,11 @@ class Settings(BaseSettings):
     svc_gralgob_internal_url: str = ""
     atp_interno_fetch_enabled: bool = False
 
+    # Padrón político único (ADR-027, spec-padron-politico-gobierno-privada.md §3): lectura del
+    # padrón de Privada por su endpoint IAM-only. Apagado por defecto; cloudbuild.yaml lo enciende.
+    svc_privada_internal_url: str = ""
+    privada_padron_fetch_enabled: bool = False
+
     # Auth de los paneles (ADR-028): JWT de Firebase validado contra las claves
     # públicas de Google; el rol sale de svc-vivienda por la URL de arriba (ADR-015).
     google_jwks_uri: str = (
