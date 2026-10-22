@@ -460,7 +460,16 @@ async def _leer_padron_privada(db: AsyncSession) -> list[dict]:
     await _reemplazar(db, _Pestana("privada", lambda v: ([], []), ExtPrivPadronPolitico, "ninguno"),
                       [{c: f.get(c) for c in columnas} for f in filas if f.get("departamento") and f.get("localidad")])
     resumen, _ = padron_politico.cruzar(*await padron_politico.leer(db))
-    return [{"tipo": "cruce_privada", "filas_privada": len(filas), **{campo: conteo for campo, conteo in resumen.items()}}]
+    anomalias = [{"tipo": "cruce_privada", "filas_privada": len(filas), **{campo: conteo for campo, conteo in resumen.items()}}]
+    # Privada lee el combinado de este servicio: se confirma antes de pedirle que lo adopte
+    # (spec-tablero-gobierno-actualizar.md §1).
+    await db.commit()
+    resultado = await privada_padron.sincronizar_privada()
+    if resultado is None:
+        anomalias.append({"tipo": "privada_no_sincronizada"})
+    else:
+        anomalias.append({"tipo": "privada_sincronizada", **{k: resultado.get(k) for k in ("filas_actualizadas", "filas_creadas", "campos_cambiados")}})
+    return anomalias
 
 
 async def _log(db: AsyncSession, fuente: str, estado: str, disparado_por: str, anomalias: list[dict], **conteos: int) -> ExtGobSyncLog:

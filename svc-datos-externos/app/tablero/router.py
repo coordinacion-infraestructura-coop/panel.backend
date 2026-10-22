@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import AuthUser, require_roles
 from app.database import get_db
-from app.tablero import gestion, politico, service
+from app.tablero import actualizar, gestion, politico, service
 from app.tablero.schemas import (
     ComunidadesRegionalesResponse,
     ConveniosResponse,
@@ -123,3 +123,22 @@ async def tablero_politico(
             detail={"code": "SECCION_INEXISTENTE", "message": f"Sección política desconocida: {seccion}"},
         )
     return await politico.get_seccion(db, seccion, codigo_indec)
+
+
+@router.post("/actualizar")
+async def tablero_actualizar(
+    db: AsyncSession = Depends(get_db),
+    user: AuthUser = Depends(require_roles(*ROLES_TABLERO)),
+):
+    """Dispara ya los jobs que traen las fuentes del tablero (spec-tablero-gobierno-actualizar.md).
+    409 si hubo otro pedido en los últimos 15 minutos."""
+    try:
+        return await actualizar.disparar(db, user)
+    except actualizar.ActualizacionReciente as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "ACTUALIZACION_RECIENTE", "message": "Ya se pidió una actualización hace menos de 15 minutos.",
+                    "anterior": exc.anterior.isoformat()},
+        )
+    except actualizar.ActualizacionDeshabilitada as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail={"code": "ACTUALIZACION_DESHABILITADA", "message": str(exc)})

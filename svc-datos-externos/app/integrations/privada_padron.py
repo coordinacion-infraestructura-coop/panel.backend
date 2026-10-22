@@ -31,3 +31,23 @@ async def padron_privada() -> list[dict] | None:
     except Exception as exc:  # noqa: BLE001 — tolerante: queda lo último leído
         logger.warning("padrón de Privada: no se pudo leer: %r", exc)
         return None
+
+
+async def sincronizar_privada() -> dict | None:
+    """Pide a svc-privada que adopte el padrón combinado (spec-tablero-gobierno-actualizar.md §1).
+    None si está apagado o falla: Privada se pone al día con su job diario."""
+    if not settings.privada_padron_fetch_enabled or not settings.svc_privada_internal_url:
+        return None
+    base = settings.svc_privada_internal_url.rstrip("/")
+    try:
+        token = _mint_id_token(base)
+        headers = {"Authorization": f"Bearer {token}"} if token else {}
+        async with httpx.AsyncClient(timeout=120) as client:
+            resp = await client.post(f"{base}/internal/privada/padron-politico/sync", headers=headers)
+        if resp.status_code != 200:
+            logger.warning("padrón de Privada: el sync respondió %s", resp.status_code)
+            return None
+        return resp.json()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("padrón de Privada: no se pudo pedir el sync: %r", exc)
+        return None

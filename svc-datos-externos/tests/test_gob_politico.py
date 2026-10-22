@@ -354,3 +354,14 @@ async def test_privada_caida_deja_lo_anterior(client: AsyncClient, db_session: A
     log = resultados["intendentes"].json()[0]
     assert log["estado"] == "ok" and {"tipo": "privada_no_disponible"} in log["anomalias"]
     assert await _count(db_session, ExtPrivPadronPolitico) == 4
+
+
+async def test_intendentes_encadena_el_sync_de_privada(client: AsyncClient, db_session: AsyncSession, monkeypatch):
+    monkeypatch.setattr("app.integrations.privada_padron.padron_privada", AsyncMock(return_value=PRIVADA))
+    pedido = AsyncMock(return_value={"filas_actualizadas": 2, "filas_creadas": 0, "campos_cambiados": 3, "otro": 1})
+    monkeypatch.setattr("app.integrations.privada_padron.sincronizar_privada", pedido)
+    await _nomenclador(db_session)
+    resultados, _ = await _sync(client)
+    pedido.assert_awaited_once()
+    anomalias = resultados["intendentes"].json()[0]["anomalias"]
+    assert {"tipo": "privada_sincronizada", "filas_actualizadas": 2, "filas_creadas": 0, "campos_cambiados": 3} in anomalias

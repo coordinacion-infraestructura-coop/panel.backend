@@ -26,6 +26,11 @@ class Settings(BaseSettings):
     svc_privada_internal_url: str = ""
     privada_padron_fetch_enabled: bool = False
 
+    # Botón "Actualizar datos" del tablero (spec-tablero-gobierno-actualizar.md): dispara los
+    # jobs de Cloud Scheduler. Apagado por defecto; services/cloudbuild.yaml lo enciende.
+    actualizar_tablero_enabled: bool = False
+    scheduler_location: str = "southamerica-east1"
+
     # Auth de los paneles (ADR-028): JWT de Firebase validado contra las claves
     # públicas de Google; el rol sale de svc-vivienda por la URL de arriba (ADR-015).
     google_jwks_uri: str = (
