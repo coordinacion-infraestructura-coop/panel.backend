@@ -22,6 +22,7 @@ from app.catastro.schemas import ValuacionRequest, ValuacionResponse
 from app.config import settings
 from app.database import get_db
 from app.fuentes_oficiales import sync as fuentes_oficiales_sync
+from app.gob_politico import padron
 from app.gob_transferencias import sync as gob_transferencias_sync
 from app.gobierno import sync as gobierno_sync
 from app.gobierno.schemas import GobSyncFuenteResponse, GobSyncResultResponse, ZonaRuralResponse
@@ -213,3 +214,12 @@ async def sync_fuentes_oficiales(
 async def estado_sync_fuentes_oficiales(db: AsyncSession = Depends(get_db)):
     """Última corrida de cada fuente."""
     return await fuentes_oficiales_sync.estado_sync(db)
+
+
+@router.get("/datos-externos/padron-politico")
+async def padron_politico_combinado(db: AsyncSession = Depends(get_db)):
+    """Intendente y partido por localidad del nomenclador: Gobierno por defecto y Privada donde
+    Gobierno no tiene dato, con el origen de cada valor (ADR-027,
+    spec-padron-politico-gobierno-privada.md §2). Lo consume el sync diario de svc-privada. Sin
+    celular ni ningún otro dato de contacto."""
+    return await padron.padron_combinado(db)

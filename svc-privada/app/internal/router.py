@@ -10,9 +10,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth import AuthUser
 from app.database import get_db
 from app.gestiones import service, vivienda_sync
+from app.integrations.datos_externos import PadronPoliticoNoDisponible
 from app.integrations.geo_resolver import PadronNoDisponible
 from app.internal.schemas import GestionSyncFromVivienda, GestionSyncResult
-from app.territorial import padron_sync
+from app.territorial import padron_politico, padron_sync
 
 router = APIRouter(prefix="/internal/privada", tags=["internal"])
 
@@ -88,3 +89,29 @@ async def sync_gestion_desde_vivienda(
     generan un status distinto de 200.
     """
     return await vivienda_sync.sync_gestion_from_vivienda(db, _VIVIENDA_ACTOR, payload)
+
+
+# Actor sintético del sync del padrón político (Cloud Scheduler / corrida manual).
+_PADRON_POLITICO_ACTOR = AuthUser(uid="padron-politico", email="padron-politico@system", role="system", secretarias=[])
+
+
+@router.get("/padron-politico")
+async def listar_padron_politico(db: AsyncSession = Depends(get_db)):
+    """Intendente y partido de cada fila de `priv_localidades_info`, actuales y de respaldo (el
+    valor original de Privada), para el cruce y el completado de svc-datos-externos (ADR-027,
+    docs/files/spec-padron-politico-gobierno-privada.md §3). Lo llama la SA de svc-datos-externos."""
+    return await padron_politico.listar(db)
+
+
+@router.post("/padron-politico/sync")
+async def sync_padron_politico(
+    dry_run: bool = Query(False, description="true: solo informa qué cambiaría"),
+    db: AsyncSession = Depends(get_db),
+):
+    """Escribe el padrón combinado de Gobierno en `priv_localidades_info`, respaldando antes el
+    valor original (spec §2). Lo dispara Cloud Scheduler después del sync diario de Gobierno.
+    502 si svc-datos-externos no responde: no se escribe nada."""
+    try:
+        return await padron_politico.sincronizar(db, _PADRON_POLITICO_ACTOR, dry_run=dry_run)
+    except PadronPoliticoNoDisponible as exc:
+        raise HTTPException(status_code=502, detail={"code": "PADRON_POLITICO_NO_DISPONIBLE", "message": str(exc)})

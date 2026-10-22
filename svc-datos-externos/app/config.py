@@ -21,6 +21,16 @@ class Settings(BaseSettings):
     svc_gralgob_internal_url: str = ""
     atp_interno_fetch_enabled: bool = False
 
+    # Padrón político único (ADR-027, spec-padron-politico-gobierno-privada.md §3): lectura del
+    # padrón de Privada por su endpoint IAM-only. Apagado por defecto; cloudbuild.yaml lo enciende.
+    svc_privada_internal_url: str = ""
+    privada_padron_fetch_enabled: bool = False
+
+    # Botón "Actualizar datos" del tablero (spec-tablero-gobierno-actualizar.md): dispara los
+    # jobs de Cloud Scheduler. Apagado por defecto; services/cloudbuild.yaml lo enciende.
+    actualizar_tablero_enabled: bool = False
+    scheduler_location: str = "southamerica-east1"
+
     # Auth de los paneles (ADR-028): JWT de Firebase validado contra las claves
     # públicas de Google; el rol sale de svc-vivienda por la URL de arriba (ADR-015).
     google_jwks_uri: str = (
@@ -64,6 +74,9 @@ class Settings(BaseSettings):
     google_sheet_gob_recorridos_ministro_id: str = ""
     google_sheet_gob_reuniones_id: str = ""
     google_sheet_gob_convenios_id: str = ""
+    # Fase 6 (spec-datos-externos-fase6-politico.md §3): planilla 18. El padrón de intendentes
+    # sale de la planilla de reuniones (`google_sheet_gob_reuniones_id`).
+    google_sheet_gob_elecciones_id: str = ""
     gob_transferencias_sync_enabled: bool = False
 
     # WFS público de IDECOR (Catastro) para la valuación de parcelas de Mi Lugar
