@@ -136,6 +136,14 @@ async def sync_transferencias(
         )
 
 
+@router.post("/datos-externos/transferencias/sync-recientes")
+async def sync_transferencias_recientes(triggered_by: str = "cloud-scheduler", db: AsyncSession = Depends(get_db)):
+    """Corrida diaria de Cloud Scheduler (`sync-transferencias-transparencia`): los dos meses
+    anteriores que falten, para municipios y comunas (spec-tablero-gobierno-actualizar.md §1).
+    Siempre 200 con el detalle por período; las fallas quedan en el log."""
+    return await transferencias_sync.sync_recientes(db, disparado_por=triggered_by)
+
+
 @router.post("/datos-externos/transferencias/cargar-manual", response_model=SyncResultResponse)
 async def cargar_manual(
     tipo: str = Form(...),

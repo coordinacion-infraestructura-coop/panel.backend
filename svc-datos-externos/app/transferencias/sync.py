@@ -36,6 +36,10 @@ class ExtraccionFallida(Exception):
     un error HTTP real — no hay nada que upsertear."""
 
 
+class PdfNoEncontrado(ExtraccionFallida):
+    """Transparencia no tiene (todavía) el PDF del período."""
+
+
 async def _log_falla(db: AsyncSession, periodo: date, tipo: str, disparado_por: str, motivo: str) -> None:
     log = ExtTransferenciaSyncLog(
         periodo=periodo,
@@ -182,6 +186,7 @@ async def sync_periodo_automatico(
     tipo: str,
     periodo: date,
     disparado_por: str = "cloud-scheduler",
+    registrar_falla: bool = True,
 ) -> SyncResultResponse:
     """Descubre el link del PDF del período en transparencia.cba.gov.ar, lo
     descarga y corre `sync_desde_pdf`. Job mensual (día 5, da margen a que el
@@ -193,13 +198,60 @@ async def sync_periodo_automatico(
         links = await pdf_source.descubrir_links(tipo, periodo_label)
         pdf_bytes = await pdf_source.descargar_pdf(links[0])
     except pdf_source.DescubrimientoError as exc:
-        await _log_falla(db, periodo, tipo, disparado_por, str(exc))
-        raise ExtraccionFallida(str(exc)) from exc
+        if registrar_falla:
+            await _log_falla(db, periodo, tipo, disparado_por, str(exc))
+        raise PdfNoEncontrado(str(exc)) from exc
     except Exception as exc:  # noqa: BLE001 — red/HTTP inesperado, tratar igual que descubrimiento fallido
-        await _log_falla(db, periodo, tipo, disparado_por, f"Fallo al descargar el PDF: {exc}")
+        if registrar_falla:
+            await _log_falla(db, periodo, tipo, disparado_por, f"Fallo al descargar el PDF: {exc}")
         raise ExtraccionFallida(str(exc)) from exc
 
     return await sync_desde_pdf(db, pdf_bytes, tipo, periodo, disparado_por=disparado_por)
+
+
+def mes_anterior(hoy: date, meses: int) -> date:
+    """Primer día del mes que está `meses` antes del de `hoy`."""
+    total = hoy.year * 12 + hoy.month - 1 - meses
+    return date(total // 12, total % 12 + 1, 1)
+
+
+async def sync_recientes(db: AsyncSession, hoy: date | None = None, disparado_por: str = "cloud-scheduler") -> list[dict]:
+    """Corrida diaria (spec-tablero-gobierno-actualizar.md §1): para municipios y comunas, los dos
+    meses anteriores que todavía no estén cargados. Que el del mes pasado no esté publicado es lo
+    normal los primeros días del mes y no se registra como falla; que falte el de hace dos meses,
+    sí. Cada intento va en su SAVEPOINT y nunca se relanza la excepción: el log de las fallas se
+    commitea con la respuesta (no se pierde como en el endpoint mensual)."""
+    hoy = hoy or date.today()
+    resultados: list[dict] = []
+    for tipo in ("municipio", "comuna"):
+        for atras in (2, 1):
+            periodo = mes_anterior(hoy, atras)
+            cargado = (
+                await db.execute(
+                    select(ExtTransferenciaSyncLog.id).where(
+                        ExtTransferenciaSyncLog.periodo == periodo, ExtTransferenciaSyncLog.tipo == tipo,
+                        ExtTransferenciaSyncLog.filas_procesadas > 0,
+                    ).limit(1)
+                )
+            ).scalar_one_or_none()
+            if cargado:
+                resultados.append({"tipo": tipo, "periodo": periodo, "estado": "ya_cargado"})
+                continue
+            try:
+                async with db.begin_nested():
+                    r = await sync_periodo_automatico(db, tipo, periodo, disparado_por, registrar_falla=False)
+                resultados.append({"tipo": tipo, "periodo": periodo, "estado": "ok", "filas": r.filas_procesadas})
+            except PdfNoEncontrado as exc:
+                if atras == 1:
+                    resultados.append({"tipo": tipo, "periodo": periodo, "estado": "no_publicado"})
+                    continue
+                await _log_falla(db, periodo, tipo, disparado_por, str(exc))
+                resultados.append({"tipo": tipo, "periodo": periodo, "estado": "fallido", "detalle": str(exc)[:300]})
+            except Exception as exc:  # noqa: BLE001 — un período roto no frena a los demás
+                logger.warning("transferencias recientes: %s %s falló: %r", tipo, periodo, exc)
+                await _log_falla(db, periodo, tipo, disparado_por, str(exc)[:500])
+                resultados.append({"tipo": tipo, "periodo": periodo, "estado": "fallido", "detalle": str(exc)[:300]})
+    return resultados
 
 
 async def get_last_sync_status(db: AsyncSession, tipo: str | None = None) -> ExtTransferenciaSyncLog | None:

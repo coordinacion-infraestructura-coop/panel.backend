@@ -82,3 +82,26 @@ def test_cliente_de_sheets_uno_por_hilo(monkeypatch):
         h.join()
     assert vistos[0] is not vistos[1]
     assert google_sheets._get_service() is google_sheets._get_service()
+
+
+
+async def test_termina_cuando_las_fuentes_registran_su_corrida(client: AsyncClient, db_session: AsyncSession):
+    from app.fuentes_oficiales.models import ExtFuentesOficialesSyncLog
+
+    await client.post(URL)
+    a = (await client.get("/api/v1/datos-externos/tablero/meta")).json()["actualizacion"]
+    assert a["en_curso"] is True and a["terminado_en"] is None
+    despues = datetime.now(timezone.utc) + timedelta(seconds=5)
+    for fuente in ("nomenclador", actualizar._ULTIMA_PLANILLA):
+        db_session.add(ExtGobSyncLog(fuente=fuente, estado="ok", corrida_en=despues, disparado_por="cloud-scheduler",
+                                     filas_leidas=1, filas_upsert=1, filas_error=0, filas_sin_match=0))
+    await db_session.commit()
+    a = (await client.get("/api/v1/datos-externos/tablero/meta")).json()["actualizacion"]
+    assert a["en_curso"] is True  # falta fuentes oficiales
+    db_session.add(ExtFuentesOficialesSyncLog(fuente=actualizar._ULTIMA_OFICIAL, estado="ok", iniciado_at=despues, finalizado_at=despues,
+                                              disparado_por="cloud-scheduler"))
+    await db_session.commit()
+    a = (await client.get("/api/v1/datos-externos/tablero/meta")).json()["actualizacion"]
+    assert a["en_curso"] is False and a["terminado_en"] is not None
+    # Terminada, se puede pedir otra sin esperar los 15 minutos.
+    assert (await client.post(URL)).status_code == 200

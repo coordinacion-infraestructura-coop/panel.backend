@@ -26,6 +26,8 @@ class ActualizacionManual(BaseModel):
     pedido_en: datetime
     disparados: list[str]
     fallidos: list[str]
+    terminado_en: datetime | None = None  # cuando terminaron los syncs que se esperan
+    en_curso: bool = False
     proxima_desde: datetime
 
 

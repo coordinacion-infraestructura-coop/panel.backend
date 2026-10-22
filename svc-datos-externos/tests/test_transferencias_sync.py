@@ -121,3 +121,28 @@ async def test_get_last_sync_status_devuelve_la_corrida_mas_reciente(db_session:
 
     ultimo = await transferencias_sync.get_last_sync_status(db_session, tipo="municipio")
     assert ultimo.periodo == date(2026, 7, 1)
+
+
+async def test_sync_recientes_no_marca_falla_el_mes_sin_publicar(db_session, monkeypatch):
+    from datetime import date
+    from unittest.mock import AsyncMock
+
+    from app.transferencias import pdf_source
+    from app.transferencias.models import ExtTransferenciaSyncLog
+    from sqlalchemy import select
+
+    monkeypatch.setattr(pdf_source, "descubrir_links", AsyncMock(side_effect=pdf_source.DescubrimientoError("no está")))
+    r = await transferencias_sync.sync_recientes(db_session, hoy=date(2026, 3, 3))
+    assert [(x["tipo"], x["periodo"], x["estado"]) for x in r] == [
+        ("municipio", date(2026, 1, 1), "fallido"), ("municipio", date(2026, 2, 1), "no_publicado"),
+        ("comuna", date(2026, 1, 1), "fallido"), ("comuna", date(2026, 2, 1), "no_publicado"),
+    ]
+    logs = (await db_session.execute(select(ExtTransferenciaSyncLog.periodo))).scalars().all()
+    assert sorted(logs) == [date(2026, 1, 1)] * 2  # solo el atrasado queda como falla
+
+
+def test_mes_anterior():
+    from datetime import date
+
+    assert transferencias_sync.mes_anterior(date(2026, 1, 15), 1) == date(2025, 12, 1)
+    assert transferencias_sync.mes_anterior(date(2026, 3, 1), 2) == date(2026, 1, 1)
