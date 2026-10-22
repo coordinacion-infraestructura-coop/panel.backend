@@ -1,9 +1,9 @@
 """KPIs agregados de los 3 paneles (CC/CH/ML) para el Tablero de Programas.
 
 El Tablero (frontend `ProgramasPage.tsx`) los calculaba en el cliente pidiendo los
-GET de panel completo de cordon_cuneta/cordoba_hogar/mi_lugar — vedados a TecnicoDGV
-(spec-checklist-tecnico-dgv.md §8), el rol al que §9 le exige ver el Tablero. Este
-endpoint devuelve solo los agregados, con ROLES_LECTURA_TABLERO.
+GET de panel completo de cordon_cuneta/cordoba_hogar/mi_lugar — vedados a quien no tiene
+el área del panel (spec-portal-areas-de-acceso.md). Este endpoint devuelve solo los
+agregados, con cualquier área de Vivienda.
 
 La lógica replica 1:1 la que hacía el frontend (incl. el match case-insensitive de
 labels 'tc' / 'en obra') para que los números no cambien.

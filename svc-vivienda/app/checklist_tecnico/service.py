@@ -322,7 +322,7 @@ async def get_checklist(db: AsyncSession, programa: str, entidad_id: str) -> Che
 async def listar_entidades(db: AsyncSession) -> list[EntidadListItem]:
     """Filas mínimas (programa, id, nombre, departamento) para el selector del panel.
 
-    Existe porque TecnicoDGV no puede llamar a los GET de panel completo de
+    Existe porque quien solo tiene el área "checklist" no puede llamar a los GET de panel completo de
     cordon_cuneta/cordoba_hogar/mi_lugar (spec §8). Devuelve las 3 fuentes juntas;
     el frontend agrupa por localidad. Solo entidades no borradas.
     """
@@ -369,7 +369,7 @@ async def listar_entidades(db: AsyncSession) -> list[EntidadListItem]:
 
 # ── Observaciones (pedidos) — delega en el service del programa correspondiente ──
 # El panel comparte la sección "Observaciones" con los 3 paneles completos, pero
-# TecnicoDGV no puede pegarle a /{programa}/{id}/pedidos directo (ROLES_LECTURA).
+# Quien solo tiene el área "checklist" no puede pegarle a /{programa}/{id}/pedidos directo (ROLES_LECTURA).
 # Estos wrappers reusan la lógica existente (incluye validación de entidad 404 y
 # enmascarado de comunicaciones de infra/supervisión) pasando el actor tal cual.
 

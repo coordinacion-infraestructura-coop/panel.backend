@@ -123,7 +123,7 @@ class EntidadListItem(BaseModel):
     """Fila mínima del selector de localidad/programa (spec §6, enmienda 1.1.0).
 
     Reemplaza el uso de los GET de panel completo de cordon_cuneta/cordoba_hogar/mi_lugar,
-    que están vedados a TecnicoDGV — el único rol que usa esta pantalla.
+    que están vedados a quien solo tiene el área "checklist" (antes, el rol TecnicoDGV).
     """
     programa: Programa
     id: str

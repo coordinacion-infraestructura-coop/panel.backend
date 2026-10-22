@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import AuthUser, get_current_user, require_roles, ROLES_ESCRITURA, ROLES_LECTURA, ROLES_TRANSICION
+from app.auth import AuthUser, get_current_user, require_roles, ROLES_ESCRITURA, ROLES_LECTURA, ROLES_TRANSICION, require_area
 from app.database import get_db
 from app.expedientes import service
 from app.expedientes.schemas import (
@@ -13,7 +13,7 @@ from app.expedientes.schemas import (
     TransicionRequest,
 )
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_area())])
 
 
 @router.get("/expedientes", response_model=ExpedientesListResponse)

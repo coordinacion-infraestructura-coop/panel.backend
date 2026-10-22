@@ -97,7 +97,7 @@ async def test_portal_usuario_lookup_interno(db_session: AsyncSession):
         assert ok.status_code == 200
         assert ok.json() == {
             "email": "priv@test.com", "rol": "Supervisor", "nombre": "Priv",
-            "secretarias": ["privada"], "activo": True,
+            "secretarias": ["privada"], "areas": [], "activo": True,
         }
         assert faltante.status_code == 404
         assert inactivo.status_code == 404  # sólo usuarios activos

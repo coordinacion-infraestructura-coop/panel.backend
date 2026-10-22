@@ -1,19 +1,18 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import AuthUser, require_roles
+from app.auth import ROLES_LECTURA, AuthUser, require_area, require_roles
 from app.database import get_db
 from app.informe_localidades import service
 from app.informe_localidades.schemas import LocalidadInformeRow
-from app.programas.router import ROLES_LECTURA_TABLERO
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_area(abierto_a_autoridad=True))])
 
 
 @router.get("/informe-localidades", response_model=list[LocalidadInformeRow])
 async def informe_localidades(
     db: AsyncSession = Depends(get_db),
-    _: AuthUser = Depends(require_roles(*ROLES_LECTURA_TABLERO)),
+    _: AuthUser = Depends(require_roles(*ROLES_LECTURA)),
 ):
     """Informe "Localidades por Departamento" (spec-informe-localidades-departamento.md):
     una fila por localidad activa del padrón geográfico, con Cordón Cuneta,
