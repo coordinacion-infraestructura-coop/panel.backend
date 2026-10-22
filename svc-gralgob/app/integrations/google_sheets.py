@@ -1,4 +1,5 @@
 import asyncio
+import threading
 from typing import Any
 
 import google.auth
@@ -6,11 +7,15 @@ from googleapiclient.discovery import build
 
 SHEETS_READONLY_SCOPE = "https://www.googleapis.com/auth/spreadsheets.readonly"
 
-_service = None
+# Un cliente por hilo: el de googleapiclient (httplib2) no se puede compartir entre hilos, y
+# las lecturas corren en `asyncio.to_thread`. Con un cliente global, dos syncs simultáneos en la
+# misma instancia se rompían la conexión entre sí (502 al dispararse juntos desde el botón
+# "Actualizar datos" del Tablero de Gobierno, 2026-10-22).
+_local = threading.local()
 
 
 def _get_service():
-    """Construye (una sola vez por proceso) el cliente de Sheets API v4.
+    """Construye (una vez por hilo) el cliente de Sheets API v4.
 
     Usa Application Default Credentials: en Cloud Run, la identidad de la
     Service Account de runtime del servicio; en desarrollo local, la cuenta
@@ -18,11 +23,12 @@ def _get_service():
     ninguna clave ni variable de entorno con credenciales — el Sheet debe
     compartirse (Viewer) con esa identidad.
     """
-    global _service
-    if _service is None:
+    service = getattr(_local, "service", None)
+    if service is None:
         credentials, _ = google.auth.default(scopes=[SHEETS_READONLY_SCOPE])
-        _service = build("sheets", "v4", credentials=credentials, cache_discovery=False)
-    return _service
+        service = build("sheets", "v4", credentials=credentials, cache_discovery=False)
+        _local.service = service
+    return service
 
 
 def _get_values_sync(spreadsheet_id: str, range_name: str, sin_formato: bool) -> list[list[Any]]:

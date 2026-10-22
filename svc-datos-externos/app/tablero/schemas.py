@@ -20,10 +20,20 @@ class FuenteFrescura(BaseModel):
     detalle: str | None = None
 
 
+class ActualizacionManual(BaseModel):
+    """Último pedido del botón "Actualizar datos" (spec-tablero-gobierno-actualizar.md)."""
+
+    pedido_en: datetime
+    disparados: list[str]
+    fallidos: list[str]
+    proxima_desde: datetime
+
+
 class TableroMetaResponse(BaseModel):
     localidades: list[LocalidadFiltro]
     anios: list[int]
     frescura: list[FuenteFrescura]
+    actualizacion: ActualizacionManual | None = None
 
 
 class InicioKpis(BaseModel):

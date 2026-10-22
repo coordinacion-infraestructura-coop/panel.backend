@@ -16,7 +16,7 @@ from app.gob_transferencias.models import ExtGobCopa
 from app.gobierno import sync as gobierno_sync
 from app.gobierno.models import ExtGobLocalidad
 from app.integrations import atp_interno
-from app.tablero import aggregations, fondos, gestion, planillas
+from app.tablero import actualizar, aggregations, fondos, gestion, planillas
 from app.tablero.schemas import (
     ConceptoMonto,
     FodemeepResponse,
@@ -133,6 +133,7 @@ async def get_meta(db: AsyncSession) -> TableroMetaResponse:
         localidades=await _localidades(db),
         anios=await _anios(db),
         frescura=await _frescura(db),
+        actualizacion=await actualizar.ultimo_pedido(db),
     )
 
 
