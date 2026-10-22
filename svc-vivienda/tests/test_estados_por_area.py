@@ -71,6 +71,27 @@ async def test_cada_columna_acepta_solo_estados_de_su_listado(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("programa", list(BASES))
+async def test_editar_no_valida_los_estados_que_no_cambian(
+    client: AsyncClient, db_session: AsyncSession, entidades: dict[str, str], programa: str
+):
+    """El formulario reenvía todos los estados: un valor previo fuera de su listado (o huérfano)
+    no bloquea la edición; cambiarlo a uno de otro listado, sí."""
+    modelo = {"cc": MunicipioCordonCuneta, "ch": LocalidadCordobaHogar, "ml": ProyectoML}[programa]
+    entidad = await db_session.get(modelo, entidades[programa])
+    entidad.ejuridico, entidad.estado_general = FINANCIERO, 999
+    await db_session.flush()
+
+    url = f"{ENTIDAD[programa]}/{entidades[programa]}"
+    r = await client.patch(url, json={"ejuridico": FINANCIERO, "estado_general": 999, "obs": "sigue editable"})
+    assert r.status_code == 200, r.text
+
+    r = await client.patch(url, json={"ejuridico": FINANCIERO, "efinanciero": GENERAL})
+    assert r.status_code == 422
+    assert "efinanciero" in r.json()["detail"]["message"]
+
+
+@pytest.mark.asyncio
 async def test_alta_de_entidad_valida_el_listado(client: AsyncClient, entidades: dict[str, str]):
     r = await client.post(BASES["cc"], json={
         "municipio": "Otro Pueblo", "departamento": "Depto", "ejuridico": FINANCIERO,

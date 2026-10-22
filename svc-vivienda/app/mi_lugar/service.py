@@ -348,7 +348,7 @@ async def actualizar_proyecto_ml(
 
     updates = data.model_dump(exclude_unset=True)
     fecha_cambio = updates.pop("fecha_cambio", None)
-    await validar_dimensiones(db, EstadoML, updates)
+    await validar_dimensiones(db, EstadoML, updates, actual=proy)
     geo_puntos_data: list[GeoPuntoIn] | None = updates.pop("geo_puntos", None)
     nomenclaturas_data: list[str] | None = updates.pop("nomenclaturas", None)
     # localidad_id nunca se acepta del cliente — se resuelve siempre contra el

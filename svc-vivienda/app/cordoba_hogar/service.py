@@ -184,7 +184,7 @@ async def actualizar_localidad(
 
     updates = data.model_dump(exclude_unset=True)
     fecha_cambio = updates.pop("fecha_cambio", None)
-    await validar_dimensiones(db, EstadoCordobaHogar, updates)
+    await validar_dimensiones(db, EstadoCordobaHogar, updates, actual=localidad)
 
     historial = []
     for campo in ("ejuridico", "efinanciero"):

@@ -21,11 +21,16 @@ DIMENSION_DE_CAMPO: dict[str, str] = {
 }
 
 
-async def validar_dimensiones(db: AsyncSession, modelo_estado, valores: dict) -> None:
-    """422 si alguno de `ejuridico` / `efinanciero` / `estado_general` en `valores` no es de su listado."""
+async def validar_dimensiones(db: AsyncSession, modelo_estado, valores: dict, actual=None) -> None:
+    """422 si alguno de `ejuridico` / `efinanciero` / `estado_general` en `valores` no es de su listado.
+
+    Con `actual` (la entidad que se edita) solo se validan los campos que cambian: el formulario
+    reenvía todos los estados, y un valor que la entidad ya tenía no debe bloquear la edición.
+    """
     pedidos = {
         campo: valores[campo] for campo in DIMENSION_DE_CAMPO
         if valores.get(campo) is not None
+        and (actual is None or valores[campo] != getattr(actual, campo))
     }
     if not pedidos:
         return
