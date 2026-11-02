@@ -386,3 +386,121 @@ async def test_actualizar_localidad_recalcula_localidad_id(client: AsyncClient, 
     r = await client.patch(f"{BASE}/{localidad_id}", json={"localidad": "San José", "departamento": "Tulumba"})
     assert r.status_code == 200
     assert r.json()["localidad_id"] == "777"
+
+
+# ── Convenio firmado (spec-ch-convenio-firmado.md) ─────────────────────────────
+
+ID_FIRMADO = 9
+ID_NOTIFICADO = 4
+
+
+@pytest_asyncio.fixture
+async def localidad_convenio(db_session: AsyncSession) -> str:
+    db_session.add(EstadoCordobaHogar(
+        id=ID_FIRMADO, label="Convenio Firmado", bg="#fff", text_color="#000", orden=10, dimension="juridico",
+    ))
+    db_session.add(EstadoCordobaHogar(
+        id=ID_NOTIFICADO, label="Notificado", bg="#fff", text_color="#000", orden=3, dimension="juridico",
+    ))
+    await db_session.flush()
+    lid = str(uuid.uuid4())
+    db_session.add(LocalidadCordobaHogar(
+        id=lid, orden=50, localidad="Pueblo Convenio", departamento="Test", ejuridico=ID_NOTIFICADO,
+    ))
+    await db_session.flush()
+    return lid
+
+
+@pytest.mark.asyncio
+async def test_convenio_arranca_sin_firmar(client: AsyncClient, localidad_convenio: str):
+    r = await client.patch(f"{BASE}/{localidad_convenio}", json={"obs": "x"})
+    assert r.status_code == 200
+    assert r.json()["convenio_firmado"] is False
+    assert r.json()["fecha_firma_convenio"] is None
+
+
+@pytest.mark.asyncio
+async def test_convenio_marcar_con_fecha_y_desmarcar_borra_la_fecha(client: AsyncClient, localidad_convenio: str):
+    r = await client.patch(f"{BASE}/{localidad_convenio}", json={
+        "convenio_firmado": True, "fecha_firma_convenio": "2026-09-10",
+    })
+    assert r.status_code == 200
+    assert r.json()["convenio_firmado"] is True
+    assert r.json()["fecha_firma_convenio"] == "2026-09-10"
+
+    r = await client.patch(f"{BASE}/{localidad_convenio}", json={"convenio_firmado": False})
+    assert r.status_code == 200
+    assert r.json()["convenio_firmado"] is False
+    assert r.json()["fecha_firma_convenio"] is None
+
+
+@pytest.mark.asyncio
+async def test_convenio_firmado_sin_fecha_es_valido(client: AsyncClient, localidad_convenio: str):
+    r = await client.patch(f"{BASE}/{localidad_convenio}", json={"convenio_firmado": True})
+    assert r.status_code == 200
+    assert r.json()["convenio_firmado"] is True
+    assert r.json()["fecha_firma_convenio"] is None
+
+
+@pytest.mark.asyncio
+async def test_convenio_fecha_sin_firma_da_422(client: AsyncClient, localidad_convenio: str):
+    r = await client.patch(f"{BASE}/{localidad_convenio}", json={"fecha_firma_convenio": "2026-09-10"})
+    assert r.status_code == 422
+    assert r.json()["detail"]["code"] == "FECHA_FIRMA_SIN_CONVENIO"
+
+
+@pytest.mark.asyncio
+async def test_convenio_fecha_futura_da_422(client: AsyncClient, localidad_convenio: str):
+    r = await client.patch(f"{BASE}/{localidad_convenio}", json={
+        "convenio_firmado": True, "fecha_firma_convenio": "2999-01-01",
+    })
+    assert r.status_code == 422
+    assert r.json()["detail"]["code"] == "FECHA_FIRMA_FUTURA"
+
+
+@pytest.mark.asyncio
+async def test_convenio_pasar_al_estado_lo_marca_con_fecha_cambio(client: AsyncClient, localidad_convenio: str):
+    # El formulario manda la casilla desmarcada: el cambio de estado manda igual (A1).
+    r = await client.patch(f"{BASE}/{localidad_convenio}", json={
+        "ejuridico": ID_FIRMADO, "convenio_firmado": False, "fecha_firma_convenio": None,
+        "fecha_cambio": "2026-08-01",
+    })
+    assert r.status_code == 200
+    assert r.json()["convenio_firmado"] is True
+    assert r.json()["fecha_firma_convenio"] == "2026-08-01"
+
+
+@pytest.mark.asyncio
+async def test_convenio_pasar_al_estado_respeta_la_fecha_cargada(client: AsyncClient, localidad_convenio: str):
+    r = await client.patch(f"{BASE}/{localidad_convenio}", json={
+        "ejuridico": ID_FIRMADO, "convenio_firmado": True, "fecha_firma_convenio": "2026-07-15",
+        "fecha_cambio": "2026-08-01",
+    })
+    assert r.json()["fecha_firma_convenio"] == "2026-07-15"
+
+
+@pytest.mark.asyncio
+async def test_convenio_avanzar_de_estado_no_lo_desmarca(client: AsyncClient, localidad_convenio: str):
+    await client.patch(f"{BASE}/{localidad_convenio}", json={"ejuridico": ID_FIRMADO, "fecha_cambio": "2026-08-01"})
+    r = await client.patch(f"{BASE}/{localidad_convenio}", json={"ejuridico": ID_NOTIFICADO})
+    assert r.status_code == 200
+    assert r.json()["convenio_firmado"] is True
+    assert r.json()["fecha_firma_convenio"] == "2026-08-01"
+
+
+@pytest.mark.asyncio
+async def test_convenio_desmarcar_con_el_estado_sin_cambiar_queda_desmarcado(client: AsyncClient, localidad_convenio: str):
+    await client.patch(f"{BASE}/{localidad_convenio}", json={"ejuridico": ID_FIRMADO})
+    r = await client.patch(f"{BASE}/{localidad_convenio}", json={
+        "ejuridico": ID_FIRMADO, "convenio_firmado": False, "fecha_firma_convenio": None,
+    })
+    assert r.json()["convenio_firmado"] is False
+    assert r.json()["fecha_firma_convenio"] is None
+
+
+@pytest.mark.asyncio
+async def test_convenio_crear_en_el_estado_lo_marca(client: AsyncClient, localidad_convenio: str):
+    r = await client.post(BASE, json={"localidad": "Pueblo Nuevo", "departamento": "Test", "ejuridico": ID_FIRMADO})
+    assert r.status_code in (200, 201)
+    assert r.json()["convenio_firmado"] is True
+    assert r.json()["fecha_firma_convenio"] == date.today().isoformat()

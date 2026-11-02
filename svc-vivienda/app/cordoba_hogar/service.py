@@ -38,6 +38,56 @@ from app.geo import service as geo_service
 from app.geo.models import GeoLocalidad
 
 
+_LABEL_CONVENIO_FIRMADO = "convenio firmado"
+
+
+async def _es_convenio_firmado(db: AsyncSession, estado_id: int | None) -> bool:
+    if estado_id is None:
+        return False
+    label = (await db.execute(
+        select(EstadoCordobaHogar.label).where(EstadoCordobaHogar.id == estado_id)
+    )).scalar_one_or_none()
+    return (label or "").strip().lower() == _LABEL_CONVENIO_FIRMADO
+
+
+async def _resolver_convenio(
+    db: AsyncSession, localidad: LocalidadCordobaHogar, updates: dict, fecha_cambio: date | None
+) -> None:
+    """Deja en `updates` el convenio resultante y valida (spec-ch-convenio-firmado.md §3 y §7-A1)."""
+    if updates.get("convenio_firmado", False) is None:
+        updates.pop("convenio_firmado")
+
+    fecha_enviada = "fecha_firma_convenio" in updates
+    firmado = updates.get("convenio_firmado", localidad.convenio_firmado)
+    fecha = updates.get("fecha_firma_convenio", localidad.fecha_firma_convenio)
+
+    nuevo_juridico = updates.get("ejuridico")
+    if nuevo_juridico != localidad.ejuridico and await _es_convenio_firmado(db, nuevo_juridico):
+        firmado = True
+        fecha = fecha or fecha_cambio or date.today()
+
+    if not firmado:
+        if fecha_enviada and fecha is not None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={
+                    "code": "FECHA_FIRMA_SIN_CONVENIO",
+                    "message": "No se puede cargar la fecha de firma si la localidad no firmó convenio.",
+                },
+            )
+        fecha = None
+    if fecha is not None and fecha > date.today():
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": "FECHA_FIRMA_FUTURA", "message": "La fecha de firma no puede ser futura."},
+        )
+
+    if firmado != localidad.convenio_firmado or "convenio_firmado" in updates:
+        updates["convenio_firmado"] = firmado
+    if fecha != localidad.fecha_firma_convenio or fecha_enviada:
+        updates["fecha_firma_convenio"] = fecha
+
+
 def _localidad_response(
     localidad: LocalidadCordobaHogar, etecnico: int | None, obra: dict | None = None
 ) -> LocalidadResponse:
@@ -185,6 +235,7 @@ async def actualizar_localidad(
     updates = data.model_dump(exclude_unset=True)
     fecha_cambio = updates.pop("fecha_cambio", None)
     await validar_dimensiones(db, EstadoCordobaHogar, updates, actual=localidad)
+    await _resolver_convenio(db, localidad, updates, fecha_cambio)
 
     historial = []
     for campo in ("ejuridico", "efinanciero"):
@@ -300,6 +351,9 @@ async def crear_localidad(
         efinanciero=data.efinanciero,
         updated_by=actor.email,
     )
+    if await _es_convenio_firmado(db, data.ejuridico):
+        localidad.convenio_firmado = True
+        localidad.fecha_firma_convenio = date.today()
     db.add(localidad)
     try:
         await db.flush()

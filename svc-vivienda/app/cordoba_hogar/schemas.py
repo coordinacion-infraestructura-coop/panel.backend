@@ -56,6 +56,8 @@ class LocalidadResponse(BaseModel):
     cantidad_casas: int | None
     ok_gob: str
     doc_exp: str | None
+    convenio_firmado: bool = False
+    fecha_firma_convenio: date | None = None
     ejuridico: int | None
     etecnico: int | None
     efinanciero: int | None
@@ -83,6 +85,8 @@ class LocalidadUpdate(BaseModel):
     cantidad_casas: int | None = None
     ok_gob: str | None = None
     doc_exp: str | None = None
+    convenio_firmado: bool | None = None
+    fecha_firma_convenio: date | None = None
     ejuridico: int | None = None
     efinanciero: int | None = None
     estado_general: int | None = None

@@ -44,6 +44,10 @@ class LocalidadCordobaHogar(Base):
     cantidad_casas: Mapped[int | None] = mapped_column(Integer)
     ok_gob: Mapped[str] = mapped_column(String(20), server_default="SI")
     doc_exp: Mapped[str | None] = mapped_column(Text)
+    # Hecho propio, no se deduce del estado: una localidad que firmó y avanzó sigue contando
+    # (spec-ch-convenio-firmado.md §2).
+    convenio_firmado: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    fecha_firma_convenio: Mapped[date | None] = mapped_column(Date)
     ejuridico: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("viv_ch_estados.id"))
     etecnico: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("viv_ch_estados.id"))
     efinanciero: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("viv_ch_estados.id"))
