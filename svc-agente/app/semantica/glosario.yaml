@@ -1,0 +1,139 @@
+# Glosario del agente — fuente única para el prompt, las tools, el ETL y la evaluación
+# (spec-agente-consultas.md §3.1). Cambiar este archivo NO requiere nueva versión del spec
+# (spec 1.0.0, changelog b): los mapeos y umbrales son datos. Después de editarlo hay que
+# redesplegar y correr un refresco para que `estado_normalizado` se recalcule.
+
+estados_normalizados: [Sin iniciar, En trámite, En ejecución, Finalizado, Trabado/Suspendido]
+
+# Mapeo estado de origen -> estado normalizado (spec §5.1).
+# `exactos` gana sobre `reglas`; las reglas se evalúan en orden (regex sin acentos, minúsculas)
+# y la primera que matchea decide; si ninguna matchea se usa `por_defecto`.
+# MAPEO INICIAL — PENDIENTE DE REVISIÓN POR CADA ÁREA antes de anunciar el agente.
+mapeo_estados:
+  privada:
+    exactos:
+      INGRESADO: Sin iniciar
+      DERIVADO A SUAC: En trámite
+      LISTA PARA INNAUGURAR: Finalizado
+      FINALIZADA: Finalizado
+      NO REMITE SUAC: Trabado/Suspendido
+      ARCHIVADO: Trabado/Suspendido
+    por_defecto: En trámite
+  atp:
+    exactos:
+      Pendiente: Sin iniciar
+      Parcial: En ejecución
+      Pagado: Finalizado
+    por_defecto: Sin iniciar
+  # Vivienda (CC/CH/ML, dimensión `general`) y Gasífera: reglas por palabra clave sobre el label.
+  vivienda: &reglas_texto
+    exactos: {}
+    reglas:
+      - {patron: "suspend|paraliz|rescind|baja|anulad|desist|caduc|frenad|trabad", estado: Trabado/Suspendido}
+      - {patron: "finaliz|terminad|concluid|inaugur|certificad.*final|recepcion definitiva|cerrad", estado: Finalizado}
+      - {patron: "ejecuci|en obra|obra en curso|iniciad|avance|en curso|en marcha", estado: En ejecución}
+      - {patron: "sin iniciar|a iniciar|no iniciad|sin inicio|sin estado|a definir|pendiente de inicio", estado: Sin iniciar}
+    por_defecto: En trámite
+  gasifera: *reglas_texto
+
+# "Ejecutado" por programa (spec §5.3, resuelto en 1.0.0).
+ejecutado:
+  cc: Suma de los hitos acreditados del Checklist Técnico (anticipo 50 %, 40 % 25 %, 70 % 25 %) sobre el monto vigente del convenio.
+  ch: Igual que Cordón Cuneta.
+  ml: Igual que Cordón Cuneta.
+  atp: Monto entregado según el cronograma de pagos (valor absoluto de la suma, mismo criterio que el panel).
+  gas_obra: Sin definir — no se calcula; el avance físico está en `avance`.
+  gas_accion: Sin definir — no se calcula.
+
+umbrales_demora_dias:
+  por_defecto: 90
+  gestiones: 90
+  programas: 180
+
+# Estados que cuentan como "abiertos" para pendientes y demoras.
+estados_abiertos: [Sin iniciar, En trámite, En ejecución, Trabado/Suspendido]
+
+programas:
+  cc: {nombre: Cordón Cuneta, secretaria: vivienda, panel: /vivienda/cordon-cuneta, sinonimos: [cordon cuneta, cordón cuneta, cordon, cuneta, cc, pavimento urbano]}
+  ch: {nombre: Córdoba Hogar, secretaria: vivienda, panel: /vivienda/cordoba-hogar, sinonimos: [cordoba hogar, córdoba hogar, ch, viviendas, casas]}
+  ml: {nombre: Mi Lugar, secretaria: vivienda, panel: /vivienda/mi-lugar, sinonimos: [mi lugar, ml, tierras, loteos, lotes]}
+  gas_obra: {nombre: Obras de gas (PIT), secretaria: gasifera, panel: /gasifera/pit, sinonimos: [gas, gasoducto, obras de gas, red de gas, gasifera, gasífera, pit]}
+  gas_accion: {nombre: Acciones en territorio (Gasífera), secretaria: gasifera, panel: /gasifera/pit, sinonimos: [acciones de gas, pedidos de gas]}
+  atp: {nombre: ATP Compromisos del Gobernador, secretaria: gralgob, panel: /gralgob/atp, sinonimos: [atp, aportes del tesoro, compromisos del gobernador, aportes]}
+
+# Descripción de la capa semántica que ve el modelo (schema `ag`).
+tablas:
+  ag_localidades: >-
+    Padrón oficial de localidades. id_geo (clave de todo), localidad, departamento, poblacion
+    (Censo 2022), viviendas (Censo 2022), intendente, partido, lat, lon, url_ficha.
+  ag_programa_items: >-
+    Una fila por convenio/proyecto/obra/compromiso y localidad. programa (cc, ch, ml, gas_obra,
+    gas_accion, atp), programa_nombre, secretaria, origen_id (id del convenio u obra: contar
+    con COUNT(DISTINCT origen_id)), nombre, id_geo, departamento, localidad, estado_origen (texto
+    del panel), estado_normalizado (Sin iniciar | En trámite | En ejecución | Finalizado |
+    Trabado/Suspendido), estado_tecnico (estado del expediente en el Checklist Técnico; sólo
+    cc/ch/ml), avance (0 a 1), cantidad (viviendas en ch, lotes en ml), monto (pesos; en obras de
+    gas con varias localidades está prorrateado), monto_ejecutado (pesos, ver definición por
+    programa), monto_usd (sólo Gasífera, NUNCA sumar con pesos), fecha_inicio,
+    fecha_ultimo_cambio, url.
+  ag_gestiones: >-
+    Gestiones (demandas) de la Secretaría Privada. estado (INGRESADO, DERIVADO A SUAC, LISTA PARA
+    INNAUGURAR, FINALIZADA, NO REMITE SUAC, ARCHIVADO), estado_normalizado, urgencia (Alta,
+    Media, Baja), area, ministerio, categoria, categoria_general, programa, tipo_gestion,
+    canal_origen, id_geo, departamento, localidad, fecha_ingreso, fecha_estado,
+    fecha_finalizacion, dias_abierta (NULL si está cerrada), ok_gobernador, ok_ministro,
+    costo_estimado, detalle (texto del pedido, con datos personales enmascarados; buscar con
+    ILIKE).
+  ag_movimientos: >-
+    Cambios de estado: programa (cc, ch, ml, privada), origen_id, id_geo, dimension (juridico,
+    financiero, tecnico, estado), estado_anterior, estado_nuevo, fecha. NO incluye estado_general
+    de Vivienda: ese cambio no tiene historial.
+  ag_hitos: >-
+    Hitos de obra del Checklist Técnico: programa, origen_id, id_geo, hito (anticipo, 40, 70,
+    100), porcentaje, monto (sobre el convenio vigente), fecha_acreditado (NULL = no acreditado).
+  ag_transferencias: >-
+    Transferencias de la Provincia a municipios y comunas: id_geo, departamento, localidad, tipo,
+    concepto, periodo (primer día del mes), monto.
+  ag_atp_pagos: >-
+    Pagos ATP: fuente (compromiso = cronograma de los Compromisos del Gobernador; interno = ATP
+    Interno de Gobierno), origen_id, id_geo, departamento, localidad, fecha, monto. Las dos
+    fuentes se informan SIEMPRE por separado y nunca se suman: hay pagos repetidos entre ellas.
+  ag_frescura: >-
+    Fecha del último dato por fuente: fuente, estado, filas, ultimo_dato, refrescado_at.
+
+reglas_de_negocio:
+  - Contar convenios/obras con COUNT(DISTINCT origen_id), no COUNT(*).
+  - Montos en pesos y en dólares van en columnas separadas; nunca sumarlos.
+  - ATP Compromisos y ATP Interno nunca se suman entre sí.
+  - Un departamento se filtra por la columna departamento (nombre oficial); una localidad por id_geo.
+  - Si un dato no existe en las tablas, decirlo. No estimar ni completar.
+
+# Ejemplos pregunta -> SQL validados (few-shot). Sumar acá los del set de evaluación.
+ejemplos_sql:
+  - pregunta: ¿Cuántos convenios de Cordón Cuneta hay por estado en el departamento San Justo?
+    sql: >-
+      SELECT estado_normalizado, COUNT(DISTINCT origen_id) AS convenios, SUM(monto) AS monto
+      FROM ag_programa_items WHERE programa = 'cc' AND departamento = 'San Justo'
+      GROUP BY estado_normalizado ORDER BY convenios DESC
+  - pregunta: ¿Qué departamentos tienen más gestiones abiertas de urgencia alta?
+    sql: >-
+      SELECT departamento, COUNT(*) AS gestiones FROM ag_gestiones
+      WHERE dias_abierta IS NOT NULL AND urgencia = 'Alta'
+      GROUP BY departamento ORDER BY gestiones DESC LIMIT 10
+  - pregunta: ¿Qué localidades de más de 5000 habitantes no tienen Córdoba Hogar?
+    sql: >-
+      SELECT l.localidad, l.departamento, l.poblacion FROM ag_localidades l
+      WHERE l.poblacion > 5000 AND NOT EXISTS (
+        SELECT 1 FROM ag_programa_items p WHERE p.programa = 'ch' AND p.id_geo = l.id_geo)
+      ORDER BY l.poblacion DESC
+  - pregunta: ¿Cuánto se transfirió a Villa María en 2026 por concepto?
+    sql: >-
+      SELECT concepto, SUM(monto) AS monto FROM ag_transferencias t
+      JOIN ag_localidades l ON l.id_geo = t.id_geo
+      WHERE l.localidad = 'Villa María' AND t.periodo >= '2026-01-01'
+      GROUP BY concepto ORDER BY monto DESC
+  - pregunta: Pedidos de ambulancias en Calamuchita
+    sql: >-
+      SELECT fecha_ingreso, localidad, estado, detalle FROM ag_gestiones
+      WHERE departamento = 'Calamuchita' AND detalle ILIKE '%ambulancia%'
+      ORDER BY fecha_ingreso DESC

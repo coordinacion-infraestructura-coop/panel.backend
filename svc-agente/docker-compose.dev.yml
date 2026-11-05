@@ -1,0 +1,47 @@
+version: "3.9"
+
+# Local: API en :8006, Postgres en :5437 (puertos escalonados, ver CLAUDE.md).
+# Para refrescar desde las bases locales de los otros servicios, definir en .env
+# FUENTES_URL_PLANTILLA=postgresql+asyncpg://USUARIO:CLAVE@host.docker.internal:PUERTO/{db}
+# o una FUENTE_<SERVICIO>_URL por base (cada servicio corre su Postgres en otro puerto).
+# El LLM usa ADC: montar las credenciales de `gcloud auth application-default login`.
+services:
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: db_agente
+      POSTGRES_USER: agente_app
+      POSTGRES_PASSWORD: devpassword
+    ports:
+      - "5437:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agente_app -d db_agente"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8006:8006"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: "postgresql+asyncpg://agente_app:devpassword@db:5432/db_agente"
+      PORT: "8006"
+      GCP_PROJECT_ID: "gestorcooperativo"
+      SERVICE_NAME: "svc-agente"
+      ENVIRONMENT: "development"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./app:/app/app
+
+volumes:
+  postgres_data:
