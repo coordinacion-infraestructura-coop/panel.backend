@@ -217,6 +217,9 @@ def upgrade() -> None:
         op.create_index(f"ix_{tabla}_{'_'.join(cols)}", tabla, cols, schema=esquema)
 
     # Permisos del rol de consulta del modelo (spec §2.3): SELECT sólo sobre ag.*, nada en public.
+    # En SQLite (tests) no aplica.
+    if op.get_bind().dialect.name != "postgresql":
+        return
     op.execute("""
     DO $$
     BEGIN
@@ -225,9 +228,8 @@ def upgrade() -> None:
         GRANT SELECT ON ALL TABLES IN SCHEMA ag TO agente_llm;
         ALTER DEFAULT PRIVILEGES IN SCHEMA ag GRANT SELECT ON TABLES TO agente_llm;
         REVOKE ALL ON ALL TABLES IN SCHEMA public FROM agente_llm;
-        ALTER ROLE agente_llm SET search_path = ag;
-        ALTER ROLE agente_llm SET default_transaction_read_only = on;
-        ALTER ROLE agente_llm SET statement_timeout = '10s';
+        -- search_path, read-only y statement_timeout del rol los fija sql/roles_db_agente.sql:
+        -- ALTER ROLE exige CREATEROLE y agente_app (dueño de la base) no lo tiene.
       END IF;
     END $$;
     """)
