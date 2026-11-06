@@ -32,6 +32,7 @@ dev = [
     "pytest-asyncio==0.24.0",
     "pytest-cov==6.0.0",
     "aiosqlite==0.20.0",
+    "openpyxl==3.1.5",  # tests/eval/importar_planilla.py
 ]
 
 [tool.hatch.build.targets.wheel]
