@@ -103,7 +103,7 @@ async def preguntar(
 
 
 def _sse(evento: str, datos: dict) -> str:
-    return f"event: {evento}\ndata: {a_json(datos)}\n\n"
+    return f"event: {evento}\ndata: {a_json(datos, ascii=True)}\n\n"
 
 
 @router.post("/mensajes/{mensaje_id}/feedback", status_code=204)

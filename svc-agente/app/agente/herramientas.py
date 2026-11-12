@@ -84,8 +84,10 @@ def _json_default(v: Any) -> Any:
     return str(v)
 
 
-def a_json(v: Any) -> str:
-    return json.dumps(v, ensure_ascii=False, default=_json_default)
+def a_json(v: Any, ascii: bool = False) -> str:
+    """`ascii=True` para el SSE: escapa U+2028/U+2029 (vienen en textos pegados desde Word/Sheets),
+    que el navegador toma como fin de línea y cortaban el evento `respuesta` a la mitad."""
+    return json.dumps(v, ensure_ascii=ascii, default=_json_default)
 
 
 @dataclass

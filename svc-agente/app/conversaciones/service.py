@@ -1,5 +1,5 @@
 """Conversaciones, preguntas, auditoría y feedback (spec §6.4)."""
-from datetime import date, datetime, time, timezone
+from datetime import date, datetime, time, timedelta, timezone
 
 from fastapi import HTTPException, status
 from sqlalchemy import func, select
@@ -74,11 +74,36 @@ def costo_estimado(tokens: dict) -> float:
     )
 
 
+# Una pregunta idéntica a la última de la conversación dentro de esta ventana devuelve la respuesta
+# guardada sin llamar al modelo: es un reenvío (doble clic, reintento tras un corte), y los datos
+# se refrescan cada hora, así que no cambiarían.
+VENTANA_REPETIDA = timedelta(minutes=10)
+
+
+def _normalizar(t: str) -> str:
+    return " ".join(t.split()).casefold()
+
+
+def _respuesta_repetida(previos: list[Mensaje], texto: str) -> Mensaje | None:
+    users = [m for m in previos if m.rol == "user"]
+    asist = [m for m in previos if m.rol == "assistant"]
+    if not users or not asist or _normalizar(users[-1].texto) != _normalizar(texto):
+        return None
+    a = asist[-1]
+    if not a.respuesta or a.respuesta.get("error"):
+        return None
+    creado = a.created_at if a.created_at.tzinfo else a.created_at.replace(tzinfo=timezone.utc)
+    return a if _ahora() - creado <= VENTANA_REPETIDA else None
+
+
 async def preguntar(
     db: AsyncSession, db_llm: AsyncSession, user: AuthUser, conv: Conversacion, texto: str,
     progreso: llm.Progreso | None = None,
 ) -> dict:
     previos = await mensajes(db, conv.id)
+    if (a := _respuesta_repetida(previos, texto)) is not None:
+        return {"mensaje_id": a.id, "texto": a.texto, **{k: a.respuesta.get(k) or ([] if k != "interpretacion" else None)
+                for k in ("interpretacion", "bloques", "fuentes", "sql", "sugerencias")}}
     historial: list[dict] = []
     for m in previos:
         if m.rol == "assistant" and m.api_json:

@@ -84,6 +84,28 @@ async def test_stream_sse(client, cargado, guion):
     assert len(d["mensajes"]) == 2  # el stream también persiste
 
 
+async def test_pregunta_repetida_no_vuelve_a_llamar_al_modelo(client, cargado, guion):
+    f = guion(_respuesta("uno"))  # una sola respuesta guionada: una segunda llamada fallaría
+    cid = await _conv(client)
+    url = f"/api/v1/agente/conversaciones/{cid}/mensajes?stream=false"
+    r1 = (await client.post(url, json={"texto": "¿Cómo está CC?"})).json()
+    r2 = (await client.post(url, json={"texto": "  ¿cómo está  CC? "})).json()
+    assert len(f.llamadas) == 1
+    assert r2["mensaje_id"] == r1["mensaje_id"] and r2["texto"] == "uno"
+    d = (await client.get(f"/api/v1/agente/conversaciones/{cid}")).json()
+    assert len(d["mensajes"]) == 2  # no se duplica en el historial ni en la auditoría
+
+
+async def test_stream_escapa_separadores_de_linea_unicode(client, cargado, guion):
+    ls, ps = chr(0x2028), chr(0x2029)  # separadores de línea/párrafo Unicode
+    guion(_respuesta(f"antes{ls}después{ps}fin"))
+    cid = await _conv(client)
+    r = await client.post(f"/api/v1/agente/conversaciones/{cid}/mensajes", json={"texto": "x"})
+    assert ls not in r.text and ps not in r.text
+    data = r.text.strip().split("\n\n")[-1].split("\n")[1].removeprefix("data: ")
+    assert json.loads(data)["texto"] == f"antes{ls}después{ps}fin"
+
+
 async def test_conversacion_ajena_404(client, as_user, cargado, guion):
     cid = await _conv(client)
     as_user(ADMIN)
