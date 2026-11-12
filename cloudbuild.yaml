@@ -144,7 +144,7 @@ substitutions:
   _FUENTES_OFICIALES_SYNC_ENABLED: "true"
   # Secretos adicionales por servicio, concatenados a --set-secrets (que reemplaza todo el set en
   # cada redeploy). Vacío para todos salvo svc-agente, cuyo trigger define
-  # ",LLM_DATABASE_URL=svc-agente-llm-db-url:latest,FUENTES_URL_PLANTILLA=svc-agente-fuentes-url:latest"
+  # ",LLM_DATABASE_URL=svc-agente-llm-db-url:latest,FUENTES_URL_PLANTILLA=svc-agente-fuentes-url:latest,ANTHROPIC_API_KEY=svc-agente-anthropic-key:latest"
   # (spec-agente-consultas.md, ADR-033). Debe empezar con coma.
   _EXTRA_SECRETS: ""
 

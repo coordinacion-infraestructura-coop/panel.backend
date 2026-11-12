@@ -26,13 +26,15 @@ mapeo_estados:
       Pagado: Finalizado
     por_defecto: Sin iniciar
   # Vivienda (CC/CH/ML, dimensión `general`) y Gasífera: reglas por palabra clave sobre el label.
+  # Revisado contra los estados reales de producción el 2026-11-12 (Gasífera: Cumplido, A EJECUTAR,
+  # Pendiente). Falta la revisión de cada área: scripts/exportar_mapeo_estados.py.
   vivienda: &reglas_texto
     exactos: {}
     reglas:
       - {patron: "suspend|paraliz|rescind|baja|anulad|desist|caduc|frenad|trabad", estado: Trabado/Suspendido}
-      - {patron: "finaliz|terminad|concluid|inaugur|certificad.*final|recepcion definitiva|cerrad", estado: Finalizado}
+      - {patron: "finaliz|terminad|concluid|cumplid|inaugur|certificad.*final|recepcion definitiva|cerrad", estado: Finalizado}
       - {patron: "ejecuci|en obra|obra en curso|iniciad|avance|en curso|en marcha", estado: En ejecución}
-      - {patron: "sin iniciar|a iniciar|no iniciad|sin inicio|sin estado|a definir|pendiente de inicio", estado: Sin iniciar}
+      - {patron: "sin iniciar|a iniciar|no iniciad|sin inicio|sin estado|a definir|pendiente de inicio|a ejecutar|^pendiente$", estado: Sin iniciar}
     por_defecto: En trámite
   gasifera: *reglas_texto
 

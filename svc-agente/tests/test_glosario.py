@@ -1,3 +1,5 @@
+import pytest
+
 from app.semantica.glosario import enmascarar, estado_normalizado, url_ficha
 
 
@@ -37,3 +39,11 @@ def test_enmascarar_conserva_montos_y_anios():
 def test_url_ficha():
     assert url_ficha("General San Martín", "Villa María") == "/resumen-territorial/General%20San%20Mart%C3%ADn/Villa%20Mar%C3%ADa"
     assert url_ficha(None, "x") is None
+
+
+@pytest.mark.parametrize("estado,esperado", [
+    ("Cumplido", "Finalizado"), ("A EJECUTAR", "Sin iniciar"), ("Pendiente", "Sin iniciar"),
+    ("EN EJECUCIÓN", "En ejecución"), ("FINALIZADA", "Finalizado"),
+])
+def test_estados_reales_de_gasifera(estado, esperado):
+    assert estado_normalizado("gasifera", estado) == esperado
