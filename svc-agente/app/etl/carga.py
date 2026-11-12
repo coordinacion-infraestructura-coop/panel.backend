@@ -10,6 +10,7 @@ from datetime import date, datetime, timezone
 from typing import Awaitable, Callable
 
 from sqlalchemy import delete, select, text
+from sqlalchemy.pool import NullPool
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
 
 from app.config import settings
@@ -49,9 +50,11 @@ async def leer_fuente_postgres(fuente: str) -> Raw:
     url = url_fuente(fuente)
     if not url:
         raise FuenteSinConfigurar(fuente)
+    # NullPool: una conexión por fuente mientras dura la lectura, ninguna ociosa después (ver
+    # app.database._crear_engine). Las fuentes se leen de a una.
     engine = _engines.get(fuente)
     if engine is None:
-        engine = _engines[fuente] = create_async_engine(url, pool_size=1, max_overflow=0, pool_pre_ping=True)
+        engine = _engines[fuente] = create_async_engine(url, poolclass=NullPool)
     out: Raw = {}
     async with engine.connect() as conn:
         if conn.dialect.name == "postgresql":

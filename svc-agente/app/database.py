@@ -1,6 +1,7 @@
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.pool import NullPool
 
 from app.config import settings
 
@@ -19,9 +20,12 @@ def adjuntar_schema_ag_sqlite(engine: AsyncEngine) -> None:
 
 
 def _crear_engine(url: str) -> AsyncEngine:
+    # Sin pool en Postgres: ministerio-postgres es un db-f1-micro compartido (max_connections=25)
+    # y los pools de los otros servicios ya ocupan ~20. El agente abre una conexión por uso y la
+    # cierra; nunca deja conexiones ociosas (incidente del primer deploy, 2026-11-12).
     kwargs: dict = {"pool_pre_ping": True}
     if not url.startswith("sqlite"):
-        kwargs.update(pool_size=5, max_overflow=5)
+        kwargs = {"poolclass": NullPool}
     engine = create_async_engine(url, **kwargs)
     adjuntar_schema_ag_sqlite(engine)
     return engine
