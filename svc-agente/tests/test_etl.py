@@ -86,3 +86,11 @@ async def test_fuente_caida_conserva_datos_previos(cargado):
 async def test_fuente_sin_configurar(db):
     estado = await refrescar(db)  # sin URLs en settings
     assert all(e["estado"] == "sin_configurar" for e in estado.values())
+
+
+async def test_transferencias_no_cargan_la_fila_total(cargado):
+    from sqlalchemy import func, select
+    from app.semantica.models import AgTransferencia
+    total = (await cargado.execute(select(func.sum(AgTransferencia.monto)))).scalar()
+    conceptos = {c for (c,) in (await cargado.execute(select(AgTransferencia.concepto)))}
+    assert total == 150 and "total" not in conceptos

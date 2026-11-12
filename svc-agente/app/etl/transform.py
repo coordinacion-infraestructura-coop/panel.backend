@@ -339,6 +339,10 @@ def gralgob(
 def transferencias(rows: list[Fila], padron: Padron) -> list[Fila]:
     out = []
     for t in rows:
+        # La fuente trae, además de cada concepto, una fila concepto="total" con la suma: si se
+        # carga, cualquier SUM(monto) da el doble (lo detectó el propio agente, 2026-11-12).
+        if (t.get("concepto") or "").strip().lower() == "total":
+            continue
         dep, loc = padron.oficial(t.get("id_geo"), t.get("departamento"), t.get("localidad"))
         out.append({
             "id": t["id"], "id_geo": t.get("id_geo"), "departamento": dep, "localidad": loc,

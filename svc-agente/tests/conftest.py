@@ -172,6 +172,9 @@ def raw_fuentes() -> dict:
                  "concepto": "COPA", "periodo": date(2026, 9, 1), "monto": 100},
                 {"id": "t2", "id_geo": "G1", "departamento": "SAN JUSTO", "localidad": "SAN FRANCISCO", "tipo": "municipio",
                  "concepto": "FOFINDES", "periodo": date(2026, 10, 1), "monto": 50},
+                # La fuente real trae también la suma como concepto "total": no se carga.
+                {"id": "t3", "id_geo": "G1", "departamento": "SAN JUSTO", "localidad": "SAN FRANCISCO", "tipo": "municipio",
+                 "concepto": "total", "periodo": date(2026, 10, 1), "monto": 150},
             ],
             "sync": [{"ultimo": datetime(2026, 11, 1, tzinfo=UTC)}],
         },
