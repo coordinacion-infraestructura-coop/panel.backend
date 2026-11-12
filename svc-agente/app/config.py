@@ -34,7 +34,11 @@ class Settings(BaseSettings):
     google_issuer: str = "https://securetoken.google.com/gestorcooperativo"
     svc_vivienda_internal_url: str = ""
 
-    # LLM — Claude vía Vertex AI (spec §6.1). Sin API keys: ADC de la SA de Cloud Run.
+    # LLM (spec §6.1, changelog 1.0.2). "anthropic": API de Anthropic con API key (secreto
+    # svc-agente-anthropic-key). "vertex": Claude en Vertex AI con ADC de la SA de Cloud Run —
+    # queda como alternativa; en gestorcooperativo Google rechazó la cuota (2026-11).
+    proveedor_llm: str = "anthropic"
+    anthropic_api_key: str = ""
     vertex_region: str = "global"
     vertex_project_id: str = "gestorcooperativo"
     modelo: str = "claude-sonnet-5-5"
@@ -43,7 +47,7 @@ class Settings(BaseSettings):
     max_tokens: int = 16000
 
     # Costo estimado por pregunta en ag_interacciones (USD por millón de tokens). Valores de
-    # referencia de la API de Anthropic para Sonnet; Vertex factura aparte con su propia tarifa.
+    # referencia de la API de Anthropic para Sonnet (Vertex factura con su propia tarifa).
     precio_entrada_mtok: float = 2.0
     precio_salida_mtok: float = 10.0
     precio_cache_lectura_mtok: float = 0.2

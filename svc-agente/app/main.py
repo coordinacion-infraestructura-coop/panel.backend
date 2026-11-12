@@ -20,6 +20,8 @@ async def lifespan(app: FastAPI):
     if settings.environment == "production" and not settings.llm_database_url:
         log.error("LLM_DATABASE_URL sin configurar: consulta_sql corre con el rol de la app. "
                   "La garantía de solo lectura depende del rol agente_llm (spec §2.3).")
+    if settings.proveedor_llm == "anthropic" and not settings.anthropic_api_key:
+        log.error("ANTHROPIC_API_KEY sin configurar: el agente no va a poder responder.")
     yield
     await engine.dispose()
     if engine_llm is not engine:

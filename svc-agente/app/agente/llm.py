@@ -1,4 +1,4 @@
-"""Loop de tool use contra Claude en Vertex AI (spec §6.1). Loop propio, sin framework.
+"""Loop de tool use contra Claude, por la API de Anthropic o Vertex AI (spec §6.1). Loop propio, sin framework.
 
 El historial de la conversación se reenvía tal cual se recibió (append-only, incluidos los bloques
 de thinking y tool_use/tool_result): así no se rompe el chequeo de historial de los modelos con
@@ -25,11 +25,22 @@ class ClienteLLM(Protocol):
     async def crear(self, *, system: list[dict], tools: list[dict], messages: list[dict]) -> Any: ...
 
 
-class ClienteVertex:
-    def __init__(self) -> None:
-        from anthropic import AsyncAnthropicVertex
+class ClienteClaude:
+    """Mismo request para los dos proveedores: solo cambia cómo se construye el cliente."""
 
-        self._c = AsyncAnthropicVertex(project_id=settings.vertex_project_id, region=settings.vertex_region)
+    def __init__(self) -> None:
+        if settings.proveedor_llm == "vertex":
+            from anthropic import AsyncAnthropicVertex
+
+            self._c = AsyncAnthropicVertex(project_id=settings.vertex_project_id, region=settings.vertex_region)
+        elif settings.proveedor_llm == "anthropic":
+            from anthropic import AsyncAnthropic
+
+            if not settings.anthropic_api_key:
+                raise RuntimeError("Falta ANTHROPIC_API_KEY (proveedor_llm=anthropic)")
+            self._c = AsyncAnthropic(api_key=settings.anthropic_api_key)
+        else:
+            raise RuntimeError(f"proveedor_llm desconocido: {settings.proveedor_llm}")
 
     async def crear(self, *, system, tools, messages):
         return await self._c.messages.create(
@@ -44,7 +55,7 @@ _cliente: ClienteLLM | None = None
 def cliente() -> ClienteLLM:
     global _cliente
     if _cliente is None:
-        _cliente = ClienteVertex()
+        _cliente = ClienteClaude()
     return _cliente
 
 
