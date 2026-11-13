@@ -63,18 +63,31 @@ async def _cargar(db: AsyncSession) -> None:
 async def test_inicio_provincia(client: AsyncClient, db_session: AsyncSession):
     await _cargar(db_session)
     b = (await client.get("/api/v1/datos-externos/tablero/inicio", params={"anio": 2026})).json()
-    # Población: Censo primero, Vista de Gobierno si falta (B).
-    assert b["kpis"] == {"localidades": 3, "municipios": 2, "comunas": 1, "poblacion": 350, "transferido": 3800.0, "por_habitante": pytest.approx(3800 / 350)}
+    # Población: la de Gobierno primero (A 999, B 50), el Censo si falta (C 200). El Censo viaja
+    # al lado, y en None porque a B le falta (spec fase1 §11.2, v1.3.0).
+    assert b["kpis"] == {"localidades": 3, "municipios": 2, "comunas": 1, "poblacion": 1249, "poblacion_censo": None,
+                         "transferido": 3800.0, "por_habitante": pytest.approx(3800 / 1249)}
     assert b["periodo_hasta"] == "2026-02-01"
     d1 = next(d for d in b["por_departamento"] if d["departamento"] == "D1")
     # Por departamento solo lo vinculado (los 500 sin id_geo no entran).
-    assert d1 == {"departamento": "D1", "localidades": 2, "poblacion": 150, "transferido": 3300.0, "por_habitante": 22.0}
+    assert d1 == {"departamento": "D1", "localidades": 2, "poblacion": 1049, "poblacion_censo": None,
+                  "transferido": 3300.0, "por_habitante": pytest.approx(3300 / 1049)}
+    d2 = next(d for d in b["por_departamento"] if d["departamento"] == "D2")
+    assert d2["poblacion"] == 200 and d2["poblacion_censo"] == 200
 
 
 async def test_inicio_filtrado_por_localidad(client: AsyncClient, db_session: AsyncSession):
     await _cargar(db_session)
     b = (await client.get("/api/v1/datos-externos/tablero/inicio", params=[("anio", 2026), ("codigo_indec", "B")])).json()
     assert b["kpis"]["localidades"] == 1 and b["kpis"]["transferido"] == 300.0 and b["kpis"]["poblacion"] == 50
+
+
+async def test_inicio_poblacion_de_gobierno_con_censo_al_lado(client: AsyncClient, db_session: AsyncSession):
+    """Caso Villa San Isidro: Gobierno fija una población distinta del Censo (por coparticipación)."""
+    await _cargar(db_session)
+    b = (await client.get("/api/v1/datos-externos/tablero/inicio", params=[("anio", 2026), ("codigo_indec", "A")])).json()
+    assert b["kpis"]["poblacion"] == 999 and b["kpis"]["poblacion_censo"] == 100
+    assert b["kpis"]["por_habitante"] == pytest.approx(3000 / 999)
 
 
 async def test_coparticipacion_compara_contra_mismo_periodo_del_anio_anterior(client: AsyncClient, db_session: AsyncSession):

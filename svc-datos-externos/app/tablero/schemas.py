@@ -43,6 +43,8 @@ class InicioKpis(BaseModel):
     municipios: int
     comunas: int
     poblacion: int
+    # Población de Gobierno (principal) y del Censo 2022 al lado; None si falta en alguna localidad.
+    poblacion_censo: int | None = None
     transferido: float
     por_habitante: float | None
 
@@ -51,6 +53,7 @@ class InicioDepartamento(BaseModel):
     departamento: str
     localidades: int
     poblacion: int
+    poblacion_censo: int | None = None
     transferido: float
     por_habitante: float | None
 
@@ -224,6 +227,7 @@ class ResumenFila(BaseModel):
     tipo: str | None = None
     localidades: int
     poblacion: int
+    poblacion_censo: int | None = None
     copa: float
     fofindes: float
     fondo_ambiental: float = 0.0  # Fase 3: pagado a localidades (sin comunidades regionales)

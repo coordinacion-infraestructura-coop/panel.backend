@@ -365,7 +365,8 @@ async def get_fommep(db: AsyncSession, codigos: list[str] | None) -> FommepRespo
 
 
 async def get_resumen(
-    db: AsyncSession, anio: int, codigos: list[str] | None, poblacion: dict[str, int], atp: dict[str, float] | None = None
+    db: AsyncSession, anio: int, codigos: list[str] | None, poblacion: dict[str, int], atp: dict[str, float] | None = None,
+    poblacion_censo: dict[str, int] | None = None,
 ) -> ResumenResponse:
     """`atp`: ATP Interno por código INDEC (spec-atp-interno.md §4.3), o None si no está
     disponible; en ese caso las columnas de ATP vienen None y el total no lo incluye."""
@@ -389,9 +390,11 @@ async def get_resumen(
 
     def fila(clave: str, departamento: str, ls: list[ExtGobLocalidad], c: float, fo: float, fa: float, at: float | None, **extra) -> ResumenFila:
         pob = sum(poblacion.get(loc.codigo_indec, 0) for loc in ls)
+        censo = poblacion_censo or {}
+        pob_censo = sum(censo[x.codigo_indec] for x in ls) if ls and all(x.codigo_indec in censo for x in ls) else None
         total = c + fo + fa + (at or 0.0)
         return ResumenFila(
-            clave=clave, departamento=departamento, localidades=len(ls), poblacion=pob,
+            clave=clave, departamento=departamento, localidades=len(ls), poblacion=pob, poblacion_censo=pob_censo,
             copa=c, fofindes=fo, fondo_ambiental=fa, atp=at,
             atp_sobre_copa_fofin=aggregations.proporcion(at, c + fo) if at is not None else None,
             total=total, por_habitante=aggregations.por_habitante(total, pob), **extra,

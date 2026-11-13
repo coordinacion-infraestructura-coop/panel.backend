@@ -381,6 +381,8 @@ def enriquecer_con_datos_externos(
         **localidad,
         "categoria": (datos or {}).get("categoria"),
         "poblacion_2022": poblacion,
+        # Censo 2022, solo para mostrarlo al lado cuando difiere de la de Gobierno.
+        "poblacion_censo_2022": (datos or {}).get("poblacion_censo_2022"),
         "viviendas_2022": (datos or {}).get("viviendas_2022"),
         "transferencias_periodo": (datos or {}).get("transferencias_periodo"),
         "transferencias_total": transferencias_total,

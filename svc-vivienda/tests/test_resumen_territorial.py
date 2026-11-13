@@ -1042,3 +1042,10 @@ async def test_fetch_datos_externos_lineas_ignora_filas_sin_id_geo():
     ), patch("httpx.AsyncClient.get", new=AsyncMock(return_value=mock_resp)):
         resultado = await svc.fetch_datos_externos_lineas()
     assert resultado == [{"id_geo": "g1", "poblacion_2022": 100}]
+
+
+def test_enriquecer_pasa_la_poblacion_del_censo_al_lado():
+    localidad = {"id_geo": "g1", "localidad": "Villa San Isidro", "programas": []}
+    datos = {"g1": {"poblacion_2022": 1527, "poblacion_censo_2022": 607}}
+    r = aggregations.enriquecer_con_datos_externos(localidad, datos)
+    assert r["poblacion_2022"] == 1527 and r["poblacion_censo_2022"] == 607

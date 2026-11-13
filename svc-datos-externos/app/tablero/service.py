@@ -162,19 +162,36 @@ def _transferencias_filtradas(conceptos: list[str], ids_geo: set[str] | None, an
     return q
 
 
-async def _poblacion_por_codigo(db: AsyncSession, locs: list[ExtGobLocalidad]) -> dict[str, int]:
-    """Población 2022 del Censo (INDEC) por código; si falta, la de la Vista de Gobierno."""
+async def _censo_por_codigo(db: AsyncSession, locs: list[ExtGobLocalidad]) -> dict[str, int]:
+    """Población 2022 del Censo (INDEC) por código; solo los que tienen dato."""
     codigos = [loc.codigo_indec for loc in locs]
-    censo = dict(
-        (
-            await db.execute(
-                select(ExtGeoCenso.codigo_indec, ExtGeoCenso.poblacion_2022).where(
-                    ExtGeoCenso.codigo_indec.in_(codigos), ExtGeoCenso.deleted_at.is_(None)
-                )
-            )
-        ).all()
-    ) if codigos else {}
-    return {loc.codigo_indec: censo.get(loc.codigo_indec) or loc.poblacion_2022_gob or 0 for loc in locs}
+    if not codigos:
+        return {}
+    filas = await db.execute(
+        select(ExtGeoCenso.codigo_indec, ExtGeoCenso.poblacion_2022).where(
+            ExtGeoCenso.codigo_indec.in_(codigos), ExtGeoCenso.deleted_at.is_(None), ExtGeoCenso.poblacion_2022.is_not(None)
+        )
+    )
+    return dict(filas.all())
+
+
+async def _poblaciones(db: AsyncSession, locs: list[ExtGobLocalidad]) -> tuple[dict[str, int], dict[str, int]]:
+    """`(principal, censo)` por código INDEC.
+
+    La principal es la población de Gobierno (la que usa el área para coparticipación, p. ej.
+    Villa San Isidro 1.527); si falta, la del Censo. El Censo viaja al lado para mostrar las
+    diferencias (spec-datos-externos-fase1-nomenclador-demografia.md §11.2, v1.3.0)."""
+    censo = await _censo_por_codigo(db, locs)
+    principal = {loc.codigo_indec: loc.poblacion_2022_gob or censo.get(loc.codigo_indec) or 0 for loc in locs}
+    return principal, censo
+
+
+def _suma_censo(censo: dict[str, int], codigos: list[str]) -> int | None:
+    """Suma del Censo para un grupo; None si a alguna localidad le falta el dato (no se compara
+    un total incompleto contra el de Gobierno)."""
+    if any(c not in censo for c in codigos):
+        return None
+    return sum(censo[c] for c in codigos)
 
 
 # ── Inicio ──────────────────────────────────────────────────────────────────────
@@ -182,7 +199,7 @@ async def _poblacion_por_codigo(db: AsyncSession, locs: list[ExtGobLocalidad]) -
 
 async def get_inicio(db: AsyncSession, anio: int, codigos: list[str] | None) -> InicioResponse:
     locs = await _nomenclador(db, codigos)
-    poblacion = await _poblacion_por_codigo(db, locs)
+    poblacion, censo = await _poblaciones(db, locs)
     ids_geo = {loc.id_geo for loc in locs if loc.id_geo} if codigos else None
 
     filas = (await db.execute(_transferencias_filtradas(CONCEPTOS_SUMABLES, ids_geo, (anio,)))).all()
@@ -206,7 +223,8 @@ async def get_inicio(db: AsyncSession, anio: int, codigos: list[str] | None) -> 
         monto = tr_depto.get(d, 0.0)
         por_departamento.append(
             InicioDepartamento(
-                departamento=d, localidades=len(ls), poblacion=pob, transferido=monto,
+                departamento=d, localidades=len(ls), poblacion=pob,
+                poblacion_censo=_suma_censo(censo, [loc.codigo_indec for loc in ls]), transferido=monto,
                 por_habitante=aggregations.por_habitante(monto, pob),
             )
         )
@@ -220,6 +238,7 @@ async def get_inicio(db: AsyncSession, anio: int, codigos: list[str] | None) -> 
             municipios=sum(1 for loc in locs if loc.tipo == "MU"),
             comunas=sum(1 for loc in locs if loc.tipo == "CO"),
             poblacion=pob_total,
+            poblacion_censo=_suma_censo(censo, [loc.codigo_indec for loc in locs]),
             transferido=transferido,
             por_habitante=aggregations.por_habitante(transferido, pob_total),
         ),
@@ -314,6 +333,8 @@ async def get_seccion_planilla(db: AsyncSession, seccion: str, anio: int, codigo
         return await planillas.get_fodemeep(db, anio, codigos)
     if seccion == "fommep":
         return await planillas.get_fommep(db, codigos)
-    poblacion = await _poblacion_por_codigo(db, await _nomenclador(db, codigos))
+    poblacion, censo = await _poblaciones(db, await _nomenclador(db, codigos))
     # Fase 4 (spec-atp-interno.md §4.3): ATP Interno desde svc-gralgob; None si no responde.
-    return await planillas.get_resumen(db, anio, codigos, poblacion, await atp_interno.atp_por_localidad(anio))
+    return await planillas.get_resumen(
+        db, anio, codigos, poblacion, await atp_interno.atp_por_localidad(anio), poblacion_censo=censo
+    )

@@ -240,7 +240,11 @@ async def rollup_territorial(db: AsyncSession) -> list[dict]:
             "id_geo": id_geo,
             "codigo_indec": codigo_indec,
             "categoria": c.categoria if c else (_TIPO_A_CATEGORIA.get(meta["tipo"]) if meta else (g.tipo if g else None)),
-            "poblacion_2022": c.poblacion_2022 if c else None,
+            # Misma población que el Tablero de Gobierno: la de Gobierno, y el Censo si falta; el
+            # Censo viaja aparte para mostrar las diferencias (spec fase 1 §6.1, v1.3.0).
+            "poblacion_2022": (g.poblacion_2022_gob if g and g.poblacion_2022_gob else None)
+            or (c.poblacion_2022 if c else None),
+            "poblacion_censo_2022": c.poblacion_2022 if c else None,
             "viviendas_2022": c.viviendas_2022 if c else None,
             "transferencias_periodo": ultimo_periodo.isoformat() if ultimo_periodo else None,
             "transferencias_total": tr["total"] if tr else None,

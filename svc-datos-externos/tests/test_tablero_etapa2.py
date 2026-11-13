@@ -169,7 +169,20 @@ async def test_resumen(client: AsyncClient, db_session: AsyncSession):
     a = next(f for f in d["por_localidad"] if f["clave"] == "A")
     assert a["copa"] == 2500 and a["fofindes"] == 190 and a["por_habitante"] == pytest.approx(26.9)
     d1 = next(f for f in d["por_departamento"] if f["clave"] == "D1")
-    assert d1["total"] == 2500 + 600 + 290 and d1["poblacion"] == 150
+    assert d1["total"] == 2500 + 600 + 290 and d1["poblacion"] == 150 and d1["poblacion_censo"] == 150
+    # C no tiene Censo ni población de Gobierno: el total del Censo no se informa incompleto.
+    assert d["total"]["poblacion_censo"] is None
+
+
+async def test_resumen_usa_la_poblacion_de_gobierno(client: AsyncClient, db_session: AsyncSession):
+    await _cargar(db_session)
+    loc = await db_session.get(ExtGobLocalidad, "A")
+    loc.poblacion_2022_gob = 250
+    await db_session.commit()
+    d = (await client.get(f"{URL}/resumen", params={"anio": 2026})).json()
+    a = next(f for f in d["por_localidad"] if f["clave"] == "A")
+    assert a["poblacion"] == 250 and a["poblacion_censo"] == 100
+    assert a["por_habitante"] == pytest.approx((2500 + 190) / 250)
 
 
 async def test_secciones_nuevas_solo_admin_y_autoridad(client: AsyncClient, as_user):

@@ -120,7 +120,10 @@ class ResumenLocalidad(BaseModel):
     # Censo 2022 + transferencias automáticas (svc-datos-externos, ADR-025).
     # Todos None si no hubo match de id_geo o la federación está apagada/caída.
     categoria: str | None = None                   # "MU" | "CO"
+    # Población de Gobierno (la del Tablero de Gobierno); si falta, la del Censo. El Censo 2022 va
+    # aparte para mostrarlo cuando difiere (spec-datos-externos-fase1 v1.3.0).
     poblacion_2022: int | None = None
+    poblacion_censo_2022: int | None = None
     viviendas_2022: int | None = None
     transferencias_periodo: str | None = None       # período del último dato cargado, ej. "2026-07-01"
     transferencias_total: float | None = None

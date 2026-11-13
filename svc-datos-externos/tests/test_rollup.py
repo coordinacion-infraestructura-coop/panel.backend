@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import rollup
 from app.geo_censo.models import ExtGeoCenso
+from app.gobierno.models import ExtGobLocalidad
 from app.transferencias.models import ExtTransferencia
 
 
@@ -54,7 +55,7 @@ async def test_rollup_sin_transferencias_devuelve_censo_solo(db_session: AsyncSe
     resultado = await rollup.rollup_territorial(db_session)
     assert resultado == [{
         "id_geo": "200", "codigo_indec": "140002", "categoria": "CO",
-        "poblacion_2022": 500, "viviendas_2022": 250,
+        "poblacion_2022": 500, "poblacion_censo_2022": 500, "viviendas_2022": 250,
         "transferencias_periodo": None, "transferencias_total": None, "transferencias_por_concepto": None,
         "superficie_km2": None, "poblacion_2010": None, "ficha_gobierno": None,
         "indicadores": None,  # sin datos de fuentes oficiales
@@ -106,3 +107,17 @@ async def test_rollup_incluye_transferencias_sin_fila_de_censo(db_session: Async
     assert r["codigo_indec"] == "140022"  # sacado de transferencias, no de censo
     assert r["categoria"] == "MU"
     assert r["transferencias_total"] == 150.0
+
+
+@pytest.mark.asyncio
+async def test_rollup_usa_poblacion_de_gobierno_y_censo_al_lado(db_session: AsyncSession):
+    """Villa San Isidro: Gobierno fija 1.527 por coparticipación; el Censo dice 607."""
+    db_session.add_all([
+        ExtGeoCenso(id="c9", id_geo="900", codigo_indec="141407", categoria="CO",
+                    departamento_censo="Santa María", localidad_censo="Villa San Isidro", poblacion_2022=607),
+        ExtGobLocalidad(codigo_indec="141407", nombre_gob="VILLA SAN ISIDRO", departamento_gob="SANTA MARÍA",
+                        tipo="CO", id_geo="900", poblacion_2022_gob=1527),
+    ])
+    await db_session.flush()
+    r = (await rollup.rollup_territorial(db_session))[0]
+    assert r["poblacion_2022"] == 1527 and r["poblacion_censo_2022"] == 607

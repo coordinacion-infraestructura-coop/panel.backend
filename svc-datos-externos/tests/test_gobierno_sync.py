@@ -295,7 +295,8 @@ async def test_rollup_suma_publicos_y_ficha_gobierno(db_session: AsyncSession):
     r = filas[0]
     assert (r["id_geo"], r["codigo_indec"], r["categoria"]) == ("77", "140001", "CO")
     assert r["superficie_km2"] is None and r["poblacion_2010"] is None  # sin fuente desde la Vista
-    assert r["poblacion_2022"] is None  # la población expuesta es la del Censo, no la de Gobierno
+    # v1.3.0: la población expuesta es la de Gobierno (sin Censo vinculado, el Censo va en None).
+    assert r["poblacion_2022"] == 1000 and r["poblacion_censo_2022"] is None
     assert "poblacion_2022_gob" not in r
     assert r["ficha_gobierno"] == {
         "electores": None, "empleados": None, "masa_salarial": None, "intendente": None,
