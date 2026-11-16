@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import AuthUser, ROLES_ADMIN, ROLES_ESCRITURA, ROLES_LECTURA, require_area, require_edicion, require_roles
@@ -30,6 +30,7 @@ from app.checklist_tecnico.schemas import (
     ObraObsUpdate,
 )
 from app.database import get_db
+from app.gobierno_abierto import export_vivienda
 
 # Lectura: cualquiera que tenga el Checklist o uno de los paneles (la pestaña "Checklist Técnico"
 # de CC y el Estado Técnico de los paneles leen de acá). Escritura: área "checklist" en edición
@@ -224,10 +225,15 @@ async def actualizar_hito(
     entidad_id: str,
     tipo: TipoHito,
     data: HitoUpdate,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     actor: AuthUser = Depends(ESCRITURA_CHECKLIST),
 ):
-    return await service.actualizar_hito(db, programa, entidad_id, tipo, data, actor)
+    respuesta = await service.actualizar_hito(db, programa, entidad_id, tipo, data, actor)
+    # Planilla de Gobierno Abierto (ADR-034): corre después del commit del request,
+    # best-effort — si falla, el PATCH igual responde 200 y la corrida horaria lo corrige.
+    background_tasks.add_task(export_vivienda.sincronizar_en_segundo_plano)
+    return respuesta
 
 
 # ── Admin de catálogos (solo Admin — coincide con la respuesta del área) ──────────

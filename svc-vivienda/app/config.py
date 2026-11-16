@@ -86,5 +86,13 @@ class Settings(BaseSettings):
     valuacion_idecor_enabled: bool = False
     datos_externos_valuacion_internal_path: str = "/internal/datos-externos/catastro/valuacion"
 
+    # Exportación de pagos de Vivienda a la planilla de Gobierno Abierto (ADR-034,
+    # spec-export-gobierno-abierto-vivienda.md). La planilla debe estar compartida
+    # como Editor con `svc-vivienda@`. Default apagado; `services/cloudbuild.yaml`
+    # lo prende en cada deploy.
+    gobabierto_export_enabled: bool = False
+    gobabierto_sheet_id: str = ""
+    gobabierto_sheet_tab: str = "Vivienda"
+
 
 settings = Settings()

@@ -12,7 +12,9 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import AuthUser
+from app.config import settings
 from app.cordon_cuneta import checklist_sync
+from app.gobierno_abierto import export_vivienda
 from app.cordon_cuneta.checklist_schemas import SyncResultResponse
 from app.database import get_db
 from app.geo import service as geo_service
@@ -44,6 +46,30 @@ async def sync_cordon_cuneta_checklist(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail={"code": "SHEET_SYNC_FALLIDO", "message": str(exc)},
         )
+
+
+@router.post("/gobierno-abierto/vivienda/sync")
+async def sync_gobabierto_vivienda(
+    triggered_by: str = "scheduler",
+    db: AsyncSession = Depends(get_db),
+):
+    """Reescribe la pestaña "Vivienda" de la planilla de Gobierno Abierto con los pagos de
+    hitos de CC/CH/ML (ADR-034, spec-export-gobierno-abierto-vivienda.md §4). Lo llama
+    Cloud Scheduler cada hora; corrige lo que no se pudo escribir al guardar un hito."""
+    if not settings.gobabierto_export_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"code": "GOBABIERTO_EXPORT_DESHABILITADO", "message": "Exportación deshabilitada"},
+        )
+    origen = triggered_by if triggered_by in ("scheduler", "manual") else "scheduler"
+    try:
+        filas = await export_vivienda.sincronizar(db, origen=origen)
+    except export_vivienda.GobAbiertoSyncError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail={"code": "GOBABIERTO_SYNC_FALLIDO", "message": str(exc)},
+        )
+    return {"filas": filas}
 
 
 @router.get("/portal/usuarios/{email}")
