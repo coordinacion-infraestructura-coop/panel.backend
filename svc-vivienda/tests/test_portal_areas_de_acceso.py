@@ -109,7 +109,7 @@ _USUARIO = {"email": "nuevo@test.com", "rol": "Operador", "secretarias": ["vivie
 async def test_catalogo_de_areas(client: AsyncClient):
     r = await client.get(f"{PORTAL}/areas")
     assert r.status_code == 200
-    assert {a["area"] for a in r.json()["vivienda"]} == {"cc", "ch", "ml", "checklist"}
+    assert {a["area"] for a in r.json()["vivienda"]} == {"cc", "ch", "ml", "checklist", "usuarios"}
 
 
 @pytest.mark.asyncio

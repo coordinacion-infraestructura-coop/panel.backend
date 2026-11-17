@@ -130,6 +130,10 @@ ROLES_ADMIN = ("Admin",)
 
 SECRETARIAS_COMUNICACIONES = frozenset({"infraestructura", "supervision"})
 
+# Áreas que habilitan una función y no un panel (ADR-035): no cuentan como "alguna área de la
+# secretaría" para abrir tableros y demás pantallas transversales.
+AREAS_DE_FUNCION = frozenset({"usuarios"})
+
 
 def nivel_de_area(user: AuthUser, secretaria: str, areas: tuple[str, ...]) -> str | None:
     """Mejor nivel ("edicion" > "lectura") que tiene el usuario en alguna de `areas`
@@ -139,7 +143,10 @@ def nivel_de_area(user: AuthUser, secretaria: str, areas: tuple[str, ...]) -> st
     if secretaria not in user.secretarias:
         return None
     propias = user.areas.get(secretaria, {})
-    niveles = [nivel for area, nivel in propias.items() if not areas or area in areas]
+    niveles = [
+        nivel for area, nivel in propias.items()
+        if ((area in areas) if areas else (area not in AREAS_DE_FUNCION))
+    ]
     if "edicion" in niveles:
         return "edicion"
     return "lectura" if niveles else None

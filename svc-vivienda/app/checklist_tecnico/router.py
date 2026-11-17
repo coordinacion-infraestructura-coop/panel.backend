@@ -1,7 +1,7 @@
 from fastapi import APIRouter, BackgroundTasks, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import AuthUser, ROLES_ADMIN, ROLES_ESCRITURA, ROLES_LECTURA, require_area, require_edicion, require_roles
+from app.auth import AuthUser, ROLES_ESCRITURA, ROLES_LECTURA, require_area, require_edicion, require_roles
 from app.checklist_tecnico import service
 from app.checklist_tecnico.catalog import Programa, TipoHito
 from app.checklist_tecnico.schemas import (
@@ -36,6 +36,9 @@ from app.gobierno_abierto import export_vivienda
 # de CC y el Estado Técnico de los paneles leen de acá). Escritura: área "checklist" en edición
 # (spec-portal-areas-de-acceso.md §5; reemplaza al rol TecnicoDGV).
 ESCRITURA_CHECKLIST = require_edicion(("checklist",), *ROLES_ESCRITURA)
+# Catálogos (estado del expediente, repartición, estado de ítem): Admin, o Supervisor con el
+# área "checklist" en edición (spec-portal-administracion-delegada.md §5.1, ADR-035).
+ADMIN_CATALOGOS_CHECKLIST = require_edicion(("checklist",), "Admin", "Supervisor")
 
 router = APIRouter(dependencies=[Depends(require_area("checklist", "cc", "ch", "ml"))])
 
@@ -246,7 +249,7 @@ async def actualizar_hito(
 async def crear_estado_expediente(
     data: CatalogoEstadoExpedienteCreate,
     db: AsyncSession = Depends(get_db),
-    actor: AuthUser = Depends(require_roles(*ROLES_ADMIN)),
+    actor: AuthUser = Depends(ADMIN_CATALOGOS_CHECKLIST),
 ):
     return await service.crear_estado_expediente(db, data, actor)
 
@@ -256,7 +259,7 @@ async def actualizar_estado_expediente(
     estado_id: int,
     data: CatalogoEstadoExpedienteUpdate,
     db: AsyncSession = Depends(get_db),
-    actor: AuthUser = Depends(require_roles(*ROLES_ADMIN)),
+    actor: AuthUser = Depends(ADMIN_CATALOGOS_CHECKLIST),
 ):
     return await service.actualizar_estado_expediente(db, estado_id, data, actor)
 
@@ -265,7 +268,7 @@ async def actualizar_estado_expediente(
 async def crear_reparticion(
     data: CatalogoReparticionCreate,
     db: AsyncSession = Depends(get_db),
-    actor: AuthUser = Depends(require_roles(*ROLES_ADMIN)),
+    actor: AuthUser = Depends(ADMIN_CATALOGOS_CHECKLIST),
 ):
     return await service.crear_reparticion(db, data, actor)
 
@@ -275,7 +278,7 @@ async def actualizar_reparticion(
     reparticion_id: int,
     data: CatalogoReparticionUpdate,
     db: AsyncSession = Depends(get_db),
-    actor: AuthUser = Depends(require_roles(*ROLES_ADMIN)),
+    actor: AuthUser = Depends(ADMIN_CATALOGOS_CHECKLIST),
 ):
     return await service.actualizar_reparticion(db, reparticion_id, data, actor)
 
@@ -288,7 +291,7 @@ async def actualizar_reparticion(
 async def crear_item_estado(
     data: CatalogoItemEstadoCreate,
     db: AsyncSession = Depends(get_db),
-    actor: AuthUser = Depends(require_roles(*ROLES_ADMIN)),
+    actor: AuthUser = Depends(ADMIN_CATALOGOS_CHECKLIST),
 ):
     return await service.crear_item_estado(db, data, actor)
 
@@ -298,6 +301,6 @@ async def actualizar_item_estado(
     item_estado_id: int,
     data: CatalogoItemEstadoUpdate,
     db: AsyncSession = Depends(get_db),
-    actor: AuthUser = Depends(require_roles(*ROLES_ADMIN)),
+    actor: AuthUser = Depends(ADMIN_CATALOGOS_CHECKLIST),
 ):
     return await service.actualizar_item_estado(db, item_estado_id, data, actor)

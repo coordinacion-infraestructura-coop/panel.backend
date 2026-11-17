@@ -16,6 +16,9 @@ AREAS_POR_SECRETARIA: dict[str, dict[str, str]] = {
         "ch": "Córdoba Hogar",
         "ml": "Mi Lugar",
         "checklist": "Checklist Técnico",
+        # Área de función (ADR-035): habilita a un Supervisor a administrar los usuarios
+        # exclusivos de la secretaría. No da acceso a ningún panel.
+        "usuarios": "Administración de usuarios",
     },
 }
 
