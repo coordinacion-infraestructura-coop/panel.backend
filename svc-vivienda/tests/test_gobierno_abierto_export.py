@@ -57,7 +57,8 @@ def test_solo_anticipo():
     assert f[7:13] == ["", "", "", "", "", ""]
     assert f[13] == 100_000_000
     assert f[14] == "CC-abc"
-    assert len(f) == 15  # B:P
+    assert f[15] == ""  # sin cantidades cargadas
+    assert len(f) == 16  # B:Q
 
 
 def test_todos_pagos_100_es_saldo_cero():
@@ -93,6 +94,7 @@ async def test_construir_filas_tres_programas_y_orden(
     assert [f[2] for f in filas] == ["Córdoba Hogar", "Cordón Cuneta"]  # orden por fecha de anticipo
     assert filas[1][7] == "2026-08-20"
     assert filas[1][8] == 25_000_000.0
+    assert filas[0][15] == "80 viviendas"  # fixture localidad_ch
 
 
 @pytest.mark.asyncio
@@ -131,7 +133,7 @@ async def test_ml_dos_proyectos_misma_localidad_son_dos_filas(db_session: AsyncS
 # ── sincronizar ──────────────────────────────────────────────────────────────
 
 @pytest.mark.asyncio
-async def test_sincronizar_escribe_b_a_p_y_borra_sobrante(db_session: AsyncSession, municipio_cc: str):
+async def test_sincronizar_escribe_b_a_q_y_borra_sobrante(db_session: AsyncSession, municipio_cc: str):
     await _hitos(db_session, "cc", municipio_cc, anticipo=D1)
     escribir = AsyncMock()
     with patch.object(settings, "gobabierto_sheet_id", "SHEET"), \
@@ -141,8 +143,8 @@ async def test_sincronizar_escribe_b_a_p_y_borra_sobrante(db_session: AsyncSessi
     sheet_id, updates, clear_range = escribir.await_args.args
     assert sheet_id == "SHEET"
     rangos = [r for r, _ in updates]
-    assert rangos == ["'Vivienda'!B1:P1", "'Vivienda'!B2:P2"]
-    assert clear_range == "'Vivienda'!B3:P"
+    assert rangos == ["'Vivienda'!B1:Q1", "'Vivienda'!B2:Q2"]
+    assert clear_range == "'Vivienda'!B3:Q"
     assert all("!A" not in r for r in rangos + [clear_range])  # la columna A nunca se toca
     log = (await db_session.execute(select(GobAbiertoSyncLog))).scalar_one()
     assert log.ok and log.filas == 1 and log.origen == "manual"
@@ -155,8 +157,8 @@ async def test_sincronizar_sin_filas_borra_todo_debajo_de_encabezados(db_session
          patch("app.gobierno_abierto.export_vivienda.google_sheets.update_and_clear", escribir):
         assert await export_vivienda.sincronizar(db_session, origen="manual") == 0
     _, updates, clear_range = escribir.await_args.args
-    assert [r for r, _ in updates] == ["'Vivienda'!B1:P1"]
-    assert clear_range == "'Vivienda'!B2:P"
+    assert [r for r, _ in updates] == ["'Vivienda'!B1:Q1"]
+    assert clear_range == "'Vivienda'!B2:Q"
 
 
 @pytest.mark.asyncio
@@ -196,3 +198,22 @@ async def test_patch_hito_con_flag_apagado_no_escribe(client: AsyncClient, munic
         r = await client.patch(f"{BASE}/cc/{municipio_cc}/hitos/anticipo", json={"fecha_acreditado": "2026-03-01"})
     assert r.status_code == 200
     escribir.assert_not_awaited()
+
+
+# ── Columna Detalle ──────────────────────────────────────────────────────────
+
+class _E:
+    def __init__(self, **kw):
+        self.__dict__.update(dict(cordon_cuneta_ml=None, adoquinado_m2=None, cantidad_casas=None,
+                                  lotes=None, superficie=None) | kw)
+
+
+def test_detalle_por_programa():
+    from decimal import Decimal
+    from app.gobierno_abierto.export_vivienda import detalle_entidad
+    assert detalle_entidad("cc", _E(cordon_cuneta_ml=1200, adoquinado_m2=Decimal("3500.50"))) ==         "1.200 m de cordón cuneta · 3.500,5 m² de adoquinado"
+    assert detalle_entidad("cc", _E(adoquinado_m2=800)) == "800 m² de adoquinado"
+    assert detalle_entidad("ch", _E(cantidad_casas=1)) == "1 vivienda"
+    assert detalle_entidad("ch", _E(cantidad_casas=80)) == "80 viviendas"
+    assert detalle_entidad("ml", _E(lotes=20, superficie=Decimal("1.5000"))) == "20 lotes · 1,5 ha"
+    assert detalle_entidad("ml", _E()) == ""

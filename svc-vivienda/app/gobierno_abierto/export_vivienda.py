@@ -3,7 +3,7 @@ Gobierno Abierto.
 
 Spec: docs/files/spec-export-gobierno-abierto-vivienda.md · ADR-034.
 
-La pestaña es un espejo: cada corrida reescribe `B1:P` completa desde `db_vivienda` y borra
+La pestaña es un espejo: cada corrida reescribe `B1:Q` completa desde `db_vivienda` y borra
 las filas sobrantes. La columna A nunca se toca. Una fila por obra con el anticipo pagado.
 """
 import asyncio
@@ -50,6 +50,7 @@ ENCABEZADOS = [
     "Avance físico 100% - monto",
     "Monto convenio",
     "Id sistema",
+    "Detalle",
 ]
 
 _HITOS_POSTERIORES = ("40", "70", "100")
@@ -67,9 +68,40 @@ class EntidadExport:
     departamento: str
     monto: float | None
     nombre_proyecto: str | None = None
+    detalle: str = ""
 
 
 # ── Armado de filas (puro) ──────────────────────────────────────────────────────
+
+def _cantidad(v) -> str:
+    """Número en formato argentino: 1.200 / 1.234,5 (sin decimales si es entero)."""
+    f = float(v)
+    if f == int(f):
+        return f"{int(f):,}".replace(",", ".")
+    entero, dec = f"{f:,.2f}".rstrip("0").split(".")
+    return f"{entero.replace(',', '.')},{dec}"
+
+
+def detalle_entidad(programa: str, e) -> str:
+    """Cantidades físicas de la obra para la columna "Detalle" (spec §3.1, col Q)."""
+    partes: list[str] = []
+    if programa == "cc":
+        if e.cordon_cuneta_ml:
+            partes.append(f"{_cantidad(e.cordon_cuneta_ml)} m de cordón cuneta")
+        if e.adoquinado_m2:
+            partes.append(f"{_cantidad(e.adoquinado_m2)} m² de adoquinado")
+    elif programa == "ch":
+        if e.cantidad_casas:
+            n = int(e.cantidad_casas)
+            partes.append(f"{_cantidad(n)} vivienda{'s' if n != 1 else ''}")
+    else:  # ml
+        if e.lotes:
+            n = int(e.lotes)
+            partes.append(f"{_cantidad(n)} lote{'s' if n != 1 else ''}")
+        if e.superficie:
+            partes.append(f"{_cantidad(e.superficie)} ha")
+    return " · ".join(partes)
+
 
 def _fecha(d: date | None) -> str:
     return d.isoformat() if d else ""
@@ -80,7 +112,7 @@ def _num(v: float | None) -> float | str:
 
 
 def armar_fila(entidad: EntidadExport, pagos: dict[str, date | None]) -> list[Any] | None:
-    """Fila B:P de una obra, o None si el anticipo no está pagado (no va a la planilla)."""
+    """Fila B:Q de una obra, o None si el anticipo no está pagado (no va a la planilla)."""
     fecha_anticipo = pagos.get("anticipo")
     if fecha_anticipo is None:
         return None
@@ -113,6 +145,7 @@ def armar_fila(entidad: EntidadExport, pagos: dict[str, date | None]) -> list[An
     if entidad.nombre_proyecto:
         id_sistema += f" · {entidad.nombre_proyecto}"
     fila.append(id_sistema)
+    fila.append(entidad.detalle)
     return fila
 
 
@@ -153,6 +186,7 @@ async def _entidades(db: AsyncSession, ids: dict[str, set[str]]) -> dict[tuple[s
             departamento=g.departamento if g else (e.departamento or ""),
             monto=float(e.monto) if e.monto is not None else None,
             nombre_proyecto=(e.nombre or None) if programa == "ml" else None,
+            detalle=detalle_entidad(programa, e),
         )
     return out
 
@@ -208,9 +242,9 @@ async def sincronizar(db: AsyncSession, origen: str) -> int:
             ultima = len(filas) + 1  # fila 1 = encabezados
             await google_sheets.update_and_clear(
                 settings.gobabierto_sheet_id,
-                [(_rango("B1:P1"), [ENCABEZADOS])]
-                + ([(_rango(f"B2:P{ultima}"), filas)] if filas else []),
-                _rango(f"B{ultima + 1}:P"),
+                [(_rango("B1:Q1"), [ENCABEZADOS])]
+                + ([(_rango(f"B2:Q{ultima}"), filas)] if filas else []),
+                _rango(f"B{ultima + 1}:Q"),
             )
         except Exception as exc:  # noqa: BLE001 — cualquier falla de Google es una falla de la corrida
             raise GobAbiertoSyncError(f"No se pudo escribir la planilla: {exc}") from exc
