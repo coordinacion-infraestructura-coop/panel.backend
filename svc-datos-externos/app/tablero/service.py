@@ -16,6 +16,7 @@ from app.gob_transferencias.models import ExtGobCopa
 from app.gobierno import sync as gobierno_sync
 from app.gobierno.models import ExtGobLocalidad
 from app.integrations import atp_interno
+from app.tablero import atp_historico
 from app.tablero import actualizar, aggregations, fondos, gestion, planillas
 from app.tablero.schemas import (
     ConceptoMonto,
@@ -319,7 +320,10 @@ async def get_transferencias(
 
 # Etapa 3 (spec-datos-externos-fase3-fondos.md §4): los fondos usan la misma ruta para no
 # cambiar el gateway.
-SECCIONES_PLANILLAS = ("fodemeep", "fommep", "resumen", "fondo-permanente", "fondo-ambiental", "comunidades-regionales")
+# Planilla de la Privada (spec-datos-externos-privada-gobernador.md §7): `focom` y `atp-historico`.
+SECCIONES_PLANILLAS = (
+    "fodemeep", "fommep", "resumen", "fondo-permanente", "fondo-ambiental", "comunidades-regionales", "focom", "atp-historico",
+)
 
 
 async def get_seccion_planilla(db: AsyncSession, seccion: str, anio: int, codigos: list[str] | None):
@@ -329,12 +333,18 @@ async def get_seccion_planilla(db: AsyncSession, seccion: str, anio: int, codigo
         return await fondos.get_fondo_ambiental(db, codigos)
     if seccion == "comunidades-regionales":
         return await fondos.get_comunidades_regionales(db, codigos)
+    if seccion == "focom":
+        return await fondos.get_focom(db, codigos)
+    if seccion == "atp-historico":
+        return await atp_historico.get_atp_historico(db, codigos)
     if seccion == "fodemeep":
         return await planillas.get_fodemeep(db, anio, codigos)
     if seccion == "fommep":
         return await planillas.get_fommep(db, codigos)
     poblacion, censo = await _poblaciones(db, await _nomenclador(db, codigos))
-    # Fase 4 (spec-atp-interno.md §4.3): ATP Interno desde svc-gralgob; None si no responde.
-    return await planillas.get_resumen(
-        db, anio, codigos, poblacion, await atp_interno.atp_por_localidad(anio), poblacion_censo=censo
-    )
+    # Fase 4 (spec-atp-interno.md §4.3): ATP Interno desde svc-gralgob; None si no responde. Antes
+    # de 2026 el ATP sale del histórico de la Privada (spec-datos-externos-privada-gobernador.md §7.4).
+    atp = await atp_historico.por_localidad(db, anio)
+    if atp is None:
+        atp = await atp_interno.atp_por_localidad(anio)
+    return await planillas.get_resumen(db, anio, codigos, poblacion, atp, poblacion_censo=censo)

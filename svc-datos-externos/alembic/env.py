@@ -43,6 +43,7 @@ from app.gob_fondos.models import (  # noqa: F401
     ExtGobFpermLocalidad,
     ExtGobFpermPrestamo,
 )
+from app.gob_privada.models import ExtGobAnuncio, ExtGobAtpHistorico, ExtGobFocom  # noqa: F401
 from app.gob_transferencias.models import (
     ExtGobCopa,
     ExtGobEmpleados,

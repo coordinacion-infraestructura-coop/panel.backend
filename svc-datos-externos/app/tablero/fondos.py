@@ -1,5 +1,6 @@
 """Tablero de Gobierno, Etapa 3: Fondo Permanente, Fondo Ambiental y Comunidades Regionales
-(spec-datos-externos-fase3-fondos.md §4).
+(spec-datos-externos-fase3-fondos.md §4), y FOCOM desde la planilla "Gobierno" de la Privada
+(spec-datos-externos-privada-gobernador.md §7.2).
 
 Como FOMMEP, cada sección devuelve todos los años y la gestión completa; el año lo elige la
 pantalla. Filtro territorial por código INDEC. Las comunidades regionales no son localidades:
@@ -21,6 +22,7 @@ from app.gob_fondos.models import (
     ExtGobFpermLocalidad,
     ExtGobFpermPrestamo,
 )
+from app.gob_privada.models import ExtGobFocom
 from app.gob_fondos.parse import COMUNIDADES_REGIONALES, FONDO_AMBIENTAL, FONDO_PERMANENTE, sin_tildes
 from app.gobierno.models import ExtGobEnte, ExtGobLocalidad
 from app.tablero.planillas import _f, _nomenclador
@@ -30,7 +32,12 @@ from app.tablero.schemas import (
     CregCuota,
     CregKpis,
     CregTipo,
+    EstadoCantidad,
     EstadoMonto,
+    FocomAnio,
+    FocomFila,
+    FocomKpis,
+    FocomResponse,
     FondoAmbientalAnio,
     FondoAmbientalFila,
     FondoAmbientalKpis,
@@ -298,4 +305,62 @@ async def get_comunidades_regionales(db: AsyncSession, codigos: list[str] | None
             for a in anios
         ],
         cuotas=sorted((fila(c) for c in cuotas), key=lambda x: (-(x.anio or 0), x.departamento or "", x.comunidad, x.cuota or 0)),
+    )
+
+
+# ── FOCOM (planilla "Gobierno" de la Privada, spec-datos-externos-privada-gobernador.md §7.2) ──
+
+# `PAGADO` es FOCOM puro; `PAGADO ATP` y `PENDIENTE ATP` se pagan por ATP y ya están ahí
+# (spec-datos-externos-tablero-gobierno.md §3.3): se muestran aparte, nunca sumados a ATP.
+FOCOM_PURO = "PAGADO"
+ESTADOS_FOCOM = (FOCOM_PURO, "PAGADO ATP", "PENDIENTE ATP")
+
+
+def _kpis_focom(filas: list[ExtGobFocom]) -> FocomKpis:
+    def monto(estado: str) -> float:
+        return sum(_f(f.monto) for f in filas if _norm(f.estado) == estado)
+
+    categorias: dict[str, list[float]] = defaultdict(list)
+    obra: dict[str, int] = defaultdict(int)
+    for f in filas:
+        categorias[_norm(f.categoria) or "SIN CATEGORIA"].append(_f(f.monto))
+        obra[_norm(f.estado_obra) or "SIN DATO"] += 1
+    return FocomKpis(
+        localidades=len({f.codigo_indec for f in filas if f.codigo_indec}),
+        convenios=len(filas),
+        monto=sum(_f(f.monto) for f in filas),
+        puro=monto(FOCOM_PURO),
+        convenios_puro=sum(1 for f in filas if _norm(f.estado) == FOCOM_PURO),
+        pagado_atp=monto("PAGADO ATP"),
+        pendiente_atp=monto("PENDIENTE ATP"),
+        estados=_estados(((f.estado, _f(f.monto)) for f in filas), ESTADOS_FOCOM),
+        categorias=sorted((ObjetoMonto(objeto=c, cantidad=len(m), monto=sum(m)) for c, m in categorias.items()), key=lambda x: -x.monto),
+        estados_obra=[EstadoCantidad(estado=e, cantidad=n) for e, n in sorted(obra.items(), key=lambda x: -x[1])],
+    )
+
+
+async def get_focom(db: AsyncSession, codigos: list[str] | None) -> FocomResponse:
+    """Todos los años y la gestión completa; el año lo elige la pantalla, como FOMMEP."""
+    q = select(ExtGobFocom)
+    if codigos:
+        q = q.where(ExtGobFocom.codigo_indec.in_(codigos))
+    filas = list((await db.execute(q)).scalars())
+    nombres = {loc.codigo_indec: loc for loc in await _nomenclador(db, codigos)}
+    anios = sorted({f.anio for f in filas if f.anio}, reverse=True)
+
+    def fila(f: ExtGobFocom) -> FocomFila:
+        loc = nombres.get(f.codigo_indec or "")
+        return FocomFila(
+            id_focom=f.id_focom, anio=f.anio, codigo_indec=f.codigo_indec,
+            localidad=loc.nombre_gob if loc else (f.localidad or f.codigo_indec or ""),
+            departamento=loc.departamento_gob if loc else f.departamento, tipo=f.tipo, expediente=f.expediente,
+            convenio=f.convenio, fecha_convenio=f.fecha_convenio, resolucion=f.resolucion, concepto=f.concepto,
+            categoria=f.categoria, monto=_f(f.monto), estado=f.estado, fecha_pago=f.fecha_pago, estado_obra=f.estado_obra,
+        )
+
+    return FocomResponse(
+        anios=anios,
+        gestion=_kpis_focom(filas) if filas else None,
+        por_anio=[FocomAnio(anio=a, kpis=_kpis_focom([f for f in filas if f.anio == a])) for a in anios],
+        convenios=sorted((fila(f) for f in filas), key=lambda x: (-(x.anio or 0), x.departamento or "", x.localidad)),
     )

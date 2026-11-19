@@ -11,12 +11,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth import AuthUser, require_roles
 from app.database import get_db
 from app.tablero import actualizar, gestion, politico, service
+from app.tablero.atp_historico import AtpHistoricoResponse
 from app.tablero.schemas import (
     ComunidadesRegionalesResponse,
     ConveniosResponse,
     EleccionesResponse,
     FodemeepResponse,
     FondoAmbientalResponse,
+    FocomResponse,
     FondoPermanenteResponse,
     FommepResponse,
     InicioResponse,
@@ -62,7 +64,8 @@ async def tablero_inicio(
 @router.get(
     "/transferencias/{seccion}",
     response_model=TransferenciasResponse | FodemeepResponse | FommepResponse | ResumenResponse
-    | FondoPermanenteResponse | FondoAmbientalResponse | ComunidadesRegionalesResponse,
+    | FondoPermanenteResponse | FondoAmbientalResponse | ComunidadesRegionalesResponse | FocomResponse
+    | AtpHistoricoResponse,
 )
 async def tablero_transferencias(
     seccion: str,
@@ -75,7 +78,8 @@ async def tablero_transferencias(
     Gobierno cuando tiene el año (quincenas, neto, descuentos, retenciones, % a sueldos) y si no
     desde Transparencia. `fodemeep`, `fommep` y `resumen`: solo planillas (Etapa 2,
     spec-datos-externos-fase2-transferencias.md §5). `fondo-permanente`, `fondo-ambiental` y
-    `comunidades-regionales`: planillas de fondos (Etapa 3, spec-datos-externos-fase3-fondos.md §4)."""
+    `comunidades-regionales`: planillas de fondos (Etapa 3, spec-datos-externos-fase3-fondos.md §4).
+    `focom` y `atp-historico`: planilla "Gobierno" de la Privada (spec-datos-externos-privada-gobernador.md §7)."""
     if seccion in service.SECCIONES_TRANSFERENCIAS:
         return await service.get_transferencias(db, seccion, anio, codigo_indec)
     if seccion in service.SECCIONES_PLANILLAS:
