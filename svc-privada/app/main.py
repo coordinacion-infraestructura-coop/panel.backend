@@ -19,11 +19,15 @@ from app.catalogos.models import (  # noqa: F401
 from app.gestiones.models import Gestion, GestionEvento  # noqa: F401
 from app.territorial.models import DepartamentoInfo, GeoLocalidad, LocalidadInfo, LocalidadInfoRespaldo  # noqa: F401
 from app.catalogos_editables.models import Area, Categoria, Programa  # noqa: F401
+from app.planificacion.models import (  # noqa: F401
+    PlanColumna, PlanEstado, PlanHistorial, PlanLocalidad, PlanPrioridad, PlanPrograma,
+)
 
 from app.catalogos.router import router as catalogos_router
 from app.catalogos_editables.router import router as catalogos_edit_router
 from app.gestiones.router import router as gestiones_router
 from app.informe.router import router as informe_router
+from app.planificacion.router import router as planificacion_router
 from app.internal.router import router as internal_router
 from app.portal_alias import router as me_router
 
@@ -82,6 +86,7 @@ app.include_router(gestiones_router, prefix=_PREFIX)
 app.include_router(catalogos_router, prefix=_PREFIX)
 app.include_router(catalogos_edit_router, prefix=_PREFIX)
 app.include_router(informe_router, prefix=_PREFIX)
+app.include_router(planificacion_router, prefix=_PREFIX)
 
 # IAM-only, sin prefijo /api/v1, sin get_current_user (ADR-015 / E5a).
 app.include_router(internal_router)

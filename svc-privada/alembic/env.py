@@ -20,6 +20,9 @@ from app.catalogos.models import (  # noqa: F401
 from app.gestiones.models import Gestion, GestionEvento  # noqa: F401
 from app.territorial.models import DepartamentoInfo, GeoLocalidad, LocalidadInfo, LocalidadInfoRespaldo  # noqa: F401
 from app.catalogos_editables.models import Area, Categoria, Programa  # noqa: F401
+from app.planificacion.models import (  # noqa: F401
+    PlanColumna, PlanEstado, PlanHistorial, PlanLocalidad, PlanPrioridad, PlanPrograma,
+)
 
 config = context.config
 
