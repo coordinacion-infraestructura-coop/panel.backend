@@ -364,6 +364,54 @@ class FondoAmbientalResponse(BaseModel):
     convenios: list[FondoAmbientalFila]
 
 
+class FocomKpis(BaseModel):
+    """FOCOM (spec-datos-externos-privada-gobernador.md §7.2). `puro` es lo pagado por FOCOM; lo
+    pagado o pendiente por ATP ya está en ATP y no se suma a ningún total de transferencias."""
+
+    localidades: int
+    convenios: int
+    monto: float
+    puro: float
+    convenios_puro: int
+    pagado_atp: float
+    pendiente_atp: float
+    estados: list[EstadoMonto]
+    categorias: list[ObjetoMonto]
+    estados_obra: list[EstadoCantidad]
+
+
+class FocomAnio(BaseModel):
+    anio: int
+    kpis: FocomKpis
+
+
+class FocomFila(BaseModel):
+    id_focom: str
+    anio: int | None
+    codigo_indec: str | None
+    localidad: str
+    departamento: str | None
+    tipo: str | None
+    expediente: str | None
+    convenio: str | None
+    fecha_convenio: date | None
+    resolucion: str | None
+    concepto: str | None
+    categoria: str | None
+    monto: float
+    estado: str | None
+    fecha_pago: date | None
+    estado_obra: str | None
+
+
+class FocomResponse(BaseModel):
+    concepto: str = "focom"
+    anios: list[int]
+    gestion: FocomKpis | None
+    por_anio: list[FocomAnio]
+    convenios: list[FocomFila]
+
+
 class CregTipo(BaseModel):
     credito: float | None  # nulo con filtro territorial
     cuotas: int  # sin anuladas

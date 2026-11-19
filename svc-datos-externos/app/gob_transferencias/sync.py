@@ -27,6 +27,13 @@ elecciones. Algunas pestañas pegadas tienen una fila de títulos arriba del enc
 (`fila_encabezado = 2`). Las que nombran la localidad en vez de traer el código se resuelven
 contra el nomenclador después de guardarse (`_resolver_por_nombre`). Ni los logs ni `anomalias`
 llevan nombres de personas, partidos por localidad ni teléfonos.
+
+Planilla "Gobierno" de la Privada del Gobernador (spec-datos-externos-privada-gobernador.md §3):
+anuncios, FOCOM y el histórico de ATP son tres fuentes de la misma planilla, cada una con su log.
+Nunca se leen referente, administrativo y coordinador asignados, observaciones ni responsable.
+Los anuncios y el ATP histórico nombran la localidad: se resuelven contra el nomenclador
+(`_resolver_privada`). Del ATP solo entra lo anterior a 2026, y lo posterior se compara con
+ATP Interno (`_control_atp_interno`).
 """
 import logging
 from dataclasses import dataclass
@@ -38,6 +45,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.gob_fondos import parse as parse_fondos
+from app.gob_privada import parse as parse_privada
+from app.gob_privada.models import ExtGobAnuncio, ExtGobAtpHistorico, ExtGobFocom
 from app.gob_gestion import parse as parse_gestion
 from app.gob_politico import padron as padron_politico
 from app.gob_politico import parse as parse_politico
@@ -68,7 +77,7 @@ from app.gob_transferencias.models import (
     ExtGobFommep,
 )
 from app.gobierno.models import ExtGobEnte, ExtGobLocalidad, ExtGobSyncLog
-from app.integrations import google_sheets, privada_padron
+from app.integrations import atp_interno, google_sheets, privada_padron
 
 logger = logging.getLogger(__name__)
 
@@ -192,6 +201,21 @@ FUENTES: dict[str, _Fuente] = {
             ),
         ),
     ),
+    # Planilla "Gobierno" de la Privada del Gobernador (spec-datos-externos-privada-gobernador.md).
+    "anuncios_gobernador": _Fuente(
+        "google_sheet_gob_privada_gobernador_id",
+        (_Pestana("Gobierno", parse_privada.parsear_anuncios, ExtGobAnuncio, "proporcion",
+                  excluir=parse_privada.COLUMNAS_EXCLUIDAS["Gobierno"]),),
+    ),
+    "focom": _Fuente(
+        "google_sheet_gob_privada_gobernador_id",
+        (_Pestana("FOCOM", parse_privada.parsear_focom, ExtGobFocom, "proporcion", excluir=parse_privada.COLUMNAS_EXCLUIDAS["FOCOM"]),),
+    ),
+    "atp_historico": _Fuente(
+        "google_sheet_gob_privada_gobernador_id",
+        (_Pestana("ATP", parse_privada.parsear_atp_historico, ExtGobAtpHistorico, "proporcion",
+                  excluir=parse_privada.COLUMNAS_EXCLUIDAS["ATP"]),),
+    ),
 }
 
 ETIQUETAS = {
@@ -210,6 +234,9 @@ ETIQUETAS = {
     "convenios": "6. Convenios firmados (Gobierno)",
     "intendentes": "1. Registro de reuniones — Intendentes (Gobierno)",
     "elecciones": "18. Resultados elecciones 21-25 (Gobierno)",
+    "anuncios_gobernador": "Anuncios del Gobernador (Privada)",
+    "focom": "FOCOM (Privada)",
+    "atp_historico": "ATP histórico 2023–2025 (Privada)",
 }
 
 _DESCARTES = {"fila_sin_codigo", "fila_invalida", "fila_repetida"}
@@ -449,6 +476,48 @@ async def _resolver_por_nombre(db: AsyncSession) -> list[dict]:
     return [{"tipo": "localidad_sin_codigo", "localidades": sorted(sin_codigo)}] if sin_codigo else []
 
 
+async def _resolver_privada(db: AsyncSession, modelo: type) -> list[dict]:
+    """Código INDEC de anuncios y ATP histórico (spec §3.4): por departamento y nombre, y si el
+    nombre es único en el nomenclador, solo por nombre (hay departamentos mal cargados). Lo que no
+    resuelve queda sin código ("Comunidad regional", "PROVINCIA") y se cuenta."""
+    por_depto: dict[tuple[str, str], str] = {}
+    por_nombre: dict[str, list[str]] = {}
+    for codigo, nombre, depto in (
+        await db.execute(
+            select(ExtGobLocalidad.codigo_indec, ExtGobLocalidad.nombre_gob, ExtGobLocalidad.departamento_gob)
+            .where(ExtGobLocalidad.deleted_at.is_(None))
+        )
+    ).all():
+        clave = parse_politico.clave_nombre(nombre)
+        por_depto[(parse_politico.clave_nombre(depto), clave)] = codigo
+        por_nombre.setdefault(clave, []).append(codigo)
+    sin_codigo: set[str] = set()
+    for fila in (await db.execute(select(modelo))).scalars():
+        clave = parse_politico.clave_nombre(fila.localidad)
+        unico = por_nombre.get(clave, [])
+        fila.codigo_indec = por_depto.get((parse_politico.clave_nombre(fila.departamento), clave)) or (unico[0] if len(unico) == 1 else None)
+        if fila.codigo_indec is None and fila.localidad:
+            sin_codigo.add(fila.localidad)
+    await db.flush()
+    return [{"tipo": "localidad_sin_codigo", "cantidad": len(sin_codigo), "localidades": sorted(sin_codigo)[:50]}] if sin_codigo else []
+
+
+async def _control_atp_interno(anomalias: list[dict]) -> list[dict]:
+    """El ATP desde 2026 de la planilla tiene que sumar lo mismo que ATP Interno (spec §3.3). Si
+    deja de coincidir, el área cambió algo: se avisa en el log, no frena el sync."""
+    desde = next((a for a in anomalias if a.get("tipo") == "atp_desde_corte"), None)
+    if desde is None:
+        return []
+    corte = date.fromisoformat(desde["corte"])
+    totales = [await atp_interno.atp_por_localidad(anio) for anio in range(corte.year, datetime.now(timezone.utc).year + 1)]
+    if any(t is None for t in totales):
+        return [{"tipo": "control_atp_interno", "resultado": "atp_interno_no_disponible"}]
+    interno = round(sum(sum(t.values()) for t in totales), 2)
+    diferencia = round(desde["monto"] - interno, 2)
+    return [{"tipo": "control_atp_interno", "resultado": "coincide" if abs(diferencia) < 1 else "difiere",
+             "planilla": desde["monto"], "atp_interno": interno, "diferencia": diferencia}]
+
+
 async def _leer_padron_privada(db: AsyncSession) -> list[dict]:
     """Después del padrón de Gobierno: trae el de Privada (actual y respaldo) para el valor
     combinado y el cruce (spec-padron-politico-gobierno-privada.md §3). Si Privada no responde
@@ -515,6 +584,11 @@ async def sync_transferencias(db: AsyncSession, fuentes: list[str], disparado_po
             anomalias.extend(await _resolver_por_nombre(db))
         if fuente == "intendentes":
             anomalias.extend(await _leer_padron_privada(db))
+        if fuente == "anuncios_gobernador":
+            anomalias.extend(await _resolver_privada(db, ExtGobAnuncio))
+        if fuente == "atp_historico":
+            anomalias.extend(await _resolver_privada(db, ExtGobAtpHistorico))
+            anomalias.extend(await _control_atp_interno(anomalias))
         sin_match = sum(1 for a in anomalias if a.get("tipo") == "codigo_fuera_del_nomenclador")
         logs.append(await _log(
             db, fuente, "parcial" if descartadas else "ok", disparado_por, anomalias,
