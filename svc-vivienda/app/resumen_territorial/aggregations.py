@@ -401,6 +401,8 @@ def enriquecer_con_datos_externos(
         "ficha_gobierno": (datos or {}).get("ficha_gobierno"),
         # Fuentes oficiales públicas (spec-datos-externos-fuentes-oficiales.md §6): tal cual.
         "indicadores": (datos or {}).get("indicadores"),
+        # E5g: visita del gobernador según la planilla de visitas (null = no figura o sin federación).
+        "visita_gobernador": (datos or {}).get("visita_gobernador"),
     }
 
 

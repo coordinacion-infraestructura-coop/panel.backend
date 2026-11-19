@@ -52,3 +52,18 @@ async def test_coparticipacion_ultimos_12_meses_y_visita(client: AsyncClient, db
     assert por_geo["200"]["coparticipacion_anual"] == {"monto": 70.0, "meses": 1}
     assert "visita_gobernador" not in por_geo["200"]
     assert por_geo["300"] == {"id_geo": "300", "visita_gobernador": {"visitada": False, "fecha_ultima": None}}
+
+
+async def test_rollup_territorial_trae_visita_del_gobernador(db_session: AsyncSession):
+    """E5g: el rollup para resumen_territorial lleva la visita de la planilla de visitas."""
+    from app import rollup
+
+    db_session.add_all([
+        ExtGobLocalidad(codigo_indec="140001", nombre_gob="A", departamento_gob="Colón", id_geo="100"),
+        ExtGobLocalidad(codigo_indec="140002", nombre_gob="B", departamento_gob="Colón", id_geo="200"),
+        ExtGobVisitaGobernador(codigo_indec="140001", visitada=True, fecha_ultima=date(2026, 9, 20)),
+    ])
+    await db_session.commit()
+    por_geo = {r["id_geo"]: r for r in await rollup.rollup_territorial(db_session)}
+    assert por_geo["100"]["visita_gobernador"] == {"visitada": True, "fecha_ultima": "2026-09-20"}
+    assert por_geo["200"]["visita_gobernador"] is None

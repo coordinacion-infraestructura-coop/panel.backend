@@ -266,4 +266,4 @@ La lista incluye 443, 195 y 559, que son los candidatos de las filas 121, 244 y 
 - En pantalla, **la fila toma el color de su estado**; si no tiene estado, el de su prioridad. Al cambiar el estado, cambia el color de la fila.
 - Fila 121, PASO DEL DURAZNO → 443 (Río Cuarto). Está entre los dos departamentos y el usuario eligió Río Cuarto.
 - La columna "Cantidad de viviendas" (número) se crea en el programa CH aunque esté vacía.
-- Siguen pendientes la fila 419 (VILLA DEL ROSARIO DEL SALADILLO → ¿559?), la 288 (SANTIAGO TEMPLE, `id_geo` del espejo al cargar) y la 244 (PEDRO E. VIVAS / KM 658, revisión manual).
+- Fila 419, VILLA DEL ROSARIO DEL SALADILLO → 559 (confirmado). Siguen pendientes la 288 (SANTIAGO TEMPLE, `id_geo` del espejo al cargar) y la 244 (PEDRO E. VIVAS / KM 658, revisión manual).

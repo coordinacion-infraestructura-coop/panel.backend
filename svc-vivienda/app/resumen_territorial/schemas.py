@@ -3,6 +3,11 @@ from datetime import date, datetime
 from pydantic import BaseModel, ConfigDict, Field
 
 
+
+class VisitaGobernador(BaseModel):
+    visitada: bool
+    fecha_ultima: str | None = None
+
 class ResumenComunicacion(BaseModel):
     fecha: date
     texto: str | None = None
@@ -137,6 +142,9 @@ class ResumenLocalidad(BaseModel):
     poblacion_2010: int | None = None
     ficha_gobierno: FichaGobierno | None = None     # restringido — ver FichaGobierno
     indicadores: IndicadoresSociales | None = None  # público — fuentes oficiales (Estadística, IDECOR, RENABAP)
+    # E5g (spec-resumen-territorial-ficha-localidad.md): planilla de visitas del gobernador. Sólo
+    # `visitada` + `fecha_ultima`, nunca intendente ni partido. null = la localidad no figura.
+    visita_gobernador: VisitaGobernador | None = None
     programas: list[ResumenPrograma]
 
 

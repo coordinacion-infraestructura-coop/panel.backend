@@ -59,6 +59,7 @@ async def test_rollup_sin_transferencias_devuelve_censo_solo(db_session: AsyncSe
         "transferencias_periodo": None, "transferencias_total": None, "transferencias_por_concepto": None,
         "superficie_km2": None, "poblacion_2010": None, "ficha_gobierno": None,
         "indicadores": None,  # sin datos de fuentes oficiales
+        "visita_gobernador": None,  # E5g: no figura en la planilla de visitas
     }]
 
 

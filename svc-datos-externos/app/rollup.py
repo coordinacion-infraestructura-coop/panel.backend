@@ -34,6 +34,7 @@ from app.fuentes_oficiales.models import (
     ExtRenabapBarrio,
 )
 from app.geo_censo.models import ExtGeoCenso
+from app.gob_gestion.models import ExtGobVisitaGobernador
 from app.gobierno.models import CAMPOS_RESTRINGIDOS, ExtGobEnte, ExtGobLocalidad
 from app.transferencias.models import ExtTransferencia
 
@@ -228,6 +229,12 @@ async def rollup_territorial(db: AsyncSession) -> list[dict]:
                 metadata_por_id_geo.setdefault(r.id_geo, {"codigo_indec": r.codigo_indec, "tipo": r.tipo})
 
     indicadores_por_codigo = await _indicadores_por_codigo(db)
+    # E5g (spec-resumen-territorial-ficha-localidad.md): la visita del gobernador sale de la
+    # planilla de visitas, ya no de "tener ATP". Sólo los gobiernos locales del nomenclador.
+    visitas_por_codigo = {
+        v.codigo_indec: {"visitada": bool(v.visitada), "fecha_ultima": v.fecha_ultima.isoformat() if v.fecha_ultima else None}
+        for v in (await db.execute(select(ExtGobVisitaGobernador))).scalars()
+    }
 
     resultado = []
     for id_geo in censo_por_id_geo.keys() | transferencias_por_id_geo.keys() | gob_por_id_geo.keys():
@@ -254,5 +261,6 @@ async def rollup_territorial(db: AsyncSession) -> list[dict]:
             "ficha_gobierno": _ficha_gobierno(g),
             # Fuentes oficiales públicas (spec-datos-externos-fuentes-oficiales.md §6).
             "indicadores": indicadores_por_codigo.get(codigo_indec) if codigo_indec else None,
+            "visita_gobernador": visitas_por_codigo.get(g.codigo_indec) if g else None,
         })
     return resultado
