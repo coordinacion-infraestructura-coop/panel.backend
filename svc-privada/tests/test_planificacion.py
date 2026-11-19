@@ -42,7 +42,8 @@ async def test_programa_nuevo_trae_prioridades_y_columnas_por_defecto(client, pa
     assert next(p for p in prios if p["codigo"] == "X")["excluye"] is True
     cols = (await client.get(f"{BASE}/programas/{pid}/columnas")).json()
     assert [c["clave"] for c in cols] == ["anuncio_gobernador", "monto_sugerido", "monto_firmado", "observacion"]
-    assert (await client.get(f"{BASE}/programas/{pid}/estados")).json() == []
+    estados = (await client.get(f"{BASE}/programas/{pid}/estados")).json()
+    assert [(e["nombre"], e["color_bg"]) for e in estados] == [("Resuelto por ATP", "#D1C4E9")]
 
 
 async def test_nombre_duplicado_409(client, padron):

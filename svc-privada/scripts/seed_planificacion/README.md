@@ -258,3 +258,12 @@ La lista incluye 443, 195 y 559, que son los candidatos de las filas 121, 244 y 
 | REF EN EL GESTOR | No se carga: calculada | Se reemplaza por "¿Está en el panel?" (§5.1). Hay un solo valor (`3`, Los Molinos) |
 
 **Preguntas para el usuario o el área**: (1) ¿Los colores de CH usan la misma escala 1–5 que CC? (2) ¿Qué significa el violeta? (3) ¿El gris es "desestimado"? (4) ¿Se crea igual la columna "Cantidad de viviendas", aunque esté vacía? (5) Confirmar las filas 121 (Paso del Durazno → 443, Río Cuarto) y 419 (Villa del Rosario del Saladillo → 559).
+
+### Córdoba Hogar — decisiones del usuario (2026-11-19)
+
+- Los colores de fila usan **la misma escala que CC**: celeste 1, verde 2, naranja 3, amarillo 4, rojo 5. Gris = X, **desestimado** (el municipio no quiso el programa).
+- **Violeta/lavanda = "Resuelto por ATP"**: es un **estado**, no una prioridad. Está en el catálogo de estados editables y lo trae todo programa nuevo. Esas 7 filas se cargan con `estado_propuesto = Resuelto por ATP` y con la prioridad del color de abajo (`color_hab`: rojo → 5, amarillo → 4).
+- En pantalla, **la fila toma el color de su estado**; si no tiene estado, el de su prioridad. Al cambiar el estado, cambia el color de la fila.
+- Fila 121, PASO DEL DURAZNO → 443 (Río Cuarto). Está entre los dos departamentos y el usuario eligió Río Cuarto.
+- La columna "Cantidad de viviendas" (número) se crea en el programa CH aunque esté vacía.
+- Siguen pendientes la fila 419 (VILLA DEL ROSARIO DEL SALADILLO → ¿559?), la 288 (SANTIAGO TEMPLE, `id_geo` del espejo al cargar) y la 244 (PEDRO E. VIVAS / KM 658, revisión manual).

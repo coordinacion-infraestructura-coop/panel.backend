@@ -42,6 +42,13 @@ PRIORIDADES_DEFAULT: list[dict[str, Any]] = [
     {"codigo": "X", "nombre": "Desestimado", "color_bg": "#E0E0E0", "color_texto": "#424242", "excluye": True},
 ]
 
+# Estados que trae todo programa nuevo (§4.2). La fila de la planilla toma el color de su estado
+# (y, si no tiene, el de su prioridad), así que "Resuelto por ATP" es la marca lavanda de las
+# planillas de CH/CC (usuario, 2026-11-19).
+ESTADOS_DEFAULT: list[dict[str, Any]] = [
+    {"nombre": "Resuelto por ATP", "color_bg": "#D1C4E9", "color_texto": "#4527A0"},
+]
+
 # Columnas que trae todo programa nuevo (§4.4); se comportan igual que las agregadas a mano.
 COLUMNAS_DEFAULT: list[dict[str, Any]] = [
     {"clave": "anuncio_gobernador", "nombre": "Anuncio del gobernador", "tipo": "si_no"},
@@ -148,9 +155,13 @@ async def crear_programa(db: AsyncSession, actor: AuthUser, data: dict) -> dict:
     _sello(p, actor, nuevo=True)
     db.add(p)
     await db.flush()
-    # Siembra de la escala de prioridades y las columnas por defecto (§4.3, §4.4).
+    # Siembra de la escala de prioridades, los estados y las columnas por defecto (§4.2–§4.4).
     for i, pr in enumerate(PRIORIDADES_DEFAULT):
         obj = PlanPrioridad(programa_id=p.id, orden=i + 1, **pr)
+        _sello(obj, actor, nuevo=True)
+        db.add(obj)
+    for i, est in enumerate(ESTADOS_DEFAULT):
+        obj = PlanEstado(programa_id=p.id, orden=i + 1, **est)
         _sello(obj, actor, nuevo=True)
         db.add(obj)
     for i, col in enumerate(COLUMNAS_DEFAULT):
