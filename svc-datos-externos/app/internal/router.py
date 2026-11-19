@@ -15,7 +15,7 @@ from datetime import date
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app import rollup
+from app import planificacion, rollup
 from app.catastro import idecor as catastro_idecor
 from app.catastro import service as catastro_service
 from app.catastro.schemas import ValuacionRequest, ValuacionResponse
@@ -231,3 +231,11 @@ async def padron_politico_combinado(db: AsyncSession = Depends(get_db)):
     spec-padron-politico-gobierno-privada.md §2). Lo consume el sync diario de svc-privada. Sin
     celular ni ningún otro dato de contacto."""
     return await padron.padron_combinado(db)
+
+
+@router.get("/datos-externos/planificacion/localidades")
+async def planificacion_localidades(db: AsyncSession = Depends(get_db)):
+    """Coparticipación de los últimos 12 meses y visita del gobernador por `id_geo`, para la
+    planificación de programas de svc-privada (ADR-036, spec-privada-planificacion-programas.md
+    §6). Lo invoca sólo la SA de svc-privada (`roles/run.invoker`)."""
+    return await planificacion.datos_por_localidad(db)

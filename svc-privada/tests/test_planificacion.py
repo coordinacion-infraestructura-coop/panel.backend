@@ -189,3 +189,85 @@ async def test_borrar_programa_soft(client, padron):
     assert (await client.get(f"{BASE}/programas")).json() == []
     # el nombre queda libre
     assert (await client.post(f"{BASE}/programas", json={"nombre": "Cordón Cuneta", "area": "vivienda"})).status_code == 201
+
+
+# --- Fases 2–3: cruces con otros servicios (mockeados) ------------------------------------
+
+from unittest.mock import AsyncMock, patch  # noqa: E402
+
+from app.integrations import planificacion_fuentes as fx  # noqa: E402
+
+LINEAS_CH = {
+    "1": [{"id_geo": "1", "estado_general": {"label": "Convenio Firmado", "bg": "#E0F7FA", "text_color": "#006064"},
+           "ok_gob": True, "convenio_firmado": True, "fecha_firma_convenio": "2026-06-23", "monto": 1.0}],
+}
+EXTERNOS = (
+    {"1": {"id_geo": "1", "visita_gobernador": {"visitada": True, "fecha_ultima": "2026-09-20"},
+           "coparticipacion_anual": {"monto": 300.0, "meses": 12}}},
+    {"desde": "2025-08-01", "hasta": "2026-07-01", "meses_ventana": 12},
+)
+
+
+async def test_cruces_con_panel_y_datos_externos(client, padron):
+    pid = await _programa(client, "Córdoba Hogar", "cordoba_hogar")
+    with patch.object(fx, "lineas_del_panel", new=AsyncMock(return_value=(LINEAS_CH, 2))), \
+         patch.object(fx, "datos_externos", new=AsyncMock(return_value=EXTERNOS)):
+        body = (await client.get(f"{BASE}/programas/{pid}/localidades")).json()
+    assert body["fuentes"] == {"panel": "ok", "panel_sin_id_geo": "2", "datos_externos": "ok"}
+    por = {i["id_geo"]: i for i in body["items"]}
+    assert por["1"]["en_panel"]["estado"] == "si" and por["1"]["en_panel"]["lineas"][0]["estado_general"]["label"] == "Convenio Firmado"
+    assert por["1"]["convenio"] == {"firmado": True, "fecha": "2026-06-23"}
+    assert por["1"]["ok_gobernador_panel"] is True
+    assert por["1"]["visita_gobernador"] == {"visitada": True, "fecha_ultima": "2026-09-20"}
+    assert por["1"]["coparticipacion_anual"]["monto"] == 300.0 and por["1"]["coparticipacion_anual"]["hasta"] == "2026-07-01"
+    assert por["2"]["en_panel"]["estado"] == "no" and por["2"]["convenio"] == {"firmado": False, "fecha": None}
+    assert por["2"]["visita_gobernador"] is None  # no está en la planilla de visitas: sin dato, no "No"
+
+
+async def test_cc_no_informa_convenio(client, padron):
+    pid = await _programa(client)
+    with patch.object(fx, "lineas_del_panel", new=AsyncMock(return_value=({"1": [{"ok_gob": False}]}, 0))), \
+         patch.object(fx, "datos_externos", new=AsyncMock(return_value=({}, None))):
+        por = {i["id_geo"]: i for i in (await client.get(f"{BASE}/programas/{pid}/localidades")).json()["items"]}
+    assert por["1"]["convenio"] is None and por["1"]["ok_gobernador_panel"] is False
+
+
+async def test_fuentes_caidas_quedan_sin_dato(client, padron):
+    pid = await _programa(client)
+    caida = AsyncMock(side_effect=fx.FuenteNoDisponible("caído"))
+    with patch.object(fx, "lineas_del_panel", new=caida), patch.object(fx, "datos_externos", new=caida):
+        body = (await client.get(f"{BASE}/programas/{pid}/localidades")).json()
+    assert body["fuentes"] == {"panel": "sin_dato", "datos_externos": "sin_dato"}
+    assert all(i["en_panel"]["estado"] == "sin_dato" for i in body["items"])  # nunca "no"
+    # la planilla sigue editable
+    r = await client.patch(f"{BASE}/programas/{pid}/localidades/1", json={"updated_at": None, "ok_gobernador": True})
+    assert r.status_code == 200
+
+
+async def test_programa_sin_fuente_no_consulta_panel(client, padron):
+    pid = await _programa(client, "Plan propio", None)
+    panel = AsyncMock()
+    with patch.object(fx, "lineas_del_panel", new=panel), \
+         patch.object(fx, "datos_externos", new=AsyncMock(return_value=({}, None))):
+        body = (await client.get(f"{BASE}/programas/{pid}/localidades")).json()
+    panel.assert_not_called()
+    assert body["fuentes"] == {"datos_externos": "ok"} and body["items"][0]["en_panel"] is None
+
+
+async def test_fetch_apagado_por_defecto():
+    fx.limpiar_cache()
+    with pytest.raises(fx.FuenteNoDisponible):
+        await fx.lineas_del_panel("cordon_cuneta")
+
+
+async def test_rollups_gas_y_atp_se_normalizan(monkeypatch):
+    fx.limpiar_cache()
+    async def fake_get(base, path, params=None):
+        if "gasifera" in path:
+            return [{"id_geo": "5", "en_curso": 0, "monto_solicitado_sum": 10.0}, {"id_geo": None}]
+        return [{"id_geo": "6", "monto_total_sum": 100.0, "entregado_sum": 40.0}]
+    monkeypatch.setattr(fx, "_get", fake_get)
+    gas, sin = await fx.lineas_del_panel("gas_pit")
+    assert gas["5"][0]["estado_general"]["label"] == "Cumplido" and sin == 1
+    atp, _ = await fx.lineas_del_panel("atp")
+    assert atp["6"][0]["estado_general"]["label"] == "Parcial"

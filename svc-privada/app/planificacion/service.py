@@ -8,6 +8,7 @@ Fase 1: catálogos, planilla e historial. Las columnas calculadas desde otros se
 (en el panel, convenio, visita, coparticipación) llegan en `None` hasta las Fases 2–3; `fuentes`
 del listado avisa qué se consultó.
 """
+import logging
 import re
 import unicodedata
 from datetime import date, datetime, timezone
@@ -20,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app import audit
 from app.auth import AuthUser
 from app.common import now_utc
+from app.integrations import planificacion_fuentes as fuentes_ext
 from app.planificacion.models import (
     PlanColumna,
     PlanEstado,
@@ -49,6 +51,8 @@ COLUMNAS_DEFAULT: list[dict[str, Any]] = [
 ]
 
 LIMIT_MAX = 1000
+
+logger = logging.getLogger(__name__)
 
 
 # --- helpers -----------------------------------------------------------------------------
@@ -313,7 +317,7 @@ def _orden_prioridad(prioridades: dict[int, PlanPrioridad], prioridad_id: int | 
 async def listar_localidades(
     db: AsyncSession, programa_id: int, *, departamento: str | None = None, limit: int = LIMIT_MAX, offset: int = 0
 ) -> dict:
-    await _programa(db, programa_id)
+    programa = await _programa(db, programa_id)
     stmt = select(GeoLocalidad).where(GeoLocalidad.activo.is_(True))
     if departamento:
         stmt = stmt.where(func.upper(GeoLocalidad.departamento) == departamento.strip().upper())
@@ -360,8 +364,54 @@ async def listar_localidades(
             "updated_at": pl.updated_at if pl else None,
             "cambios": cambios.get(g.id_geo, 0),
         })
+    estado_fuentes = await _cruzar(items, programa.fuente)
     items.sort(key=lambda it: (_orden_prioridad(prioridades, it["prioridad_id"]), it["departamento"], it["localidad"]))
-    return {"total": len(items), "items": items[offset: offset + limit], "fuentes": {}}
+    return {"total": len(items), "items": items[offset: offset + limit], "fuentes": estado_fuentes}
+
+
+async def _cruzar(items: list[dict], fuente: str | None) -> dict[str, str]:
+    """Completa las columnas calculadas (§5.1) desde los otros servicios. Fail-open: una fuente
+    caída deja su columna en "sin dato"; nunca se informa "no está" sin haber podido consultar."""
+    estado: dict[str, str] = {}
+
+    if fuente:
+        try:
+            por_geo, sin_id_geo = await fuentes_ext.lineas_del_panel(fuente)
+            estado["panel"] = "ok"
+            if sin_id_geo:
+                estado["panel_sin_id_geo"] = str(sin_id_geo)
+        except fuentes_ext.FuenteNoDisponible as exc:
+            logger.warning("planificacion: panel %s no disponible: %s", fuente, exc)
+            por_geo, estado["panel"] = None, "sin_dato"
+        for it in items:
+            if por_geo is None:
+                it["en_panel"] = {"estado": "sin_dato", "lineas": []}
+                continue
+            lineas = por_geo.get(it["id_geo"], [])
+            it["en_panel"] = {"estado": "si" if lineas else "no", "lineas": lineas}
+            oks = [li.get("ok_gob") for li in lineas if li.get("ok_gob") is not None]
+            it["ok_gobernador_panel"] = True if True in oks else (False if oks else None)
+            # Convenio firmado: sólo CH lo tiene como dato propio (§12.3). CC/ML → None ("—").
+            if fuente == "cordoba_hogar":
+                fechas = [li["fecha_firma_convenio"] for li in lineas if li.get("fecha_firma_convenio")]
+                firmado = any(li.get("convenio_firmado") for li in lineas)
+                it["convenio"] = {"firmado": firmado, "fecha": max(fechas) if fechas else None}
+
+    try:
+        externos, periodo = await fuentes_ext.datos_externos()
+        estado["datos_externos"] = "ok"
+    except fuentes_ext.FuenteNoDisponible as exc:
+        logger.warning("planificacion: datos externos no disponibles: %s", exc)
+        externos, periodo, estado["datos_externos"] = None, None, "sin_dato"
+    if externos is not None:
+        for it in items:
+            ext = externos.get(it["id_geo"], {})
+            # Visita: única fuente la planilla de visitas (427 gobiernos locales). Una localidad del
+            # padrón que no está en esa planilla queda sin dato, no "No".
+            it["visita_gobernador"] = ext.get("visita_gobernador")
+            copa = ext.get("coparticipacion_anual")
+            it["coparticipacion_anual"] = {**copa, **(periodo or {})} if copa else None
+    return estado
 
 
 def _validar_valor(col: PlanColumna, valor: Any) -> Any:

@@ -19,6 +19,7 @@ from app.cordon_cuneta.checklist_schemas import SyncResultResponse
 from app.database import get_db
 from app.geo import service as geo_service
 from app.geo.schemas import ResolverRequest, ResolverResponse
+from app.internal import planificacion_lineas as planificacion_lineas_mod
 from app.mi_lugar import valuacion_idecor
 from app.notificaciones import service as notificaciones_service
 from app.notificaciones.schemas import NotificacionIn
@@ -158,6 +159,19 @@ async def actualizar_resumen_territorial(db: AsyncSession = Depends(get_db)):
         "total_localidades": snapshot.payload.get("total_localidades"),
         "generado_para_areas": snapshot.payload.get("generado_para_areas"),
     }
+
+
+@router.get("/planificacion/lineas")
+async def planificacion_lineas(programa: str, db: AsyncSession = Depends(get_db)):
+    """Filas vivas de CC/CH/ML por `id_geo`, de solo lectura, para la planificación de
+    programas de svc-privada (ADR-036, spec-privada-planificacion-programas.md §6). Sólo la SA
+    de svc-privada tiene `roles/run.invoker`. No escribe nada."""
+    if programa not in planificacion_lineas_mod.PROGRAMAS:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": "PROGRAMA_DESCONOCIDO", "message": f"Programa '{programa}' no soportado"},
+        )
+    return await planificacion_lineas_mod.lineas(db, programa)
 
 
 @router.post("/mi-lugar/valuacion-idecor/actualizar")

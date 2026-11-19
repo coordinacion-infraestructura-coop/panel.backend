@@ -32,5 +32,12 @@ class Settings(BaseSettings):
     svc_datos_externos_internal_url: str = ""
     padron_politico_sync_enabled: bool = False
 
+    # ADR-036 — planificación de programas: cruces de solo lectura por IAM con los paneles de
+    # cada programa y con datos externos (spec-privada-planificacion-programas.md §6). Apagado
+    # por defecto (local/tests); services/cloudbuild.yaml lo enciende junto con las URLs.
+    planificacion_fetch_enabled: bool = False
+    svc_gasifera_internal_url: str = ""
+    svc_gralgob_internal_url: str = ""
+
 
 settings = Settings()
