@@ -219,3 +219,93 @@ async def test_crear_municipio_end_to_end_dispara_sync(client, _privada_sync_on)
     caso_id = r.json()["id"]
     vinculo = (await client.get("/api/v1/vivienda/cordon-cuneta")).json()  # sanity: el caso quedó creado
     assert any(m["id"] == caso_id for m in vinculo["municipios"])
+
+
+# ── v1.1.0: mensaje por motivo + reintentar pendientes ──────────────────────
+
+@pytest.mark.asyncio
+async def test_pending_review_expediente_nombra_expediente_y_gestion(db_session, _privada_sync_on):
+    body = {
+        "resultado": "PENDING_REVIEW", "id_legacy": "vivienda:cc:caso-1",
+        "motivo": "EXPEDIENTE_YA_VINCULADO_OTRO_CASO", "candidatos": ["g-otra"],
+    }
+    p_client, p_token = _patched_client(response=_mock_response(200, body))
+    with p_client, p_token:
+        await _call(db_session, nro_expediente="0423-079785/2026")
+
+    notif = (await db_session.execute(select(Notificacion))).scalar_one()
+    assert "0423-079785/2026" in notif.mensaje
+    assert "g-otra" in notif.mensaje
+    assert "La localidad" not in notif.mensaje
+    assert "revisión manual" in notif.mensaje
+
+
+async def _crear_cc_pendiente(db_session, *, borrado: bool = False):
+    from datetime import datetime, timezone
+
+    from app.cordon_cuneta.models import MunicipioCordonCuneta
+
+    m = MunicipioCordonCuneta(
+        id="caso-1", municipio="ARIAS", departamento="MARCOS JUAREZ",
+        expediente="0423-079785/2026", ok_gob="SI",
+        deleted_at=datetime.now(timezone.utc) if borrado else None,
+    )
+    db_session.add(m)
+    db_session.add(VinculoPrivada(
+        caso_tipo="cc", caso_id="caso-1", id_legacy="vivienda:cc:caso-1",
+        estado_vinculo="PENDING_REVIEW", motivo="EXPEDIENTE_YA_VINCULADO_OTRO_CASO",
+        ultimo_intento_at=datetime.now(timezone.utc),
+    ))
+    await db_session.flush()
+
+
+@pytest.mark.asyncio
+async def test_reintentar_pendientes_dry_run_no_llama(db_session, _privada_sync_on):
+    from app.integrations.privada_sync import reintentar_pendientes
+
+    await _crear_cc_pendiente(db_session)
+    p_client, p_token = _patched_client(response=_mock_response(200, {}))
+    with p_client as m_client, p_token:
+        out = await reintentar_pendientes(db_session)
+        m_client.assert_not_called()
+    assert out["dry_run"] is True
+    assert out["por_resultado"] == {"DRY_RUN": 1}
+    vinculo = (await db_session.execute(select(VinculoPrivada))).scalar_one()
+    assert vinculo.estado_vinculo == "PENDING_REVIEW"
+
+
+@pytest.mark.asyncio
+async def test_reintentar_pendientes_resuelve(db_session, _privada_sync_on):
+    from app.integrations.privada_sync import reintentar_pendientes
+
+    await _crear_cc_pendiente(db_session)
+    body = {
+        "resultado": "LINKED_EXISTING", "id_legacy": "vivienda:cc:caso-1", "gestion_id": "g-bq",
+        "diff": {"categoria_id": {"antes": None, "despues": 1756700000003}},
+    }
+    p_client, p_token = _patched_client(response=_mock_response(200, body))
+    with p_client, p_token:
+        out = await reintentar_pendientes(db_session, motivo="EXPEDIENTE_YA_VINCULADO_OTRO_CASO", dry_run=False)
+    assert out["por_resultado"] == {"LINKED": 1}
+    assert out["casos"][0]["gestion_id"] == "g-bq"
+    vinculo = (await db_session.execute(select(VinculoPrivada))).scalar_one()
+    assert vinculo.estado_vinculo == "LINKED" and vinculo.motivo is None
+
+
+@pytest.mark.asyncio
+async def test_reintentar_pendientes_saltea_caso_borrado(db_session, _privada_sync_on):
+    from app.integrations.privada_sync import reintentar_pendientes
+
+    await _crear_cc_pendiente(db_session, borrado=True)
+    p_client, p_token = _patched_client(response=_mock_response(200, {}))
+    with p_client as m_client, p_token:
+        out = await reintentar_pendientes(db_session, dry_run=False)
+        m_client.assert_not_called()
+    assert out["por_resultado"] == {"CASO_INEXISTENTE": 1}
+
+
+@pytest.mark.asyncio
+async def test_reintentar_pendientes_endpoint_interno(client):
+    r = await client.post("/internal/privada-sync/reintentar-pendientes")
+    assert r.status_code == 200
+    assert r.json() == {"dry_run": True, "total": 0, "por_resultado": {}, "casos": []}

@@ -50,7 +50,8 @@ async def test_crea_gestion_nueva_sin_match(client, geo, db_session):
     assert body["gestion_id"]
 
     g = await db_session.get(Gestion, body["gestion_id"])
-    assert g.id_legacy == "vivienda:cc:caso-1"
+    assert g.vivienda_vinculo == "vivienda:cc:caso-1"
+    assert g.id_legacy is None  # el sync nunca escribe id_legacy (v1.1.0)
     assert g.origen == "SVC_VIVIENDA"
     assert g.categoria_id == 1756700000003
     assert g.programa_id == 1756700001003
@@ -80,7 +81,7 @@ async def test_vincula_por_expediente_existente_y_sincroniza(client, geo, db_ses
 
     await db_session.refresh(await db_session.get(Gestion, "g-1"))
     g = await db_session.get(Gestion, "g-1")
-    assert g.id_legacy == "vivienda:cc:caso-1"
+    assert g.vivienda_vinculo == "vivienda:cc:caso-1"
     assert g.categoria_id == 1756700000003
     assert g.detalle == "obra vieja"  # nunca se toca (fuera de whitelist)
 
@@ -118,8 +119,8 @@ async def test_localidad_departamento_ambiguo_no_toca_nada(client, geo, db_sessi
 
     g3 = await db_session.get(Gestion, "g-3")
     g4 = await db_session.get(Gestion, "g-4")
-    assert g3.categoria_id is None and g3.id_legacy is None
-    assert g4.categoria_id is None and g4.id_legacy is None
+    assert g3.categoria_id is None and g3.vivienda_vinculo is None
+    assert g4.categoria_id is None and g4.vivienda_vinculo is None
 
 
 @pytest.mark.asyncio
@@ -217,3 +218,81 @@ async def test_no_pisa_expediente_si_no_viene(client, geo, db_session):
 
     g = await db_session.get(Gestion, "g-9")
     assert g.nro_expediente == "EXP-PROPIO"
+
+
+# ── v1.1.0: gestiones migradas de BigQuery (id_legacy ocupado con el id viejo) ──
+
+@pytest.mark.asyncio
+async def test_expediente_de_gestion_migrada_vincula_sin_tocar_id_legacy(client, geo, db_session):
+    """Caso real (Arias, 2026-11-20): el id_legacy de BigQuery no es "otro caso"."""
+    db_session.add(Gestion(
+        id="g-bq", id_legacy="a59ed5b7-a73f-4c47-a0f2-2fea088b4a39", estado="DERIVADO A SUAC",
+        urgencia="Media", detalle="cargada en el sistema viejo", departamento="CALAMUCHITA",
+        localidad="AMBOY", geo_id="508", fecha_ingreso=_HOY, nro_expediente="0423-079785/2026",
+    ))
+    await db_session.flush()
+
+    p = _payload(nro_expediente="0423-079785/2026")
+    r = await client.post("/internal/privada/gestiones/sync", json=p)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["resultado"] == "LINKED_EXISTING"
+    assert body["gestion_id"] == "g-bq"
+
+    g = await db_session.get(Gestion, "g-bq")
+    assert g.vivienda_vinculo == "vivienda:cc:caso-1"
+    assert g.id_legacy == "a59ed5b7-a73f-4c47-a0f2-2fea088b4a39"
+
+    # reintento: entra por el paso 0
+    r2 = await client.post("/internal/privada/gestiones/sync", json=p)
+    assert r2.json()["resultado"] == "LINKED_EXISTING"
+    assert r2.json()["gestion_id"] == "g-bq"
+
+
+@pytest.mark.asyncio
+async def test_gestion_migrada_ya_vinculada_a_otro_caso_por_columna_nueva(client, geo, db_session):
+    db_session.add(Gestion(
+        id="g-bq2", id_legacy="bq-123", vivienda_vinculo="vivienda:ch:otro-caso",
+        estado="INGRESADO", urgencia="Media", detalle="x", departamento="CALAMUCHITA",
+        localidad="AMBOY", geo_id="508", fecha_ingreso=_HOY, nro_expediente="EXP-BQ2",
+    ))
+    await db_session.flush()
+
+    r = await client.post("/internal/privada/gestiones/sync", json=_payload(nro_expediente="EXP-BQ2"))
+    body = r.json()
+    assert body["resultado"] == "PENDING_REVIEW"
+    assert body["motivo"] == "EXPEDIENTE_YA_VINCULADO_OTRO_CASO"
+    assert body["candidatos"] == ["g-bq2"]
+
+
+@pytest.mark.asyncio
+async def test_vinculo_viejo_solo_en_id_legacy_se_reconoce_y_migra(client, geo, db_session):
+    """Gestión creada por v1.0.0 (vínculo sólo en id_legacy): paso 0 la encuentra y
+    completa vivienda_vinculo."""
+    db_session.add(Gestion(
+        id="g-old", id_legacy="vivienda:cc:caso-1", estado="INGRESADO", urgencia="Media",
+        detalle="x", departamento="CALAMUCHITA", localidad="AMBOY", geo_id="508",
+        fecha_ingreso=_HOY, nro_expediente="EXP-OLD",
+    ))
+    await db_session.flush()
+
+    r = await client.post("/internal/privada/gestiones/sync", json=_payload(nro_expediente="EXP-OLD"))
+    assert r.json()["resultado"] == "LINKED_EXISTING"
+    assert r.json()["gestion_id"] == "g-old"
+    g = await db_session.get(Gestion, "g-old")
+    assert g.vivienda_vinculo == "vivienda:cc:caso-1"
+
+
+@pytest.mark.asyncio
+async def test_localidad_sigue_excluyendo_gestiones_migradas(client, geo, db_session):
+    """§9.5: sin expediente, una gestión migrada de la misma localidad no se vincula."""
+    db_session.add(Gestion(
+        id="g-bq3", id_legacy="bq-999", estado="INGRESADO", urgencia="Media",
+        detalle="pedido de agua", departamento="CALAMUCHITA", localidad="AMBOY",
+        geo_id="508", fecha_ingreso=_HOY,
+    ))
+    await db_session.flush()
+
+    r = await client.post("/internal/privada/gestiones/sync", json=_payload())
+    assert r.json()["resultado"] == "LINKED_NEW"
+    assert r.json()["gestion_id"] != "g-bq3"

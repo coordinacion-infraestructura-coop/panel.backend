@@ -96,16 +96,42 @@ async def _notificar_correccion(
     })
 
 
+def _mensaje_pendiente(
+    *, caso_tipo: str, caso_id: str, localidad: str, departamento: str,
+    motivo: str | None, nro_expediente: str | None, candidatos: list[str] | None,
+) -> str:
+    """Texto por motivo (spec v1.1.0 §3.6): dice qué hay que revisar, no sólo que falló."""
+    caso = f"El caso {caso_tipo.upper()} de {localidad}, {departamento} (id {caso_id})"
+    cand = ", ".join(candidatos or []) or "sin datos"
+    if motivo == "EXPEDIENTE_YA_VINCULADO_OTRO_CASO":
+        detalle = (
+            f"tiene el expediente {nro_expediente}, que en Privada corresponde a una gestión "
+            f"ya vinculada a otro caso de Vivienda (gestión {cand})."
+        )
+    elif motivo == "EXPEDIENTE_AMBIGUO":
+        detalle = (
+            f"tiene el expediente {nro_expediente}, que en Privada aparece en "
+            f"{len(candidatos or [])} gestiones distintas ({cand})."
+        )
+    elif motivo == "LOCALIDAD_DEPARTAMENTO_AMBIGUO":
+        detalle = (
+            f"no tiene expediente y en Privada hay {len(candidatos or [])} gestiones abiertas "
+            f"de esa localidad ({cand}); no se puede saber a cuál corresponde."
+        )
+    else:
+        detalle = f"no se pudo vincular automáticamente a una gestión de Privada ({motivo or 'match ambiguo'})."
+    return f"{caso} {detalle} Requiere revisión manual."
+
+
 async def _notificar_pendiente_revision(
     db: AsyncSession, *, caso_tipo: str, caso_id: str, localidad: str, departamento: str,
-    motivo: str | None,
+    motivo: str | None, nro_expediente: str | None = None, candidatos: list[str] | None = None,
 ) -> None:
     await notificaciones_service.crear(db, _SYNC_ACTOR, {
         "titulo": "Caso pendiente de vincular con Privada",
-        "mensaje": (
-            f"La localidad {localidad}, {departamento} (caso {caso_tipo.upper()} {caso_id}) "
-            f"no se pudo vincular automáticamente a una gestión de Privada "
-            f"({motivo or 'match ambiguo'}). Requiere revisión manual."
+        "mensaje": _mensaje_pendiente(
+            caso_tipo=caso_tipo, caso_id=caso_id, localidad=localidad, departamento=departamento,
+            motivo=motivo, nro_expediente=nro_expediente, candidatos=candidatos,
         ),
         "nivel": "advertencia",
         "origen": "privada_sync",
@@ -176,7 +202,7 @@ async def sync_gestion_privada(
     base = settings.svc_privada_internal_url.rstrip("/")
     url = base + settings.privada_gestiones_sync_internal_path
 
-    resultado, gestion_id, motivo, diff = "ERROR", None, None, None
+    resultado, gestion_id, motivo, diff, candidatos = "ERROR", None, None, None, None
     http_status, error_detalle = None, None
     try:
         token = _mint_id_token(base)
@@ -193,6 +219,7 @@ async def sync_gestion_privada(
             gestion_id = body.get("gestion_id")
             motivo = body.get("motivo")
             diff = body.get("diff")
+            candidatos = body.get("candidatos")
     except Exception as exc:  # noqa: BLE001 — tolerante por diseño, nunca rompe el alta/edición
         error_detalle = str(exc)
         logger.warning("privada_sync: fallo sincronizando %s (%s): %r", id_legacy, url, exc)
@@ -224,5 +251,50 @@ async def sync_gestion_privada(
     elif resultado == "PENDING_REVIEW":
         await _notificar_pendiente_revision(
             db, caso_tipo=caso_tipo, caso_id=caso_id, localidad=localidad, departamento=departamento,
-            motivo=motivo,
+            motivo=motivo, nro_expediente=nro_expediente, candidatos=candidatos,
         )
+
+
+def _datos_caso(caso_tipo: str, caso) -> dict:
+    """Argumentos de `sync_gestion_privada` a partir de la fila viva de cada panel
+    (mismos que pasan `crear_*`/`actualizar_*` en cada service)."""
+    localidad = {"cc": "municipio", "ch": "localidad", "ml": "localidad_nombre"}[caso_tipo]
+    return {
+        "nro_expediente": caso.expediente,
+        "localidad": getattr(caso, localidad),
+        "departamento": caso.departamento,
+        "ok_gob": caso.ok_gob,
+    }
+
+
+async def reintentar_pendientes(
+    db: AsyncSession, *, motivo: str | None = None, dry_run: bool = True,
+) -> dict:
+    """Vuelve a sincronizar los casos en PENDING_REVIEW (spec v1.1.0 §5). En dry-run
+    sólo lista qué reintentaría. Un caso borrado o inexistente se informa y se saltea."""
+    from app.cordoba_hogar.models import LocalidadCordobaHogar
+    from app.cordon_cuneta.models import MunicipioCordonCuneta
+    from app.mi_lugar.models import ProyectoML
+
+    modelos = {"cc": MunicipioCordonCuneta, "ch": LocalidadCordobaHogar, "ml": ProyectoML}
+    q = select(VinculoPrivada).where(VinculoPrivada.estado_vinculo == "PENDING_REVIEW")
+    if motivo:
+        q = q.where(VinculoPrivada.motivo == motivo)
+    vinculos = (await db.execute(q.order_by(VinculoPrivada.caso_tipo, VinculoPrivada.caso_id))).scalars().all()
+
+    casos: list[dict] = []
+    por_resultado: dict[str, int] = {}
+    for v in vinculos:
+        caso = await db.get(modelos[v.caso_tipo], v.caso_id)
+        item = {"caso_tipo": v.caso_tipo, "caso_id": v.caso_id, "motivo_anterior": v.motivo}
+        if caso is None or caso.deleted_at is not None:
+            item["resultado"] = "CASO_INEXISTENTE"
+        elif dry_run:
+            item["resultado"] = "DRY_RUN"
+        else:
+            await sync_gestion_privada(db, caso_tipo=v.caso_tipo, caso_id=v.caso_id, **_datos_caso(v.caso_tipo, caso))
+            await db.refresh(v)
+            item.update(resultado=v.estado_vinculo, motivo=v.motivo, gestion_id=v.gestion_id)
+        por_resultado[item["resultado"]] = por_resultado.get(item["resultado"], 0) + 1
+        casos.append(item)
+    return {"dry_run": dry_run, "total": len(casos), "por_resultado": por_resultado, "casos": casos}

@@ -51,6 +51,9 @@ class Gestion(Base):
     # Anchos generosos acá; son "código" pero no enums reales — sin CHECK salvo estado/urgencia.
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     id_legacy: Mapped[str | None] = mapped_column(String(100), unique=True)
+    # Vínculo con un caso de svc-vivienda ("vivienda:{tipo}:{id}", migración 0006).
+    # Separado de `id_legacy`, que en las gestiones migradas guarda el id de BigQuery.
+    vivienda_vinculo: Mapped[str | None] = mapped_column(String(100), unique=True)
 
     nro_expediente: Mapped[str | None] = mapped_column(String(120))
     origen: Mapped[str | None] = mapped_column(String(100))

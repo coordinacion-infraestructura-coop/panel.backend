@@ -5,11 +5,17 @@ Córdoba Hogar, Mi Lugar). Llamado exclusivamente desde el endpoint interno IAM-
 `POST /internal/privada/gestiones/sync` (`app/internal/router.py`) — nunca desde la UI.
 
 Algoritmo de matching (orden estricto, corta en el primer resultado):
-  0. `id_legacy` propio (ya reclamado en una sincronización anterior de este caso) —
-     es lo que hace idempotente cualquier reintento o edición posterior.
+  0. vínculo propio (`vivienda_vinculo`, ya reclamado en una sincronización anterior de
+     este caso) — es lo que hace idempotente cualquier reintento o edición posterior.
   1. `nro_expediente` (si el caso lo tiene) — identidad fuerte, sin filtrar por estado.
-  2. `localidad + departamento` (si no hay expediente) — sólo gestiones abiertas y sin
-     `id_legacy` de otro caso (para no "robarle" el vínculo a otro caso de Vivienda).
+     Una gestión migrada de BigQuery (`id_legacy` que no empieza con `vivienda:`) NO
+     cuenta como vinculada a otro caso (spec v1.1.0 §3.4).
+  2. `localidad + departamento` (si no hay expediente) — sólo gestiones abiertas, sin
+     vínculo con otro caso de Vivienda y sin `id_legacy` (las migradas quedan afuera a
+     propósito: sin expediente no hay forma de saber si son el mismo trámite, §9.5).
+
+El vínculo vive en `priv_gestiones.vivienda_vinculo` (migración 0006); el sync nunca
+escribe `id_legacy`, que en las gestiones migradas guarda el id de BigQuery.
 En cualquier paso: 0 candidatos -> se crea una gestión nueva; 1 candidato -> se vincula
 y se sincronizan los campos derivados; 2+ candidatos -> PENDING_REVIEW, no se toca nada
 (mismo riesgo de colisión ya documentado en spec-resumen-territorial-ficha-localidad.md).
@@ -17,7 +23,7 @@ y se sincronizan los campos derivados; 2+ candidatos -> PENDING_REVIEW, no se to
 import uuid
 from datetime import date
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import audit
@@ -42,6 +48,20 @@ def _detalle_default(payload: GestionSyncFromVivienda) -> str:
     )
 
 
+_PREFIJO_VIVIENDA = "vivienda:"
+
+
+def _vinculo_vivienda(g: Gestion) -> str | None:
+    """Caso de Vivienda al que está atada la gestión, si alguno. Cubre también las
+    gestiones vinculadas por v1.0.0 (o por código viejo durante un deploy), que sólo
+    tienen el vínculo en `id_legacy`."""
+    if g.vivienda_vinculo:
+        return g.vivienda_vinculo
+    if g.id_legacy and g.id_legacy.startswith(_PREFIJO_VIVIENDA):
+        return g.id_legacy
+    return None
+
+
 async def _candidatos_por_expediente(db: AsyncSession, nro_expediente: str) -> list[Gestion]:
     return (
         await db.execute(
@@ -62,6 +82,7 @@ async def _candidatos_por_localidad(db: AsyncSession, departamento: str, localid
                 Gestion.deleted_at.is_(None),
                 Gestion.estado.notin_(_CERRADOS),
                 Gestion.id_legacy.is_(None),
+                Gestion.vivienda_vinculo.is_(None),
             )
         )
     ).scalars().all()
@@ -101,9 +122,9 @@ def _aplicar_campos(g: Gestion, payload: GestionSyncFromVivienda) -> dict[str, d
 async def _vincular_existente(
     db: AsyncSession, actor: AuthUser, g: Gestion, payload: GestionSyncFromVivienda
 ) -> GestionSyncResult:
-    reclamo_nuevo = g.id_legacy != payload.id_legacy
+    reclamo_nuevo = g.vivienda_vinculo != payload.id_legacy
     if reclamo_nuevo:
-        g.id_legacy = payload.id_legacy
+        g.vivienda_vinculo = payload.id_legacy
     diff = _aplicar_campos(g, payload)
 
     if diff or reclamo_nuevo:
@@ -138,7 +159,7 @@ async def _crear_nueva(db: AsyncSession, actor: AuthUser, payload: GestionSyncFr
     new_id = str(uuid.uuid4())
     g = Gestion(
         id=new_id,
-        id_legacy=payload.id_legacy,
+        vivienda_vinculo=payload.id_legacy,
         origen="SVC_VIVIENDA",
         estado="INGRESADO",
         fecha_ingreso=date.today(),
@@ -183,10 +204,12 @@ async def sync_gestion_from_vivienda(
     db: AsyncSession, actor: AuthUser, payload: GestionSyncFromVivienda
 ) -> GestionSyncResult:
     # Paso 0: ¿ya reclamamos una gestión para este caso en una sincronización anterior?
+    # (`id_legacy` también, por las gestiones que creó el código anterior a la 0006.)
     propia = (
         await db.execute(
             select(Gestion).where(
-                Gestion.id_legacy == payload.id_legacy, Gestion.deleted_at.is_(None)
+                or_(Gestion.vivienda_vinculo == payload.id_legacy, Gestion.id_legacy == payload.id_legacy),
+                Gestion.deleted_at.is_(None),
             ).limit(1)
         )
     ).scalar_one_or_none()
@@ -200,7 +223,7 @@ async def sync_gestion_from_vivienda(
             return await _crear_nueva(db, actor, payload)
         if len(candidatos) == 1:
             c = candidatos[0]
-            if c.id_legacy is None:
+            if _vinculo_vivienda(c) in (None, payload.id_legacy):
                 return await _vincular_existente(db, actor, c, payload)
             return GestionSyncResult(
                 resultado="PENDING_REVIEW", id_legacy=payload.id_legacy,

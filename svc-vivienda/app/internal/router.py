@@ -19,6 +19,7 @@ from app.cordon_cuneta.checklist_schemas import SyncResultResponse
 from app.database import get_db
 from app.geo import service as geo_service
 from app.geo.schemas import ResolverRequest, ResolverResponse
+from app.integrations import privada_sync
 from app.internal import planificacion_lineas as planificacion_lineas_mod
 from app.mi_lugar import valuacion_idecor
 from app.notificaciones import service as notificaciones_service
@@ -186,3 +187,13 @@ async def actualizar_valuacion_idecor_ml(db: AsyncSession = Depends(get_db)):
             detail={"code": "VALUACION_IDECOR_DESHABILITADA", "message": "VALUACION_IDECOR_ENABLED está apagado"},
         )
     return await valuacion_idecor.recalcular_todos(db)
+
+
+@router.post("/privada-sync/reintentar-pendientes")
+async def reintentar_pendientes_privada(
+    motivo: str | None = None, dry_run: bool = True, db: AsyncSession = Depends(get_db),
+):
+    """Re-sincroniza con svc-privada los casos de Vivienda en PENDING_REVIEW
+    (spec-vinculacion-vivienda-privada.md v1.1.0 §5). `dry_run=true` por default:
+    sólo lista. Pensado para correr a mano (cuenta con `run.invoker`), no Scheduler."""
+    return await privada_sync.reintentar_pendientes(db, motivo=motivo, dry_run=dry_run)
