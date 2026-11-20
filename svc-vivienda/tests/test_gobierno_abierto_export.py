@@ -217,3 +217,64 @@ def test_detalle_por_programa():
     assert detalle_entidad("ch", _E(cantidad_casas=80)) == "80 viviendas"
     assert detalle_entidad("ml", _E(lotes=20, superficie=Decimal("1.5000"))) == "20 lotes · 1,5 ha"
     assert detalle_entidad("ml", _E()) == ""
+
+
+# ── Fallas: permiso vs. transitoria (fix 2026-11-20) ─────────────────────────
+
+def _http_error(status: int):
+    import httplib2
+    from googleapiclient.errors import HttpError
+    return HttpError(httplib2.Response({"status": status}), b'{"error": {"message": "x"}}')
+
+
+@pytest.mark.asyncio
+async def test_falla_transitoria_no_manda_a_revisar_el_compartido(db_session: AsyncSession):
+    notificar = AsyncMock()
+    with patch.object(settings, "gobabierto_sheet_id", "SHEET"), \
+         patch("app.gobierno_abierto.export_vivienda.google_sheets.update_and_clear",
+               AsyncMock(side_effect=BrokenPipeError(32, "Broken pipe"))), \
+         patch("app.gobierno_abierto.export_vivienda.notificaciones_service.crear", notificar):
+        with pytest.raises(export_vivienda.GobAbiertoSyncError) as ei:
+            await export_vivienda.sincronizar(db_session, origen="scheduler")
+    assert not ei.value.es_permiso
+    mensaje = notificar.await_args.args[2]["mensaje"]
+    assert "transitoria" in mensaje and "compartida" not in mensaje
+    log = (await db_session.execute(select(GobAbiertoSyncLog))).scalar_one()
+    assert "BrokenPipeError" in log.error
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", [403, 404])
+async def test_rechazo_de_google_si_manda_a_revisar_el_compartido(db_session: AsyncSession, status: int):
+    notificar = AsyncMock()
+    with patch.object(settings, "gobabierto_sheet_id", "SHEET"), \
+         patch("app.gobierno_abierto.export_vivienda.google_sheets.update_and_clear",
+               AsyncMock(side_effect=_http_error(status))), \
+         patch("app.gobierno_abierto.export_vivienda.notificaciones_service.crear", notificar):
+        with pytest.raises(export_vivienda.GobAbiertoSyncError) as ei:
+            await export_vivienda.sincronizar(db_session, origen="scheduler")
+    assert ei.value.es_permiso
+    assert "compartida como Editor" in notificar.await_args.args[2]["mensaje"]
+    assert f"HTTP {status}" in str(ei.value)
+
+
+def test_cliente_de_escritura_es_nuevo_en_cada_llamada_y_reintenta():
+    """Regresión del Broken pipe: no se reusa la conexión entre corridas, y se reintenta."""
+    from unittest.mock import MagicMock
+    from app.integrations import google_sheets
+
+    servicios = []
+
+    def fake_build(*a, **kw):
+        s = MagicMock()
+        servicios.append(s)
+        return s
+
+    with patch.object(google_sheets, "_write_credentials", object()), \
+         patch.object(google_sheets, "build", side_effect=fake_build):
+        google_sheets._update_and_clear_sync("S", [("'V'!B1:Q1", [["x"]])], "'V'!B2:Q")
+        google_sheets._update_and_clear_sync("S", [("'V'!B1:Q1", [["x"]])], "'V'!B2:Q")
+    assert len(servicios) == 2  # un cliente por corrida
+    vals = servicios[0].spreadsheets.return_value.values.return_value
+    vals.batchUpdate.return_value.execute.assert_called_once_with(num_retries=google_sheets._WRITE_RETRIES)
+    vals.clear.return_value.execute.assert_called_once_with(num_retries=google_sheets._WRITE_RETRIES)

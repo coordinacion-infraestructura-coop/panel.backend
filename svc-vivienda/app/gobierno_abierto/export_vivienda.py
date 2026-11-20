@@ -57,7 +57,37 @@ _HITOS_POSTERIORES = ("40", "70", "100")
 
 
 class GobAbiertoSyncError(Exception):
-    """Falló la escritura en la planilla (Sheets API caída, planilla no compartida, etc.)."""
+    """Falló la escritura en la planilla (Sheets API caída, planilla no compartida, etc.).
+
+    `es_permiso` distingue un rechazo real de Google (403/404: planilla no compartida o
+    inexistente) de una falla transitoria de red, para no mandar a revisar el compartido
+    cuando el problema es otro.
+    """
+
+    def __init__(self, mensaje: str, es_permiso: bool = False) -> None:
+        super().__init__(mensaje)
+        self.es_permiso = es_permiso
+
+
+def _status_http(exc: Exception) -> int | None:
+    """Código HTTP de un `googleapiclient.errors.HttpError`, o None si no es una respuesta."""
+    resp = getattr(exc, "resp", None)
+    status = getattr(resp, "status", None)
+    try:
+        return int(status) if status is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _mensaje_falla(exc: GobAbiertoSyncError) -> str:
+    base = f"No se pudieron escribir los pagos de Vivienda en la planilla de Gobierno Abierto: {str(exc)[:300]}."
+    if exc.es_permiso:
+        return (
+            f"{base} Google rechazó el acceso: revisar que la planilla siga compartida como "
+            "Editor con svc-vivienda@gestorcooperativo.iam.gserviceaccount.com y que la "
+            f"pestaña \"{settings.gobabierto_sheet_tab}\" exista."
+        )
+    return f"{base} Parece una falla transitoria de conexión con Google; se reintenta en la próxima corrida horaria."
 
 
 @dataclass(frozen=True)
@@ -247,7 +277,11 @@ async def sincronizar(db: AsyncSession, origen: str) -> int:
                 _rango(f"B{ultima + 1}:Q"),
             )
         except Exception as exc:  # noqa: BLE001 — cualquier falla de Google es una falla de la corrida
-            raise GobAbiertoSyncError(f"No se pudo escribir la planilla: {exc}") from exc
+            status = _status_http(exc)
+            detalle = f"HTTP {status}: {exc}" if status else f"{type(exc).__name__}: {exc}"
+            raise GobAbiertoSyncError(
+                f"No se pudo escribir la planilla ({detalle})", es_permiso=status in (403, 404)
+            ) from exc
     except GobAbiertoSyncError as exc:
         log.finished_at = datetime.now(timezone.utc)
         log.ok = False
@@ -255,11 +289,7 @@ async def sincronizar(db: AsyncSession, origen: str) -> int:
         if origen == "scheduler":
             await notificaciones_service.crear(db, _SYNC_ACTOR, {
                 "titulo": "Falló la exportación a la planilla de Gobierno Abierto",
-                "mensaje": (
-                    "No se pudieron escribir los pagos de Vivienda en la planilla de Gobierno "
-                    f"Abierto: {str(exc)[:300]}. Revisar que siga compartida como Editor con "
-                    "svc-vivienda@gestorcooperativo.iam.gserviceaccount.com."
-                ),
+                "mensaje": _mensaje_falla(exc),
                 "nivel": "error",
                 "origen": "gobabierto_sync",
                 "destino_tipo": "rol",

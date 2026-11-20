@@ -46,27 +46,35 @@ async def get_values(spreadsheet_id: str, range_name: str) -> list[list[Any]]:
 
 
 # ── Escritura (ADR-034) ─────────────────────────────────────────────────────────
-# Cliente aparte, con scope de escritura, para no ampliar el de lectura. Uno por hilo:
-# googleapiclient/httplib2 no se puede compartir entre hilos (spec-tablero-gobierno-
-# actualizar.md 1.0.2) y `asyncio.to_thread` puede usar hilos distintos en cada llamada.
+# Cliente aparte, con scope de escritura, para no ampliar el de lectura.
+#
+# Un cliente NUEVO por llamada, no cacheado: httplib2 mantiene viva la conexión HTTP y,
+# con la instancia de Cloud Run tibia entre una corrida horaria y la siguiente, el cliente
+# reusaba un socket que Google ya había cerrado por inactividad -> `[Errno 32] Broken pipe`
+# / `SSL: UNEXPECTED_EOF_WHILE_READING` (14 corridas fallidas el 2026-11-18/20, todas en
+# horario laboral, cuando el resto del tráfico mantiene viva la instancia). Construirlo cuesta
+# milisegundos (el discovery doc es estático); las credenciales sí se reusan.
+# Además, `num_retries` reintenta con backoff los errores transitorios (5xx, 429, SSL,
+# socket) — sin ese argumento googleapiclient no reintenta nada.
 SHEETS_WRITE_SCOPE = "https://www.googleapis.com/auth/spreadsheets"
+_WRITE_RETRIES = 3
 
-_write_local = threading.local()
+_write_credentials = None
+_write_credentials_lock = threading.Lock()
 
 
-def _get_write_service():
-    service = getattr(_write_local, "service", None)
-    if service is None:
-        credentials, _ = google.auth.default(scopes=[SHEETS_WRITE_SCOPE])
-        service = build("sheets", "v4", credentials=credentials, cache_discovery=False)
-        _write_local.service = service
-    return service
+def _new_write_service():
+    global _write_credentials
+    with _write_credentials_lock:
+        if _write_credentials is None:
+            _write_credentials, _ = google.auth.default(scopes=[SHEETS_WRITE_SCOPE])
+    return build("sheets", "v4", credentials=_write_credentials, cache_discovery=False)
 
 
 def _update_and_clear_sync(
     spreadsheet_id: str, updates: list[tuple[str, list[list[Any]]]], clear_range: str
 ) -> None:
-    values = _get_write_service().spreadsheets().values()
+    values = _new_write_service().spreadsheets().values()
     if updates:
         values.batchUpdate(
             spreadsheetId=spreadsheet_id,
@@ -74,8 +82,10 @@ def _update_and_clear_sync(
                 "valueInputOption": "USER_ENTERED",
                 "data": [{"range": rng, "values": vals} for rng, vals in updates],
             },
-        ).execute()
-    values.clear(spreadsheetId=spreadsheet_id, range=clear_range, body={}).execute()
+        ).execute(num_retries=_WRITE_RETRIES)
+    values.clear(spreadsheetId=spreadsheet_id, range=clear_range, body={}).execute(
+        num_retries=_WRITE_RETRIES
+    )
 
 
 async def update_and_clear(
