@@ -1,3 +1,5 @@
+from typing import Literal
+
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,6 +19,7 @@ _LECT = Depends(require_roles(*ROLES_NOTIF))
 @router.get("/notificaciones", response_model=NotificacionesListResponse)
 async def listar_notificaciones(
     solo_no_leidas: bool = Query(False),
+    nivel: Literal["info", "exito", "advertencia", "error"] | None = Query(None),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
@@ -24,7 +27,7 @@ async def listar_notificaciones(
 ):
     """Feed de notificaciones visibles para el usuario, ya con su estado leído/no leído."""
     return await service.listar(
-        db, actor, solo_no_leidas=solo_no_leidas, limit=limit, offset=offset
+        db, actor, solo_no_leidas=solo_no_leidas, nivel=nivel, limit=limit, offset=offset
     )
 
 

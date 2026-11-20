@@ -135,3 +135,18 @@ async def test_lectura_es_por_usuario(db_session):
     await service.marcar_leida(db_session, _OP_VIV, nid)
     assert await service.contar_no_leidas(db_session, _OP_VIV) == 0
     assert await service.contar_no_leidas(db_session, _CONS) == 1
+
+async def test_filtro_por_nivel(client):
+    await _crear(client, nivel="error")
+    await _crear(client, nivel="advertencia")
+    await _crear(client, nivel="advertencia")
+    data = (await client.get(BASE, params={"nivel": "advertencia"})).json()
+    assert data["total"] == 2
+    assert {i["nivel"] for i in data["items"]} == {"advertencia"}
+    assert data["no_leidas"] == 3  # el contador de la campana no se filtra
+    assert (await client.get(BASE, params={"nivel": "info"})).json()["total"] == 0
+
+
+async def test_filtro_por_nivel_invalido_da_422(client):
+    r = await client.get(BASE, params={"nivel": "warning"})
+    assert r.status_code == 422

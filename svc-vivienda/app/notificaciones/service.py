@@ -58,6 +58,7 @@ async def listar(
     user: AuthUser,
     *,
     solo_no_leidas: bool = False,
+    nivel: str | None = None,
     limit: int = 50,
     offset: int = 0,
 ) -> dict:
@@ -67,6 +68,8 @@ async def listar(
     stmt = select(Notificacion, leida.label("leida")).where(visible)
     if solo_no_leidas:
         stmt = stmt.where(~leida)
+    if nivel:
+        stmt = stmt.where(Notificacion.nivel == nivel)
 
     total = (await db.execute(select(func.count()).select_from(stmt.subquery()))).scalar_one()
     no_leidas = await contar_no_leidas(db, user)
