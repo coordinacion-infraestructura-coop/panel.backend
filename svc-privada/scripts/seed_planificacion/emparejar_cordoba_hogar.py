@@ -206,6 +206,10 @@ CONFIRMADOS = {
                                                    "el alias 0034 SANTA ROSA DE RIO PRIMERO -> 206 es incorrecto"),
     ("rio primero", "villa santa rosa de rio primero"): ("208", "confirmado por el usuario 2026-11-19; "
                                                          "el alias 0034 -> 206 es incorrecto"),
+    ("juarez celman", "paso del durazno"): ("443", "confirmado por el usuario 2026-11-19: está entre Juárez "
+                                            "Celman y Río Cuarto; se toma Río Cuarto (443)"),
+    ("tulumba", "villa del rosario del saladillo"): ("559", "confirmado por el usuario 2026-11-19 (misma que "
+                                                     "\"Rosario de Saladillo\" de CC)"),
 }
 # Fuzzy ya revisados y aceptados por el usuario en CC (texto compactado de la fuente).
 FUZZY_CONFIRMADOS = {"riobamba", "san jeronimo", "bouwer", "villa caros paz", "rosario de saladillo"}
@@ -252,6 +256,7 @@ COLORES = {
     "FFFF0000": ("rojo", "5"),
     "FF674EA7": ("violeta", "?"),
     "FFCCCCCC": ("gris", "?"),
+    "theme:5": ("rojo", "5"),  # color del tema de Google Sheets (accent2 = #EA4335), versión 2026-11-20
 }
 
 
@@ -311,6 +316,12 @@ for row in ws.iter_rows(min_row=HDR_ROW + 1, max_row=ws.max_row):
     g = res.get("geo")
     hx, hx_hab = fill_hex(row[1]), fill_hex(row[3])
     nombre, codigo = COLORES.get(hx, (hx or "sin color", "?"))
+    estado = ""
+    if nombre == "gris":  # desestimado: el municipio no quiso el programa (usuario 2026-11-19)
+        codigo = "X"
+    elif nombre == "violeta":  # resuelto por ATP; la prioridad sale del color de abajo (columna D)
+        estado = "Resuelto por ATP"
+        codigo = COLORES.get(hx_hab, (None, "?"))[1]
     out.append({
         "fila_origen": i,
         "departamento_planilla": dep_actual,
@@ -323,6 +334,7 @@ for row in ws.iter_rows(min_row=HDR_ROW + 1, max_row=ws.max_row):
         "prioridad_color": nombre,
         "prioridad_color_hex": hx,
         "prioridad_propuesta": codigo,
+        "estado_propuesto": estado,
         "color_hab": COLORES.get(hx_hab, (hx_hab, ""))[0] if hx_hab != hx else "",
         "tipo": txt(r[2]),
         "habitantes": num(r[3]),

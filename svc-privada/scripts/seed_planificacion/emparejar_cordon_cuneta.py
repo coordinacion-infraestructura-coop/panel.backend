@@ -2,7 +2,11 @@
 viv_geo_localidades reconstruido desde el repo (docs/data/geo_localidades.json
 + migraciones 0033/0042) y los alias de viv_geo_alias_manual (seed_data.py +
 0036). Replica app/geo/matching.py. Uso:
-    python -I match_cc.py <xlsx> <repo_root> <out_dir>
+    python -I emparejar_cordon_cuneta.py <xlsx> <repo_root> <out_dir> <resumen.json>
+
+Incluye las correcciones que confirmó el usuario (CONFIRMADOS, "150M" = 150 millones) y exporta
+el color de relleno de la columna de prioridad (columna B): desde la versión del 2026-11-20 de la
+planilla el color es lo que manda, el número a veces falta o quedó de una escala anterior.
 """
 import csv, json, re, sys, unicodedata, difflib, collections
 from pathlib import Path
@@ -187,6 +191,39 @@ def resolver(dep, loc):
     return dict(metodo="sin_match", score=sc, nota="sin candidato razonable en el departamento", cands=cands)
 
 
+# ── correcciones confirmadas por el usuario (2026-11-19) ─────────────────────
+CONFIRMADOS = {
+    ("calamuchita", "parque calmayo"): "2",
+    ("rio primero", "villa sta rosa de rio i"): "208",
+    ("rio primero", "villa santa rosa de rio i"): "208",
+}
+
+
+def resolver_cc(dep, loc):
+    dk = dep_key(dep)
+    for k in [(dk, compact(loc)), (dk, expand(loc))]:
+        if k in CONFIRMADOS:
+            return dict(metodo="confirmado_usuario", geo=por_id[CONFIRMADOS[k]], score="",
+                        nota="confirmado por el usuario 2026-11-19")
+    return resolver(dep, loc)
+
+
+# Escala de la planilla (2026-11-20): celeste 1, lavanda 2 (= resuelto por ATP), verde 3,
+# naranja 4, amarillo 5, rojo 6, gris X (desestimado), rosa (corrección de nota de pedido).
+COLORES = {
+    "FF00B0F0": "celeste", "FF8EAADB": "lavanda", "FF92D050": "verde", "FFFFC000": "naranja",
+    "FFFFFF00": "amarillo", "FFFF0000": "rojo", "FF666666": "gris", "FFF6B3AE": "rosa",
+}
+
+
+def fill_hex(c):
+    f = c.fill
+    if f is None or f.fill_type is None:
+        return ""
+    fg = f.fgColor
+    return fg.rgb if fg.type == "rgb" else f"{fg.type}:{fg.theme if fg.type == 'theme' else fg.indexed}"
+
+
 # ── lectura de la planilla ───────────────────────────────────────────────────
 def num(v):
     """Devuelve (valor_normalizado, nota). Números → int; '2,743' → 2743; '150M' → nota."""
@@ -200,7 +237,8 @@ def num(v):
     if re.fullmatch(r"\d+(\.0+)?", s):
         return int(float(s)), ""
     if re.fullmatch(r"\d+(\.\d+)?\s*[Mm]", s):
-        return "", s
+        return int(round(float(s.strip()[:-1]) * 1_000_000)), (
+            f'{s} → convertido (usuario 2026-11-19: "150M" = 150 millones de pesos)')
     return s, ""
 
 def txt(v):
@@ -210,9 +248,10 @@ def txt(v):
         return str(int(v))
     return str(v).strip() if isinstance(v, str) else str(v)
 
-wb = openpyxl.load_workbook(XLSX, read_only=True, data_only=True)
+wb = openpyxl.load_workbook(XLSX, data_only=True)  # sin read_only: hacen falta los rellenos
 ws = wb["GENERAL"]
-rows = list(ws.iter_rows(values_only=True))
+celdas = list(ws.iter_rows())
+rows = [tuple(c.value for c in fila) for fila in celdas]
 header = rows[0]
 fuera_de_rango = []
 out, dep_actual, descartadas = [], None, []
@@ -229,7 +268,8 @@ for i, r in enumerate(rows[1:], start=2):
         descartadas.append((i, r[:12]))
         continue
     loc_s = str(loc)
-    res = resolver(dep_actual, loc_s)
+    res = resolver_cc(dep_actual, loc_s)
+    hx = fill_hex(celdas[i - 1][1])
     g = res.get("geo")
     notas = []
     hab, n_h = num(r[4])
@@ -248,6 +288,7 @@ for i, r in enumerate(rows[1:], start=2):
         "metodo": res["metodo"],
         "score": res.get("score") if res.get("score") is not None else "",
         "prioridad": txt(prio),
+        "prioridad_color": COLORES.get(hx, hx),
         "tipo": txt(r[3]),
         "habitantes": hab,
         "visita_gobernador": txt(r[5]),

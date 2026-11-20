@@ -267,3 +267,29 @@ La lista incluye 443, 195 y 559, que son los candidatos de las filas 121, 244 y 
 - Fila 121, PASO DEL DURAZNO → 443 (Río Cuarto). Está entre los dos departamentos y el usuario eligió Río Cuarto.
 - La columna "Cantidad de viviendas" (número) se crea en el programa CH aunque esté vacía.
 - Fila 419, VILLA DEL ROSARIO DEL SALADILLO → 559 (confirmado). Siguen pendientes la 288 (SANTIAGO TEMPLE, `id_geo` del espejo al cargar) y la 244 (PEDRO E. VIVAS / KM 658, revisión manual).
+
+# Actualización con las planillas del 2026-11-20
+
+El usuario dejó versiones nuevas de las dos planillas ("Cordón Cuneta OK.xlsx" y "Cordoba Hogar
+OK.xlsx", raíz del repo, no se modificaron). Los dos CSV se regeneraron con los scripts de
+emparejamiento, que ahora traen adentro las correcciones confirmadas del 2026-11-19 (con la
+planilla del 19 reproducen exactamente los CSV de la carga inicial). `cargar.py` pasó a ser una
+**sincronización**: alta de lo nuevo, actualización campo por campo de lo existente, y nunca pisa un
+campo cuyo último cambio en el historial lo hizo una persona desde la pantalla (lo lista en el
+informe). Para volver a sincronizar: regenerar los CSV, correr el simulacro con `--detalle`,
+revisar y aplicar con `--aplicar`.
+
+- **CC — la prioridad sale del color, no del número.** La planilla nueva numera 1–6: celeste 1,
+  **lavanda 2 = resuelto por ATP** (las 23 filas dicen "ATP" en las columnas finales), verde 3,
+  naranja 4, amarillo 5, rojo 6, gris X; rosa = "corrección nota de pedido" (sin prioridad). Se
+  carga en la escala del panel por color (celeste 1, verde 2, naranja 3, amarillo 4, rojo 5, gris X)
+  y la lavanda va al estado "Resuelto por ATP" sin prioridad. La planilla del 19 ya tenía los colores,
+  pero los números eran de una escala vieja o faltaban (260 filas sin número).
+- **CC — Saldán**: toda la fila en gris → Desestimado (el número de la planilla sigue en 3).
+- **CC — textos en "Monto firmado o sugerido"** ("NO", "VER") van a la Observación.
+- **CH — ya no hay filas violetas**: las 7 que estaban en "Resuelto por ATP" ahora están pintadas
+  de rojo liso (San Francisco del Chañar con el rojo del tema de Google Sheets, `theme:5`). Se les
+  quitó el estado, siguiendo la planilla.
+
+Resultado en producción (2026-11-20): CC 280 localidades actualizadas, 144 sin cambios; CH 18
+actualizadas, 408 sin cambios; ningún campo editado en la pantalla; una segunda corrida no cambia nada.
