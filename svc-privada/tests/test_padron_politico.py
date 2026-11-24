@@ -94,3 +94,29 @@ async def test_fetch_apagado_lanza():
 
     with pytest.raises(PadronPoliticoNoDisponible):
         await fetch_padron_combinado()
+
+
+@pytest.mark.asyncio
+async def test_sync_escribe_genero_sin_respaldar_y_planificacion_lo_muestra(client, db_session):
+    """§2.4: el género no se respalda; si solo cambia el género, no se crea respaldo."""
+    await _cargar(db_session)
+    db_session.add(GeoLocalidad(id_geo="2", departamento="D1", localidad="L2", activo=True))
+    await db_session.commit()
+    combinado = [{**COMBINADO[1], "intendente_sexo": "F", "origen_intendente_sexo": "nombre"}]
+    with patch(FETCH, new=AsyncMock(return_value=combinado)):
+        r = await client.post("/internal/privada/padron-politico/sync")
+    assert r.status_code == 200 and r.json()["campos_cambiados"] == 2
+    l2 = (await db_session.execute(select(LocalidadInfo).where(LocalidadInfo.localidad == "L2"))).scalar_one()
+    assert (l2.intendente_sexo, l2.intendente_sexo_origen) == ("F", "nombre")
+    assert (await db_session.execute(select(LocalidadInfoRespaldo))).scalars().all() == []
+
+    pid = (await client.post("/api/v1/privada/planificacion/programas", json={"nombre": "P", "area": "privada"})).json()["id"]
+    items = (await client.get(f"/api/v1/privada/planificacion/programas/{pid}/localidades")).json()["items"]
+    fila = next(i for i in items if i["id_geo"] == "2")
+    assert (fila["intendente_sexo"], fila["intendente_sexo_origen"]) == ("F", "nombre")
+
+    # Gobierno deja de tener el dato: se vacía.
+    with patch(FETCH, new=AsyncMock(return_value=[{**COMBINADO[1], "intendente_sexo": None, "origen_intendente_sexo": None}])):
+        await client.post("/internal/privada/padron-politico/sync")
+    await db_session.refresh(l2)
+    assert l2.intendente_sexo is None

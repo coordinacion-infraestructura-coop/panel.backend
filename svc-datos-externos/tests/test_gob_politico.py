@@ -365,3 +365,25 @@ async def test_intendentes_encadena_el_sync_de_privada(client: AsyncClient, db_s
     pedido.assert_awaited_once()
     anomalias = resultados["intendentes"].json()[0]["anomalias"]
     assert {"tipo": "privada_sincronizada", "filas_actualizadas": 2, "filas_creadas": 0, "campos_cambiados": 3} in anomalias
+
+
+# ── Género del intendente o intendenta (spec-padron-politico-gobierno-privada.md §2.4) ────
+
+def test_sexo_intendente_desde_eleccion_y_deducido():
+    from app.gob_politico import sexo
+
+    votos = sexo.votos_por_palabra([
+        ("PEREZ MARIA LAURA", "F"), ("GOMEZ MARIA", "F"), ("PEREZ JUAN", "M"), ("RUIZ JUAN CARLOS", "M"),
+    ])
+    assert votos == {"MARIA": "F", "JUAN": "M"}  # PEREZ aparece con los dos: no vota
+    # El ganador 2023 es quien está hoy (palabras en otro orden): dato oficial.
+    assert sexo.sexo_intendente("Laura Pérez", "PEREZ MARIA LAURA", "F", votos) == ("F", "eleccion_2023")
+    assert sexo.sexo_intendente("JORDAN EDGARD", "YORDAN EDGAR FABIAN", "M", votos) == ("M", "eleccion_2023")
+    # Cambió el intendente: se deduce y queda marcado.
+    assert sexo.sexo_intendente("GRISELDA LLANOS (INTERINA)", "DE GIOVANNI OMAR", "M", votos) == ("F", "nombre")
+    assert sexo.sexo_intendente("SERGIO ROVETI (INTERINO)", "GONZALEZ AGUSTIN", "M", votos) == ("M", "nombre")
+    assert sexo.sexo_intendente("JUAN OTRO", "ALGUIEN DISTINTO", "F", votos) == ("M", "nombre")
+    # Sin evidencia o con votos contradictorios: sin dato.
+    assert sexo.sexo_intendente("ZZZ YYY", None, None, votos) == (None, None)
+    assert sexo.sexo_intendente("MARIA JUAN", None, None, votos) == (None, None)
+    assert sexo.sexo_intendente(None, "X", "F", votos) == (None, None)

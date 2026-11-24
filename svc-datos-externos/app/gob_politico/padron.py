@@ -13,7 +13,8 @@ from dataclasses import dataclass
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.gob_politico.models import ExtGobIntendente, ExtPrivPadronPolitico
+from app.gob_politico import sexo
+from app.gob_politico.models import ExtGobEleccionMunicipal, ExtGobIntendente, ExtPrivPadronPolitico
 from app.gob_politico.parse import clave_nombre
 from app.gobierno.models import ExtGobLocalidad
 
@@ -115,5 +116,14 @@ async def leer(db: AsyncSession) -> tuple[list[ExtGobLocalidad], dict[str, ExtGo
 
 
 async def padron_combinado(db: AsyncSession) -> list[dict]:
-    """Para `GET /internal/datos-externos/padron-politico`: solo localidades con `id_geo`."""
-    return [f for f in combinar(*await leer(db)) if f["id_geo"]]
+    """Para `GET /internal/datos-externos/padron-politico`: solo localidades con `id_geo`. Suma el
+    género del intendente o intendenta con su origen (`sexo.py`)."""
+    filas = [f for f in combinar(*await leer(db)) if f["id_geo"]]
+    municipales = {m.codigo_indec: m for m in (await db.execute(select(ExtGobEleccionMunicipal))).scalars()}
+    votos = sexo.votos_por_palabra([(m.ganador_nombre, m.ganador_sexo) for m in municipales.values()])
+    for f in filas:
+        m = municipales.get(f["codigo_indec"])
+        f["intendente_sexo"], f["origen_intendente_sexo"] = sexo.sexo_intendente(
+            f["intendente"], m.ganador_nombre if m else None, m.ganador_sexo if m else None, votos
+        )
+    return filas

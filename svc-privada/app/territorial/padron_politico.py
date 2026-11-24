@@ -109,13 +109,18 @@ async def sincronizar(db: AsyncSession, actor: AuthUser, dry_run: bool = False) 
                 col: c[campo] for campo, col in _CAMPOS
                 if c.get(campo) and getattr(fila, col) != c[campo]
             }
+            # Género (§2.4): no se respalda, y sí se vacía si Gobierno deja de tenerlo.
+            if "intendente_sexo" in c:
+                for col, clave in (("intendente_sexo", "intendente_sexo"), ("intendente_sexo_origen", "origen_intendente_sexo")):
+                    if getattr(fila, col) != c.get(clave):
+                        cambios[col] = c.get(clave)
             if not cambios:
                 continue
             campos_cambiados += len(cambios)
             actualizadas += not nueva
             if dry_run:
                 continue
-            if not nueva:
+            if not nueva and any(col in cambios for _, col in _CAMPOS):
                 _respaldar(db, fila, respaldadas)
             for col, valor in cambios.items():
                 setattr(fila, col, valor)

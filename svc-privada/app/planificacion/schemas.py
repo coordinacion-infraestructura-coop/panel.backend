@@ -144,6 +144,8 @@ class LocalidadPlanOut(BaseModel):
     tipo_localidad: str | None
     habitantes: int | None
     semaforo: str | None
+    intendente_sexo: str | None = None
+    intendente_sexo_origen: str | None = None
     prioridad_id: int | None
     estado_id: int | None
     ok_gobernador: bool | None

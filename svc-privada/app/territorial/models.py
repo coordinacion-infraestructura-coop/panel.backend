@@ -25,6 +25,10 @@ class LocalidadInfo(Base):
     partido_politico: Mapped[str | None] = mapped_column(String(200))
     tipo_localidad: Mapped[str | None] = mapped_column(String(60))
     color_semaforo: Mapped[str | None] = mapped_column(String(20))
+    # Género del intendente o intendenta (`F`/`M`) y de dónde sale (`eleccion_2023` o `nombre`,
+    # deducido). Lo escribe solo el sync del padrón político (spec-padron-politico-gobierno-privada.md §2.4).
+    intendente_sexo: Mapped[str | None] = mapped_column(String(1))
+    intendente_sexo_origen: Mapped[str | None] = mapped_column(String(20))
     # `id_geo` del padrón oficial (ADR-026) — lo completa la normalización en
     # lote; la clave sigue siendo el texto (departamento, localidad).
     id_geo: Mapped[str | None] = mapped_column(String(30))

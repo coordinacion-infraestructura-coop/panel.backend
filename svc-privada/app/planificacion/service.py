@@ -368,6 +368,8 @@ async def listar_localidades(
             "tipo_localidad": info.tipo_localidad if info else None,
             "habitantes": info.habitantes if info else None,
             "semaforo": info.color_semaforo if info else None,
+            "intendente_sexo": info.intendente_sexo if info else None,
+            "intendente_sexo_origen": info.intendente_sexo_origen if info else None,
             "prioridad_id": pl.prioridad_id if pl else None,
             "estado_id": pl.estado_id if pl else None,
             "ok_gobernador": pl.ok_gobernador if pl else None,
