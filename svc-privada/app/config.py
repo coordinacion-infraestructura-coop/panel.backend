@@ -39,5 +39,12 @@ class Settings(BaseSettings):
     svc_gasifera_internal_url: str = ""
     svc_gralgob_internal_url: str = ""
 
+    # Inscriptos al Congreso de Formación Digital 2026 -> Planificación
+    # (spec-privada-sync-capacitacion.md §7). El id de la planilla no es secreto: va como default
+    # para que un redeploy de CI (`--set-env-vars` reemplaza todo) no lo borre. Vacío = apagado.
+    capacitacion_sheet_id: str = "1bvY7X7_jbzMf8XXajJmwsjY1s0dRP4TBdJqsQ2H1t5w"
+    capacitacion_rango_respuestas: str = "'Respuestas de formulario 1'!A:F"
+    capacitacion_rango_lista: str = "Lista!A:B"
+
 
 settings = Settings()

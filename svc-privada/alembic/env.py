@@ -23,6 +23,7 @@ from app.catalogos_editables.models import Area, Categoria, Programa  # noqa: F4
 from app.planificacion.models import (  # noqa: F401
     PlanColumna, PlanEstado, PlanHistorial, PlanLocalidad, PlanPrioridad, PlanPrograma,
 )
+from app.capacitacion.models import CapacitacionInscripcion  # noqa: F401
 
 config = context.config
 

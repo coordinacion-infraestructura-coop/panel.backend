@@ -8,6 +8,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import AuthUser
+from app.capacitacion import sync as capacitacion_sync
+from app.integrations.google_sheets import SheetReadError
 from app.database import get_db
 from app.gestiones import service, vivienda_sync
 from app.integrations.datos_externos import PadronPoliticoNoDisponible
@@ -115,3 +117,17 @@ async def sync_padron_politico(
         return await padron_politico.sincronizar(db, _PADRON_POLITICO_ACTOR, dry_run=dry_run)
     except PadronPoliticoNoDisponible as exc:
         raise HTTPException(status_code=502, detail={"code": "PADRON_POLITICO_NO_DISPONIBLE", "message": str(exc)})
+
+
+@router.post("/capacitacion/sync")
+async def sync_capacitacion(
+    dry_run: bool = Query(False, description="true: solo informa qué cambiaría"),
+    db: AsyncSession = Depends(get_db),
+):
+    """Inscriptos al Congreso de Formación Digital 2026 -> programa de Planificación
+    (docs/files/spec-privada-sync-capacitacion.md). Lo dispara Cloud Scheduler cada 15 minutos.
+    502 si no se puede leer la planilla: no se escribe nada."""
+    try:
+        return await capacitacion_sync.sincronizar(db, dry_run=dry_run)
+    except SheetReadError as exc:
+        raise HTTPException(status_code=502, detail={"code": "PLANILLA_NO_DISPONIBLE", "message": str(exc)})
