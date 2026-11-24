@@ -7,7 +7,7 @@ from tests.conftest import CONSULTA_USER, OPERADOR_USER
 
 BASE = "/api/v1/privada/planificacion"
 SUPERVISOR = AuthUser(uid="sup", email="sup@test.com", role="Supervisor", secretarias=["privada"])
-AUTORIDAD = AuthUser(uid="aut", email="aut@test.com", role="Autoridad", secretarias=["privada"])
+AUTORIDAD = AuthUser(uid="aut", email="aut@test.com", role="Autoridad", secretarias=["supervision"])
 OPERADOR_VIVIENDA = AuthUser(uid="ov", email="ov@test.com", role="Operador", secretarias=["vivienda"])
 
 
@@ -164,10 +164,19 @@ async def test_prioridad_borrada_sigue_en_la_fila(client, padron):
 
 async def test_permisos(client, padron, as_user):
     pid = await _programa(client)
-    # Autoridad y usuarios sin Privada: afuera, también para leer
-    for u in (AUTORIDAD, OPERADOR_VIVIENDA):
-        as_user(u)
-        assert (await client.get(f"{BASE}/programas")).status_code == 403
+    # Usuarios sin Privada: afuera, también para leer
+    as_user(OPERADOR_VIVIENDA)
+    assert (await client.get(f"{BASE}/programas")).status_code == 403
+    # Autoridad (1.5.0): lee todo aunque no tenga la secretaría Privada; no escribe ni configura
+    as_user(AUTORIDAD)
+    assert (await client.get(f"{BASE}/programas")).status_code == 200
+    assert (await client.get(f"{BASE}/programas/{pid}/localidades")).status_code == 200
+    assert (await client.get(f"{BASE}/programas/{pid}/prioridades")).status_code == 200
+    assert (await client.get(f"{BASE}/programas/{pid}/localidades/1/historial")).status_code == 200
+    assert (await client.patch(f"{BASE}/programas/{pid}/localidades/1", json={"updated_at": None, "ok_gobernador": True})).status_code == 403
+    assert (await client.post(f"{BASE}/programas/{pid}/estados", json={"nombre": "x"})).status_code == 403
+    assert (await client.post(f"{BASE}/programas", json={"nombre": "Otro", "area": "otra"})).status_code == 403
+    assert (await client.delete(f"{BASE}/programas/{pid}")).status_code == 403
     # Consulta: lee, no escribe
     as_user(CONSULTA_USER)
     assert (await client.get(f"{BASE}/programas/{pid}/localidades")).status_code == 200

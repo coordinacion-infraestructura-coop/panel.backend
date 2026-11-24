@@ -1,13 +1,21 @@
 """Planificación de programas por localidad — `/api/v1/privada/planificacion/**`.
 
-Acceso (spec §3): Privada + Admin. **Autoridad queda afuera a propósito** aunque esté en el
-`ROLES_LECTURA` compartido, por eso las tuplas son locales. Configuración (programas,
+Acceso (spec §3): Privada + Admin. Autoridad (1.5.0) lee todos los programas sin necesidad de la
+secretaría `privada` y nunca escribe: las escrituras siguen con `require_privada` y los roles
+compartidos de escritura, que no la incluyen. Configuración (programas,
 prioridades, estados, columnas): Supervisor/Admin; borrar un programa: sólo Admin.
 """
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import ROLES_ELIMINACION, ROLES_ESCRITURA, ROLES_TRANSICION, AuthUser, require_privada
+from app.auth import (
+    ROLES_ELIMINACION,
+    ROLES_ESCRITURA,
+    ROLES_TRANSICION,
+    AuthUser,
+    get_current_user,
+    require_privada,
+)
 from app.database import get_db
 from app.planificacion import service
 from app.planificacion.schemas import (
@@ -32,7 +40,17 @@ ROLES_LECTURA_PLAN = ("Admin", "Supervisor", "Operador", "Consulta")
 
 router = APIRouter(prefix="/planificacion", tags=["privada-planificacion"])
 
-_LECT = Depends(require_privada(*ROLES_LECTURA_PLAN))
+_lectura_privada = require_privada(*ROLES_LECTURA_PLAN)
+
+
+async def _lectura(user: AuthUser = Depends(get_current_user)) -> AuthUser:
+    """Privada + Admin (con la secretaría), o Autoridad sin importar la secretaría."""
+    if user.role == "Autoridad":
+        return user
+    return await _lectura_privada(user)
+
+
+_LECT = Depends(_lectura)
 _ESCR = Depends(require_privada(*ROLES_ESCRITURA))
 _CONF = Depends(require_privada(*ROLES_TRANSICION))
 _ELIM = Depends(require_privada(*ROLES_ELIMINACION))
