@@ -28,6 +28,10 @@ elecciones. Algunas pestañas pegadas tienen una fila de títulos arriba del enc
 contra el nomenclador después de guardarse (`_resolver_por_nombre`). Ni los logs ni `anomalias`
 llevan nombres de personas, partidos por localidad ni teléfonos.
 
+Fase 3b (spec-datos-externos-fase3b-fondo-federal.md §3): la planilla "0. Fondo Federal" es una
+fuente más. Su pestaña de etapas no lee `INTENDENTE` ni `PARTIDO`; sí lee `OBSERVACIONES` y
+`FECHA DE AVISO`, que el endpoint muestra solo a `Admin` y `Autoridad`.
+
 Planilla "Gobierno" de la Privada del Gobernador (spec-datos-externos-privada-gobernador.md §3):
 anuncios, FOCOM y el histórico de ATP son tres fuentes de la misma planilla, cada una con su log.
 Nunca se leen referente, administrativo y coordinador asignados, observaciones ni responsable.
@@ -61,6 +65,8 @@ from app.gob_politico.models import (
 from app.gob_gestion.models import ExtGobConvenio, ExtGobObra, ExtGobReunion, ExtGobVisita, ExtGobVisitaGobernador
 from app.gob_fondos.models import (
     ExtGobCregCuota,
+    ExtGobFfedCopa,
+    ExtGobFfedEtapa,
     ExtGobFondoAmbiental,
     ExtGobFondoValor,
     ExtGobFpermEtapa,
@@ -156,6 +162,18 @@ FUENTES: dict[str, _Fuente] = {
                      ("fondo", parse_fondos.COMUNIDADES_REGIONALES)),
         ),
     ),
+    # Fase 3b: planilla "0. Fondo Federal" (spec-datos-externos-fase3b-fondo-federal.md §3).
+    "fondo_federal": _Fuente(
+        "google_sheet_gob_fondo_federal_id",
+        (
+            _Pestana("1. Etapas habilitadas", parse_fondos.parsear_ffed_etapas, ExtGobFfedEtapa,
+                     excluir=parse_fondos.COLUMNAS_EXCLUIDAS_FFED, fila_encabezado=2),
+            _Pestana("0. Resumen", parse_fondos.parsear_ffed_resumen, ExtGobFondoValor, "ninguno", ("fondo", parse_fondos.FONDO_FEDERAL)),
+            _Pestana("6. Copa", parse_fondos.parsear_ffed_copa, ExtGobFfedCopa),
+            _Pestana("6. Copa", parse_fondos.parsear_ffed_copa_actualizada, ExtGobFondoValor, "ninguno",
+                     ("fondo", parse_fondos.FONDO_FEDERAL_COPA)),
+        ),
+    ),
     # Fase 5. Los recorridos de las dos planillas van a la misma tabla, separados por `origen`.
     "obras": _Fuente("google_sheet_gob_obras_id", (_Pestana("BD-TABLERO", parse_gestion.parsear_obras, ExtGobObra, "proporcion"),)),
     "recorridos": _Fuente(
@@ -227,6 +245,7 @@ ETIQUETAS = {
     "fondo_permanente": "7. Fondo Permanente (Gobierno)",
     "fondo_ambiental": "9. Fondo Ambiental (Gobierno)",
     "comunidades_regionales": "17. Comunidades Regionales (Gobierno)",
+    "fondo_federal": "0. Fondo Federal (Gobierno)",
     "obras": "12. Obras (Gobierno)",
     "recorridos": "2. Recorrido y visitas (Gobierno)",
     "recorridos_ministro": "2.1 Recorrido y visitas del ministro (Gobierno)",
@@ -282,7 +301,31 @@ async def _control_comunidades_regionales(db: AsyncSession) -> list[dict]:
     return [{"tipo": "control_cuotas_sobre_credito", "casos": excedidos}] if excedidos else []
 
 
+async def _control_fondo_federal(db: AsyncSession) -> list[dict]:
+    """El disponible del `0. Resumen` es la suma de lo disponible en las etapas DISPONIBLE y
+    REMANENTE DISPONIBLE (spec Fase 3b §3). Si deja de cerrar, el área cambió la fórmula."""
+    resumen = (
+        await db.execute(
+            select(ExtGobFondoValor.monto).where(
+                ExtGobFondoValor.fondo == parse_fondos.FONDO_FEDERAL, ExtGobFondoValor.concepto == "disponible"
+            )
+        )
+    ).scalar_one_or_none()
+    filas = (
+        await db.execute(
+            select(func.sum(ExtGobFfedEtapa.disponible_etapa)).where(
+                ExtGobFfedEtapa.estado.in_(("DISPONIBLE", "REMANENTE DISPONIBLE"))
+            )
+        )
+    ).scalar_one_or_none()
+    if resumen is None:
+        return []
+    diferencia = round(float(resumen) - float(filas or 0), 2)
+    return [] if abs(diferencia) < 1 else [{"tipo": "control_disponible_vs_resumen", "diferencia": diferencia}]
+
+
 _CONTROLES_FONDOS = {
+    "fondo_federal": _control_fondo_federal,
     "fondo_permanente": _control_fondo_permanente,
     "comunidades_regionales": _control_comunidades_regionales,
 }

@@ -122,3 +122,65 @@ class ExtGobFondoValor(_Timestamps, Base):
     concepto: Mapped[str] = mapped_column(String(40), nullable=False)
     anio: Mapped[int | None] = mapped_column(Integer)
     monto: Mapped[float | None] = mapped_column(_MONTO)
+
+
+# ── Fondo Federal (spec-datos-externos-fase3b-fondo-federal.md §2) ─────────────────
+
+
+class ExtGobFfedEtapa(_Timestamps, Base):
+    """"0. Fondo Federal", pestaña `1. Etapas habilitadas`: una fila por localidad y etapa, o por
+    parte de una etapa extra pagada en partes. No hay clave natural: la etapa extra puede repetirse
+    (`EXTRA 2 (PARCIAL)` y `EXTRA 2 (SALDO)`), así que se guarda el orden de la planilla (`fila`).
+
+    `INTENDENTE` y `PARTIDO` nunca se leen. `observaciones` y `aviso_texto` sí, porque el área las
+    usa para avisar qué falta; el endpoint solo las devuelve a `Admin` y `Autoridad` (spec §4.2)."""
+
+    __tablename__ = "ext_gob_ffed_etapa"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    fila: Mapped[int] = mapped_column(Integer, nullable=False)
+    codigo_indec: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    etapa_texto: Mapped[str] = mapped_column(String(60), nullable=False)
+    # Etapas comunes: su número. Extras: el número de extra si lo tiene (`EXTRA 2` -> 2).
+    etapa_numero: Mapped[int | None] = mapped_column(Integer)
+    es_extra: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    resolucion: Mapped[str | None] = mapped_column(String(30))
+    fecha_resolucion: Mapped[date | None] = mapped_column(Date)
+    tipo: Mapped[str | None] = mapped_column(String(5))  # MU | CO
+    categoria: Mapped[int | None] = mapped_column(Integer)
+    monto_etapa: Mapped[float | None] = mapped_column(_MONTO)
+    disponible_etapa: Mapped[float | None] = mapped_column(_MONTO)
+    estado: Mapped[str | None] = mapped_column(String(40), index=True)
+    ord_res: Mapped[str | None] = mapped_column(String(60))
+    fecha_ingreso: Mapped[date | None] = mapped_column(Date)
+    sticker_pedido: Mapped[str | None] = mapped_column(String(40))
+    otorgado: Mapped[float | None] = mapped_column(_MONTO)
+    cuota: Mapped[float | None] = mapped_column(_MONTO)  # cuota mensual de devolución
+    plazo: Mapped[int | None] = mapped_column(Integer)
+    fecha_entrega: Mapped[date | None] = mapped_column(Date)
+    inicio_descuento: Mapped[date | None] = mapped_column(Date)
+    sticker_rendicion: Mapped[str | None] = mapped_column(String(40))
+    destino: Mapped[str | None] = mapped_column(String(120))
+    destino_detalle: Mapped[str | None] = mapped_column(Text)
+    saldo: Mapped[float | None] = mapped_column(_MONTO)  # lo que falta devolver
+    devuelto: Mapped[float | None] = mapped_column(_MONTO)
+    cuotas_devueltas: Mapped[int | None] = mapped_column(Integer)
+    amortizada: Mapped[bool | None] = mapped_column(Boolean)  # columna AMORTIZACIÓN: SI | NO
+    observaciones: Mapped[str | None] = mapped_column(Text)
+    fecha_aviso: Mapped[date | None] = mapped_column(Date)
+    aviso_texto: Mapped[str | None] = mapped_column(Text)  # cuando FECHA DE AVISO vino como texto
+    tramite: Mapped[str | None] = mapped_column(String(40))
+
+
+class ExtGobFfedCopa(_Timestamps, Base):
+    """Pestaña `6. Copa`: aporte al Fondo Permanente y devolución de préstamos descontados de la
+    coparticipación, por localidad y año."""
+
+    __tablename__ = "ext_gob_ffed_copa"
+    __table_args__ = (UniqueConstraint("codigo_indec", "anio", name="uq_ext_gob_ffed_copa"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    codigo_indec: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    anio: Mapped[int] = mapped_column(Integer, nullable=False)
+    aporte: Mapped[float | None] = mapped_column(_MONTO)
+    devolucion: Mapped[float | None] = mapped_column(_MONTO)

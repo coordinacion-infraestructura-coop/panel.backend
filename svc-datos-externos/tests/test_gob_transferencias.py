@@ -221,7 +221,7 @@ async def test_sync_todas_las_fuentes(client: AsyncClient, db_session: AsyncSess
     logs = {x["fuente"]: x for x in r.json()}
     # Las planillas de fondos (Fase 3), de gestión (Fase 5) y de la Privada no están configuradas acá: fallan
     # solas, sin frenar al resto.
-    fondos = {"fondo_permanente", "fondo_ambiental", "comunidades_regionales",
+    fondos = {"fondo_permanente", "fondo_ambiental", "comunidades_regionales", "fondo_federal",
               "obras", "recorridos", "recorridos_ministro", "reuniones", "convenios", "intendentes", "elecciones",
               "anuncios_gobernador", "focom", "atp_historico"}
     assert set(logs) == {"copa", "fofindes", "fodemep", "fommep", "empleados"} | fondos

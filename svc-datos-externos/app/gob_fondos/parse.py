@@ -246,7 +246,7 @@ def parsear_fperm_prestamos(valores: list[list[Any]]) -> tuple[list[dict], list[
             "plazo": plazo,
             "ord_res": _texto(enc.get(fila, "ORD./RES."), 60),
             "sticker": _texto(enc.get(fila, "STICKER"), 120),
-            "fecha_ingreso": fecha_texto(enc.get(fila, "FECHA INGRESO")),
+            "fecha_ingreso": _fecha_ffed(enc, fila, "FECHA INGRESO", codigo, anomalias),
             "destino": _texto(enc.get(fila, "DESTINO DEL PRESTAMO")),
         })
     _contar(anomalias, "prestamos_sin_codigo", sin_codigo)
@@ -368,3 +368,217 @@ def parsear_comunidades_regionales_credito(valores: list[list[Any]]) -> tuple[li
             valor, _ = monto(enc.get(fila, columna))
             filas.append({"fondo": COMUNIDADES_REGIONALES, "concepto": concepto, "anio": anio, "monto": valor or 0.0})
     return filas, []
+
+
+# ── Fondo Federal (spec-datos-externos-fase3b-fondo-federal.md §1 y §3) ────────────
+
+FONDO_FEDERAL = "fondo_federal"
+# Valores sueltos de la pestaña `6. Copa` (hasta qué COPA está actualizada). Van con otro `fondo`
+# porque cada pestaña reemplaza solo sus filas de `ext_gob_fondo_valor`.
+FONDO_FEDERAL_COPA = "fondo_federal_copa"
+
+# Columnas de `1. Etapas habilitadas` que nunca se leen (intendente y partido político).
+COLUMNAS_EXCLUIDAS_FFED = ("INTENDENTE", "PARTIDO")
+
+# Estados de la etapa (spec §1.2). La planilla puede sumar otros: se guardan tal cual.
+ESTADOS_PENDIENTES_FFED = ("DISPONIBLE", "LISTO PARA PAGAR", "PEDIDO OBSERVADO", "REMANENTE DISPONIBLE")
+ESTADOS_SIN_RENDIR_FFED = ("PAGADO SIN RENDIR", "PAGADO RENDICION OBSERVADA")
+
+# Bloque general del `0. Resumen` (rótulo en B, valor en E). El resto de esa pestaña depende de
+# una localidad elegida en la propia planilla y no se lee.
+_RESUMEN_FFED = {
+    "SALDO EN CUENTA": "saldo_cuenta",
+    "ETAPAS SIN ENTREGAR": "disponible",
+    "ETAPAS EN PROCESO": "en_proceso",
+    "DEFICIT/SUPERAVIT": "deficit_superavit",
+    "AMORTIZACIONES RESTANTES": "amortizaciones_restantes",
+    "TIEMPO MEDIO DE LAS AMORTIZACIONES": "tiempo_medio_amortizacion",
+}
+_FIN_RESUMEN_FFED = "POR LOCALIDAD"
+
+
+def estado_ffed(raw: Any) -> str | None:
+    """Mayúsculas, sin tildes y con espacios simples: `PAGADO RENDICIÓN OBSERVADA` ->
+    `PAGADO RENDICION OBSERVADA`."""
+    s = re.sub(r"\s+", " ", sin_tildes(_limpio(raw).upper())).strip()
+    return s[:40] or None
+
+
+def etapa_ffed(raw: Any) -> tuple[str | None, int | None, bool]:
+    """`(texto, numero, es_extra)`. `1` -> ('1', 1, False); `EXTRA 2 (SALDO)` -> (.., 2, True);
+    `EXTRA` -> (.., None, True); `EXTRA 3 PARCIAL 1` -> (.., 3, True); `R` -> ('R', None, False)."""
+    if isinstance(raw, (int, float)) and not isinstance(raw, bool):
+        n = int(raw)
+        return str(n), n, False
+    texto = _texto(raw, 60)
+    if not texto:
+        return None, None, False
+    if texto.isdigit():
+        return texto, int(texto), False
+    if sin_tildes(texto.upper()).startswith("EXTRA"):
+        m = re.match(r"^EXTRA\s*(\d+)", sin_tildes(texto.upper()))
+        return texto, int(m.group(1)) if m else None, True
+    return texto, None, False
+
+
+def sticker(raw: Any) -> str | None:
+    """Los stickers vienen como número o como texto (con el cero inicial); se guardan como texto."""
+    return _texto(raw, 40)
+
+
+def _si_no(raw: Any) -> tuple[bool | None, bool]:
+    """`(valor, invalido)`: `SI`/`NO`; vacío o `-` -> None; cualquier otra cosa es inválida."""
+    s = sin_tildes(_limpio(raw).upper())
+    if s in ("", "-"):
+        return None, False
+    if s in ("SI", "NO"):
+        return s == "SI", False
+    return None, True
+
+
+def _aviso(raw: Any) -> tuple[date | None, str | None]:
+    """`FECHA DE AVISO`: fecha, o texto libre con una fecha adentro (`22/10/2025 por CIDI y ...`).
+    El texto se guarda aparte porque lleva correos y nombres (spec §4.2)."""
+    if isinstance(raw, (int, float)) and not isinstance(raw, bool):
+        return fecha(raw), None
+    texto = _texto(raw)
+    if not texto:
+        return None, None
+    f = fecha_texto(texto)
+    if f:
+        return f, None
+    m = re.search(r"(\d{1,2})/(\d{1,2})/(\d{2,4})", texto)
+    return (fecha(m.group(0)) if m else None), texto
+
+
+def _fecha_ffed(enc: _Enc, fila: list[Any], columna: str, ref: str | None, anomalias: list[dict]) -> date | None:
+    """Fecha de la planilla, o None con anomalía si la celda trae otra cosa (un sticker pegado en
+    la columna de fecha da un número de serie fuera de rango)."""
+    raw = enc.get(fila, columna)
+    try:
+        f = fecha_texto(raw)
+    except (OverflowError, ValueError):
+        f = None
+    if f is not None and not 2000 <= f.year <= 2100:
+        f = None
+    if f is None and _limpio(raw) not in ("", "-"):
+        anomalias.append({"tipo": "valor_invalido", "codigo": ref, "columna": columna})
+    return f
+
+
+def parsear_ffed_etapas(valores: list[list[Any]]) -> tuple[list[dict], list[dict]]:
+    """`1. Etapas habilitadas`, desde la fila del encabezado (la 2 de la planilla). Las filas sin
+    etapa y sin `ID_LOC` son relleno de la grilla (~22.000) y solo se cuentan."""
+    enc = _Enc(valores, ("ETAPA", "ID_LOC", "MONTO ETAPA", "ESTADO", "OTORGADO", "SALDO"))
+    filas: list[dict] = []
+    anomalias: list[dict] = []
+    relleno = 0
+    for n, fila in _filas(valores):
+        texto, numero, es_extra = etapa_ffed(enc.get(fila, "ETAPA"))
+        codigo = normalizar_codigo(enc.get(fila, "ID_LOC"))
+        if texto is None and codigo is None:
+            relleno += 1
+            continue
+        if texto is None or codigo is None:
+            anomalias.append({"tipo": "fila_invalida" if codigo else "fila_sin_codigo", "codigo": codigo, "fila": n + 1})
+            continue
+        if numero is None and not es_extra:
+            anomalias.append({"tipo": "etapa_no_reconocida", "codigo": codigo, "etapa": texto})
+        amortizada, invalida = _si_no(enc.get(fila, "AMORTIZACION"))
+        if invalida:
+            anomalias.append({"tipo": "valor_invalido", "codigo": codigo, "columna": "AMORTIZACIÓN"})
+        fecha_aviso, aviso_texto = _aviso(enc.get(fila, "FECHA DE AVISO"))
+        plazo, _ = entero(enc.get(fila, "PLAZO"))
+        categoria, _ = entero(enc.get(fila, "CATEGORIA POBLACION"))
+        cuotas_dev, _ = entero(enc.get(fila, "CUOTAS DEVUELTA"))
+        filas.append({
+            # Fila real de la planilla: el parser recibe desde el encabezado, que es la fila 2.
+            "fila": n + 1,
+            "codigo_indec": codigo,
+            "etapa_texto": texto,
+            "etapa_numero": numero,
+            "es_extra": es_extra,
+            "resolucion": _texto(enc.get(fila, "RESO"), 30),
+            "fecha_resolucion": _fecha_ffed(enc, fila, "FECHA RESO", codigo, anomalias),
+            "tipo": _texto(enc.get(fila, "TIPO"), 5),
+            "categoria": categoria,
+            "monto_etapa": _monto(enc, fila, "MONTO ETAPA", codigo, anomalias),
+            "disponible_etapa": _monto(enc, fila, "DISPONIBLE ETAPA", codigo, anomalias),
+            "estado": estado_ffed(enc.get(fila, "ESTADO")),
+            "ord_res": _texto(enc.get(fila, "ORDENANZA/RESOLUCION"), 60),
+            "fecha_ingreso": _fecha_ffed(enc, fila, "FECHA INGRESO", codigo, anomalias),
+            "sticker_pedido": sticker(enc.get(fila, "STICKER PEDIDO")),
+            "otorgado": _monto(enc, fila, "OTORGADO", codigo, anomalias),
+            "cuota": _monto(enc, fila, "CUOTA", codigo, anomalias),
+            "plazo": plazo,
+            "fecha_entrega": _fecha_ffed(enc, fila, "FECHA DE ENTREGA", codigo, anomalias),
+            "inicio_descuento": _fecha_ffed(enc, fila, "INICIO DESCUENTO COPA", codigo, anomalias),
+            "sticker_rendicion": sticker(enc.get(fila, "RENDICION")),
+            "destino": _texto(enc.get(fila, "DESTINO"), 120),
+            "destino_detalle": _texto(enc.get(fila, "DESTINO DEL PRESTAMO")),
+            "saldo": _monto(enc, fila, "SALDO", codigo, anomalias),
+            "devuelto": _monto(enc, fila, "DEVUELTO", codigo, anomalias),
+            "cuotas_devueltas": cuotas_dev,
+            "amortizada": amortizada,
+            "observaciones": _texto(enc.get(fila, "OBSERVACIONES")),
+            "fecha_aviso": fecha_aviso,
+            "aviso_texto": aviso_texto,
+            "tramite": sticker(enc.get(fila, "TRAMITE")),
+        })
+    _contar(anomalias, "filas_de_relleno", relleno)
+    return filas, anomalias
+
+
+def parsear_ffed_resumen(valores: list[list[Any]]) -> tuple[list[dict], list[dict]]:
+    """`0. Resumen`: el bloque general (saldo en cuenta, disponible, en proceso, déficit,
+    amortizaciones restantes y tiempo medio). No tiene encabezado: se busca cada rótulo."""
+    filas: dict[str, dict] = {}
+    for fila in valores:
+        rotulo = sin_tildes(_limpio(fila[1] if len(fila) > 1 else "").upper())
+        if _FIN_RESUMEN_FFED in rotulo:
+            break
+        concepto = next((c for r, c in _RESUMEN_FFED.items() if rotulo.startswith(r)), None)
+        if concepto is None or concepto in filas:
+            continue
+        valor, _ = monto(fila[4] if len(fila) > 4 else None)
+        if valor is not None:
+            filas[concepto] = {"fondo": FONDO_FEDERAL, "concepto": concepto, "anio": None, "monto": valor}
+    anomalias = [{"tipo": "valor_de_control_faltante", "concepto": c} for c in _RESUMEN_FFED.values() if c not in filas]
+    return list(filas.values()), anomalias
+
+
+def parsear_ffed_copa(valores: list[list[Any]]) -> tuple[list[dict], list[dict]]:
+    """`6. Copa`: una fila por localidad y año. Una localidad y año repetidos se suman."""
+    enc = _Enc(valores, ("ID_LOC", "AÑO", "APORTE", "DEVOLUCION"))
+    filas: dict[tuple[str, int], dict] = {}
+    anomalias: list[dict] = []
+    for n, fila in _filas(valores):
+        codigo = normalizar_codigo(enc.get(fila, "ID_LOC"))
+        anio, _ = entero(enc.get(fila, "AÑO"))
+        if codigo is None or not anio:
+            anomalias.append({"tipo": "fila_sin_codigo" if codigo is None else "fila_invalida", "fila": n})
+            continue
+        aporte = _monto(enc, fila, "APORTE", codigo, anomalias)
+        devolucion = _monto(enc, fila, "DEVOLUCION", codigo, anomalias)
+        previa = filas.get((codigo, anio))
+        if previa:
+            anomalias.append({"tipo": "filas_sumadas", "codigo": codigo, "anio": anio})
+            previa["aporte"] = (previa["aporte"] or 0.0) + (aporte or 0.0)
+            previa["devolucion"] = (previa["devolucion"] or 0.0) + (devolucion or 0.0)
+            continue
+        filas[(codigo, anio)] = {"codigo_indec": codigo, "anio": anio, "aporte": aporte, "devolucion": devolucion}
+    return list(filas.values()), anomalias
+
+
+def parsear_ffed_copa_actualizada(valores: list[list[Any]]) -> tuple[list[dict], list[dict]]:
+    """Encabezado `Actualizado hasta la Copa de AGOSTO /2026` de `6. Copa` -> concepto
+    `actualizado_hasta`, `anio` = año y `monto` = mes. Si el área lo borra, no hay valor."""
+    for celda in (valores[0] if valores else []):
+        s = sin_tildes(_limpio(celda).lower())
+        if not s.startswith("actualizado"):
+            continue
+        m = re.search(r"([a-z]+)\s*/?\s*(\d{4})", s.split("copa", 1)[-1])
+        mes = _MESES.get(m.group(1)) if m else None
+        if mes:
+            return [{"fondo": FONDO_FEDERAL_COPA, "concepto": "actualizado_hasta", "anio": int(m.group(2)), "monto": mes}], []
+    return [], [{"tipo": "valor_de_control_faltante", "concepto": "actualizado_hasta"}]

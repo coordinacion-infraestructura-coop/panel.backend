@@ -68,6 +68,8 @@ class Settings(BaseSettings):
     google_sheet_gob_fondo_permanente_id: str = ""
     google_sheet_gob_fondo_ambiental_id: str = ""
     google_sheet_gob_comunidades_regionales_id: str = ""
+    # Fase 3b (spec-datos-externos-fase3b-fondo-federal.md §3): planilla "0. Fondo Federal".
+    google_sheet_gob_fondo_federal_id: str = ""
     # Fase 5 (spec-datos-externos-fase5-gestion-territorial.md §3): planillas 12, 2, 2.1, 1 y 6.
     google_sheet_gob_obras_id: str = ""
     google_sheet_gob_recorridos_id: str = ""

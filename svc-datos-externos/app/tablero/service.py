@@ -16,7 +16,7 @@ from app.gob_transferencias.models import ExtGobCopa
 from app.gobierno import sync as gobierno_sync
 from app.gobierno.models import ExtGobLocalidad
 from app.integrations import atp_interno
-from app.tablero import atp_historico
+from app.tablero import atp_historico, fondo_federal
 from app.tablero import actualizar, aggregations, fondos, gestion, planillas
 from app.tablero.schemas import (
     ConceptoMonto,
@@ -322,11 +322,15 @@ async def get_transferencias(
 # cambiar el gateway.
 # Planilla de la Privada (spec-datos-externos-privada-gobernador.md §7): `focom` y `atp-historico`.
 SECCIONES_PLANILLAS = (
-    "fodemeep", "fommep", "resumen", "fondo-permanente", "fondo-ambiental", "comunidades-regionales", "focom", "atp-historico",
+    "fodemeep", "fommep", "resumen", "fondo-permanente", "fondo-federal", "fondo-ambiental", "comunidades-regionales", "focom",
+    "atp-historico",
 )
 
 
-async def get_seccion_planilla(db: AsyncSession, seccion: str, anio: int, codigos: list[str] | None):
+async def get_seccion_planilla(db: AsyncSession, seccion: str, anio: int, codigos: list[str] | None, rol: str = ""):
+    if seccion == "fondo-federal":
+        # El rol decide si van las observaciones (spec-datos-externos-fase3b-fondo-federal.md §4.2).
+        return await fondo_federal.get_fondo_federal(db, codigos, rol)
     if seccion == "fondo-permanente":
         return await fondos.get_fondo_permanente(db, codigos)
     if seccion == "fondo-ambiental":

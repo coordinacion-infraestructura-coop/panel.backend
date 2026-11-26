@@ -12,6 +12,7 @@ from app.auth import AuthUser, require_roles
 from app.database import get_db
 from app.tablero import actualizar, gestion, politico, service
 from app.tablero.atp_historico import AtpHistoricoResponse
+from app.tablero.fondo_federal import FondoFederalResponse
 from app.tablero.schemas import (
     ComunidadesRegionalesResponse,
     ConveniosResponse,
@@ -65,25 +66,27 @@ async def tablero_inicio(
     "/transferencias/{seccion}",
     response_model=TransferenciasResponse | FodemeepResponse | FommepResponse | ResumenResponse
     | FondoPermanenteResponse | FondoAmbientalResponse | ComunidadesRegionalesResponse | FocomResponse
-    | AtpHistoricoResponse,
+    | AtpHistoricoResponse | FondoFederalResponse,
 )
 async def tablero_transferencias(
     seccion: str,
     anio: int = _ANIO,
     codigo_indec: list[str] | None = _CODIGOS,
     db: AsyncSession = Depends(get_db),
-    _user: AuthUser = Depends(require_roles(*ROLES_TABLERO)),
+    user: AuthUser = Depends(require_roles(*ROLES_TABLERO)),
 ):
     """`coparticipacion` y `fofindes`: serie mensual, acumulado y variación; desde la planilla de
     Gobierno cuando tiene el año (quincenas, neto, descuentos, retenciones, % a sueldos) y si no
     desde Transparencia. `fodemeep`, `fommep` y `resumen`: solo planillas (Etapa 2,
     spec-datos-externos-fase2-transferencias.md §5). `fondo-permanente`, `fondo-ambiental` y
     `comunidades-regionales`: planillas de fondos (Etapa 3, spec-datos-externos-fase3-fondos.md §4).
-    `focom` y `atp-historico`: planilla "Gobierno" de la Privada (spec-datos-externos-privada-gobernador.md §7)."""
+    `focom` y `atp-historico`: planilla "Gobierno" de la Privada (spec-datos-externos-privada-gobernador.md §7).
+    `fondo-federal`: planilla "0. Fondo Federal" (spec-datos-externos-fase3b-fondo-federal.md §4); las
+    observaciones solo van a `Admin` y `Autoridad`."""
     if seccion in service.SECCIONES_TRANSFERENCIAS:
         return await service.get_transferencias(db, seccion, anio, codigo_indec)
     if seccion in service.SECCIONES_PLANILLAS:
-        return await service.get_seccion_planilla(db, seccion, anio, codigo_indec)
+        return await service.get_seccion_planilla(db, seccion, anio, codigo_indec, user.role)
     raise HTTPException(
         status_code=status.HTTP_404_NOT_FOUND,
         detail={"code": "SECCION_INEXISTENTE", "message": f"Sección de transferencias desconocida: {seccion}"},

@@ -53,7 +53,7 @@ async def test_meta_devuelve_localidades_anios_y_frescura(client: AsyncClient, d
     fr = {f["fuente"]: f for f in body["frescura"]}
     assert list(fr) == [
         "nomenclador", "resumen_vista", "copa", "fofindes", "fodemep", "fommep", "empleados",
-        "fondo_permanente", "fondo_ambiental", "comunidades_regionales",
+        "fondo_permanente", "fondo_ambiental", "comunidades_regionales", "fondo_federal",
         "obras", "recorridos", "recorridos_ministro", "reuniones", "convenios", "intendentes", "elecciones",
         "anuncios_gobernador", "focom", "atp_historico", "transferencias", "censo_2022",
     ]
